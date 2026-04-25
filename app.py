@@ -39,7 +39,7 @@ MODEL_ORDER = [
     "Passarella et al. (2018)",
 ]
 
-MED_PRODUCT_ID = "MEDSEA_ANALYSISFORECAST_WAV_006_017"
+MED_DATASET_ID = "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
 PREFERRED_PERIOD_VARS = [
     "VTPK",
     "VTM10",
@@ -50,6 +50,7 @@ PREFERRED_PERIOD_VARS = [
 ]
 PREFERRED_HS_VARS = [
     "VHM0",
+    "Vm0",
     "sea_surface_wave_significant_height",
 ]
 
@@ -65,6 +66,7 @@ def validate_inputs(values: RunupInputs) -> None:
         raise ValueError("Beach slope must be entered as a decimal, for example 0.05 for a 5% slope.")
 
 
+
 def _scalar_result(value: Any) -> float:
     arr = np.asarray(value, dtype=float)
     if arr.size == 0:
@@ -72,7 +74,7 @@ def _scalar_result(value: Any) -> float:
     return float(arr.reshape(-1)[0])
 
 
-# Conservative fallback: only Stockdon 2% runup is implemented here.
+
 def fallback_runup(values: RunupInputs) -> Dict[str, float]:
     g = 9.81
     l0 = g * values.tp ** 2 / (2 * math.pi)
@@ -129,12 +131,12 @@ def build_results_table(values: RunupInputs, runup_results: Dict[str, float]) ->
                 {
                     "Model": model_name,
                     "Runup [m]": round(float(runup), 3),
-                    "Still water level eta [m]": round(float(values.swl), 3),
+                    "Tide + storm surge eta [m]": round(float(values.swl), 3),
                     "Total water level [m]": round(float(twl), 3),
                 }
             )
     if not rows:
-        return pd.DataFrame(columns=["Model", "Runup [m]", "Still water level eta [m]", "Total water level [m]"])
+        return pd.DataFrame(columns=["Model", "Runup [m]", "Tide + storm surge eta [m]", "Total water level [m]"])
     return pd.DataFrame(rows)
 
 
@@ -205,6 +207,34 @@ def _find_first_present_name(candidates: List[str], names: List[str]) -> Optiona
     return None
 
 
+
+def _extract_dataset_ids_from_catalogue(catalogue: Any) -> List[str]:
+    dataset_ids: List[str] = []
+
+    if catalogue is None:
+        return dataset_ids
+
+    if isinstance(catalogue, dict):
+        products = catalogue.get("products", [])
+        for product in products:
+            for dataset in product.get("datasets", []):
+                dataset_id = dataset.get("dataset_id") or dataset.get("datasetId") or dataset.get("id")
+                if dataset_id:
+                    dataset_ids.append(dataset_id)
+        return dataset_ids
+
+    products = getattr(catalogue, "products", None)
+    if products:
+        for product in products:
+            datasets = getattr(product, "datasets", None) or []
+            for dataset in datasets:
+                dataset_id = getattr(dataset, "dataset_id", None) or getattr(dataset, "datasetId", None) or getattr(dataset, "id", None)
+                if dataset_id:
+                    dataset_ids.append(dataset_id)
+
+    return dataset_ids
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_copernicus_wave_timeseries(
     longitude: float,
@@ -212,15 +242,17 @@ def fetch_copernicus_wave_timeseries(
     period_choice: str,
     username: str,
     password: str,
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, str, str, str]:
     if copernicusmarine is None:
         raise ImportError("copernicusmarine is not installed.")
+
+    dataset_id = MED_DATASET_ID
 
     start_dt = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     end_dt = start_dt + timedelta(days=7)
 
     ds = copernicusmarine.open_dataset(
-        dataset_id="MEDSEA_ANALYSISFORECAST_WAV_006_017",
+        dataset_id=dataset_id,
         minimum_longitude=longitude,
         maximum_longitude=longitude,
         minimum_latitude=latitude,
@@ -236,13 +268,9 @@ def fetch_copernicus_wave_timeseries(
     if hs_var is None:
         raise ValueError(f"Could not find significant wave height variable in dataset. Available variables: {data_vars}")
 
-    if period_choice == "Peak period":
-        period_var = _find_first_present_name([PREFERRED_PERIOD_VARS[0], PREFERRED_PERIOD_VARS[3]], data_vars)
-    elif period_choice == "Mean period (Tm-1,0)":
-        period_var = _find_first_present_name([PREFERRED_PERIOD_VARS[1], PREFERRED_PERIOD_VARS[4]], data_vars)
-    else:
-        period_var = _find_first_present_name([PREFERRED_PERIOD_VARS[2], PREFERRED_PERIOD_VARS[5]], data_vars)
+    period_candidates = [PREFERRED_PERIOD_VARS[0], PREFERRED_PERIOD_VARS[3]]
 
+    period_var = _find_first_present_name(period_candidates, data_vars)
     if period_var is None:
         raise ValueError(f"Could not find selected wave period variable in dataset. Available variables: {data_vars}")
 
@@ -267,7 +295,8 @@ def fetch_copernicus_wave_timeseries(
     df = df.dropna().reset_index(drop=True)
     if df.empty:
         raise ValueError("No forecast records were returned for this point.")
-    return df
+
+    return df, dataset_id, hs_var, period_var
 
 
 
@@ -277,8 +306,8 @@ def compute_forecast_envelope(forecast_df: pd.DataFrame, slope: float, swl: floa
     for _, row in forecast_df.iterrows():
         values = RunupInputs(
             hs=float(row["Hs [m]"]),
-            tp=float(row["Tp [s]"])
-            ,slope=float(slope),
+            tp=float(row["Tp [s]"]),
+            slope=float(slope),
             swl=float(swl),
         )
         runup_results = compute_runup(values)
@@ -348,8 +377,8 @@ def plot_envelope(envelope_df: pd.DataFrame, threshold: Optional[float] = None, 
 
 def plot_wave_timeseries(envelope_df: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(10, 4.5))
-    ax.plot(envelope_df["time"], envelope_df["hs_mean"], label="Hs")
-    ax.plot(envelope_df["time"], envelope_df["tp_mean"], label="Tp")
+    ax.plot(envelope_df["time"], envelope_df["hs_mean"], label="Hs [m]")
+    ax.plot(envelope_df["time"], envelope_df["tp_mean"], label="Tp [s]")
     ax.set_title("Forecast wave conditions at selected point")
     ax.set_xlabel("Time")
     ax.set_ylabel("Value")
@@ -360,14 +389,15 @@ def plot_wave_timeseries(envelope_df: pd.DataFrame):
 
 
 
-def render_manual_tab():
+def render_manual_tab() -> None:
     st.header("Manual runup calculator")
+
     with st.sidebar:
         st.subheader("Manual inputs")
         hs = st.number_input("Significant wave height Hs [m]", min_value=0.001, value=1.5, step=0.1, format="%.3f", key="manual_hs")
         tp = st.number_input("Wave period Tp [s]", min_value=0.001, value=8.0, step=0.1, format="%.3f", key="manual_tp")
         slope = st.number_input("Beach slope beta [-]", min_value=0.001, max_value=0.999, value=0.05, step=0.005, format="%.3f", key="manual_slope")
-        swl = st.number_input("Tide + storm surge (eta) [m]", value=0.0, step=0.1, format="%.3f", key="manual_swl")
+        swl = st.number_input("Tide + storm surge eta [m]", value=0.0, step=0.1, format="%.3f", key="manual_swl")
         uploaded_profile = st.file_uploader("Upload beach profile (.csv, .txt, .dat)", type=["csv", "txt", "dat"], key="manual_profile")
         calculate = st.button("Calculate manual scenario", type="primary", use_container_width=True)
 
@@ -375,10 +405,14 @@ def render_manual_tab():
         st.info("Set the manual inputs in the sidebar and click Calculate manual scenario.")
         return
 
-    values = RunupInputs(hs=hs, tp=tp, slope=slope, swl=swl)
-    runup_results = compute_runup(values)
-    results_df = build_results_table(values, runup_results)
-    profile_df = read_profile(uploaded_profile)
+    try:
+        values = RunupInputs(hs=hs, tp=tp, slope=slope, swl=swl)
+        runup_results = compute_runup(values)
+        results_df = build_results_table(values, runup_results)
+        profile_df = read_profile(uploaded_profile)
+    except Exception as exc:
+        st.error(str(exc))
+        return
 
     if results_df.empty:
         st.warning("No model returned a valid result for the selected inputs.")
@@ -410,19 +444,18 @@ def render_manual_tab():
 
 
 
-def render_forecast_tab():
+def render_forecast_tab() -> None:
     st.header("Mediterranean forecast from coordinates")
     st.write("Fetch a single-point Mediterranean wave forecast from Copernicus Marine, then compute runup and total water level envelopes across empirical models.")
 
     with st.sidebar:
         st.subheader("Forecast inputs")
-        longitude = st.number_input("Longitude [deg]", value=12.50, format="%.4f", key="forecast_lon")
-        latitude = st.number_input("Latitude [deg]", value=41.90, format="%.4f", key="forecast_lat")
+        longitude = st.number_input("Longitude [deg]", value=12.5000, format="%.4f", key="forecast_lon")
+        latitude = st.number_input("Latitude [deg]", value=41.9000, format="%.4f", key="forecast_lat")
         slope = st.number_input("Beach slope beta [-]", min_value=0.001, max_value=0.999, value=0.05, step=0.005, format="%.3f", key="forecast_slope")
-        swl = st.number_input("Tide + storm surge (eta) [m]", value=0.0, step=0.1, format="%.3f", key="forecast_swl")
+        swl = st.number_input("Tide + storm surge eta [m]", value=0.0, step=0.1, format="%.3f", key="forecast_swl")
         threshold_enabled = st.checkbox("Add threshold elevation", value=True, key="forecast_threshold_enabled")
         threshold = st.number_input("Threshold elevation [m]", value=2.0, step=0.1, format="%.3f", key="forecast_threshold") if threshold_enabled else None
-        period_choice = st.selectbox("Wave period variable", ["Peak period", "Mean period (Tm-1,0)", "Mean period (Tm0,2)"], index=0, key="forecast_period_choice")
         fetch_button = st.button("Fetch Mediterranean forecast", type="primary", use_container_width=True)
 
     if not fetch_button:
@@ -437,7 +470,7 @@ def render_forecast_tab():
 
     try:
         with st.spinner("Downloading Mediterranean wave forecast for the selected point..."):
-            forecast_df = fetch_copernicus_wave_timeseries(longitude, latitude, period_choice, username, password)
+            forecast_df, dataset_id, hs_var, period_var = fetch_copernicus_wave_timeseries(longitude, latitude, "Peak period", username, password)
             detail_df, envelope_df = compute_forecast_envelope(forecast_df, slope, swl)
     except Exception as exc:
         st.error(f"Forecast retrieval or processing failed: {exc}")
@@ -447,19 +480,21 @@ def render_forecast_tab():
         st.warning("No forecast-based runup results were computed.")
         return
 
+    st.caption(f"Resolved Copernicus dataset ID: {dataset_id}")
+    st.caption(f"Using variables: Hs = {hs_var}, period = {period_var}")
+
     st.subheader("Forecast preview")
     st.dataframe(forecast_df, use_container_width=True, hide_index=True)
 
-    exceed_mean = int((envelope_df["twl_mean"] > threshold).sum()) if threshold is not None else 0
-    exceed_max = int((envelope_df["twl_max"] > threshold).sum()) if threshold is not None else 0
-
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Forecast records", len(envelope_df))
-    c2.metric("Mean runup (weekly mean)", f"{envelope_df['runup_mean'].mean():.2f} m")
-    c3.metric("Mean TWL (weekly mean)", f"{envelope_df['twl_mean'].mean():.2f} m")
+    c2.metric("Mean runup", f"{envelope_df['runup_mean'].mean():.2f} m")
+    c3.metric("Mean TWL", f"{envelope_df['twl_mean'].mean():.2f} m")
     c4.metric("Max TWL", f"{envelope_df['twl_max'].max():.2f} m")
 
     if threshold is not None:
+        exceed_mean = int((envelope_df["twl_mean"] > threshold).sum())
+        exceed_max = int((envelope_df["twl_max"] > threshold).sum())
         c5, c6 = st.columns(2)
         c5.metric("Timesteps mean TWL > threshold", exceed_mean)
         c6.metric("Timesteps max TWL > threshold", exceed_max)
@@ -500,7 +535,7 @@ def main() -> None:
     with st.expander("Scientific notes"):
         st.markdown(
             """
-            - Manual mode computes wave runup and total water level from user-supplied Hs, Tp, beach slope, and still water level.
+            - Manual mode computes wave runup and total water level from user-supplied Hs, Tp, beach slope, and tide plus storm surge.
             - Forecast mode retrieves Mediterranean wave conditions at a single point and computes runup envelopes across empirical models.
             - The threshold is compared against total water level, not runup alone.
             - Tide and storm surge are treated here as a user-specified constant offset.
