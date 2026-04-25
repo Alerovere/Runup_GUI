@@ -1,0 +1,5 @@
+streamlit
+numpy
+pandas
+matplotlib
+py-wave-runup @ git+https://github.com/chrisleaman/py-wave-runup.git
