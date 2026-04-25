@@ -220,7 +220,7 @@ def fetch_copernicus_wave_timeseries(
     end_dt = start_dt + timedelta(days=7)
 
     ds = copernicusmarine.open_dataset(
-        dataset_id=MED_PRODUCT_ID,
+        dataset_id="MEDSEA_ANALYSISFORECAST_WAV_006_017",
         minimum_longitude=longitude,
         maximum_longitude=longitude,
         minimum_latitude=latitude,
