@@ -240,13 +240,23 @@ def main() -> None:
         st.subheader("Results table")
         st.dataframe(results_df, use_container_width=True, hide_index=True)
 
-        st.subheader("Runup comparison")
-        runup_chart_df = results_df.set_index("Model")[["Runup [m]"]]
-        st.bar_chart(runup_chart_df, horizontal=True)
+        st.subheader("Comparison of wave runup across models")
+        fig1, ax1 = plt.subplots(figsize=(8, 4.5))
+        ax1.barh(results_df["Model"], results_df["Runup [m]"])
+        ax1.set_xlabel("Runup [m]")
+        ax1.set_ylabel("Model")
+        ax1.set_title("Wave runup across models")
+        ax1.grid(True, axis="x", alpha=0.3)
+        st.pyplot(fig1)
 
-        st.subheader("Total water level comparison")
-        twl_chart_df = results_df.set_index("Model")[["Total water level [m]"]]
-        st.bar_chart(twl_chart_df, horizontal=True)
+        st.subheader("Comparison of total water level across models")
+        fig2, ax2 = plt.subplots(figsize=(8, 4.5))
+        ax2.barh(results_df["Model"], results_df["Total water level [m]"])
+        ax2.set_xlabel("Total water level [m]")
+        ax2.set_ylabel("Model")
+        ax2.set_title("Total water level across models")
+        ax2.grid(True, axis="x", alpha=0.3)
+        st.pyplot(fig2)
 
         if profile_df is not None:
             st.subheader("Beach profile with modelled total water levels")
