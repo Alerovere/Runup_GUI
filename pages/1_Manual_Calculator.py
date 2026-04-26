@@ -9,13 +9,58 @@ from src.runup_models import MODEL_ORDER, RunupInputs, compute_runup
 
 st.title("Manual calculator")
 
+st.info(
+    "Use this page to estimate wave runup and total water level for a single user-defined scenario. "
+    "Enter representative values for significant wave height, peak wave period, beach slope, and "
+    "tide + storm surge. The app then compares the predictions from multiple empirical runup models. "
+    "You can also upload a beach profile to visualize the modelled water levels on a cross-shore section."
+)
+
 with st.sidebar:
     st.header("Manual inputs")
-    hs = st.number_input("Significant wave height Hs [m]", min_value=0.001, value=1.5, step=0.1, format="%.3f")
-    tp = st.number_input("Wave period Tp [s]", min_value=0.001, value=8.0, step=0.1, format="%.3f")
-    slope = st.number_input("Beach slope beta [-]", min_value=0.001, max_value=0.999, value=0.05, step=0.005, format="%.3f")
-    swl = st.number_input("Tide + storm surge eta [m]", value=0.0, step=0.1, format="%.3f")
-    uploaded_profile = st.file_uploader("Upload beach profile (.csv, .txt, .dat)", type=["csv", "txt", "dat"])
+
+    hs = st.number_input(
+        "Significant wave height Hs [m]",
+        min_value=0.001,
+        value=1.5,
+        step=0.1,
+        format="%.3f",
+        help="Representative offshore or nearshore significant wave height for the scenario being analysed.",
+    )
+
+    tp = st.number_input(
+        "Wave period Tp [s]",
+        min_value=0.001,
+        value=8.0,
+        step=0.1,
+        format="%.3f",
+        help="Representative peak wave period associated with Hs.",
+    )
+
+    slope = st.number_input(
+        "Beach slope beta [-]",
+        min_value=0.001,
+        max_value=0.999,
+        value=0.05,
+        step=0.005,
+        format="%.3f",
+        help="Beach-face slope entered as a decimal, for example 0.05 = 5%.",
+    )
+
+    swl = st.number_input(
+        "Tide + storm surge eta [m]",
+        value=0.0,
+        step=0.1,
+        format="%.3f",
+        help="Still-water-level offset added to runup to estimate total water level. This value can be positive or negative depending on the reference level used.",
+    )
+
+    uploaded_profile = st.file_uploader(
+        "Upload beach profile (.csv, .txt, .dat)",
+        type=["csv", "txt", "dat"],
+        help="Optional beach profile with x and y columns for plotting the modelled total water levels on a cross-shore section.",
+    )
+
     calculate = st.button("Calculate", type="primary", use_container_width=True)
 
 if not calculate:
