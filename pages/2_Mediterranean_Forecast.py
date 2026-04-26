@@ -60,8 +60,21 @@ st.title("Mediterranean forecast")
 
 st.info(
     "Use this page to extract a single-point Mediterranean wave forecast from Copernicus Marine "
-    "and compute weekly envelopes of runup and total water level across empirical models. "
-    "Select a point on the map and, if needed, refine it with the coordinate fields."
+    "and compute weekly envelopes of runup and total water level across empirical models."
+)
+
+st.markdown(
+    """
+**How to choose the point**
+
+Enter the latitude and longitude of a point that is **reasonably offshore**, rather than directly on the shoreline.
+This helps avoid selecting land grid cells and is more consistent with the offshore wave-model nature of the Copernicus product.
+
+A practical rule is to choose a point:
+- just offshore of the beach or coastal sector of interest
+- clearly at sea, not on land
+- not inside very small harbours, lagoons, or enclosed basins
+"""
 )
 
 with st.sidebar:
@@ -107,95 +120,69 @@ with st.sidebar:
         use_container_width=True,
     )
 
-if "selected_lat" not in st.session_state:
-    st.session_state.selected_lat = 41.9000
-if "selected_lon" not in st.session_state:
-    st.session_state.selected_lon = 12.5000
-if "map_center" not in st.session_state:
-    st.session_state.map_center = [
-        st.session_state.selected_lat,
-        st.session_state.selected_lon,
-    ]
-if "map_zoom" not in st.session_state:
-    st.session_state.map_zoom = 5
+if "forecast_lat" not in st.session_state:
+    st.session_state.forecast_lat = 41.9000
+if "forecast_lon" not in st.session_state:
+    st.session_state.forecast_lon = 12.5000
 
-st.subheader("Select forecast point")
-st.write(
-    "Click on the map to place the forecast point. The map preserves its zoom and center."
+st.subheader("Forecast point coordinates")
+
+col1, col2 = st.columns(2)
+with col1:
+    st.session_state.forecast_lat = st.number_input(
+        "Latitude [deg]",
+        value=float(st.session_state.forecast_lat),
+        format="%.5f",
+        key="forecast_lat_input",
+        help="Latitude of the offshore forecast point.",
+    )
+with col2:
+    st.session_state.forecast_lon = st.number_input(
+        "Longitude [deg]",
+        value=float(st.session_state.forecast_lon),
+        format="%.5f",
+        key="forecast_lon_input",
+        help="Longitude of the offshore forecast point.",
+    )
+
+st.caption(
+    f"Selected coordinates: lat = {st.session_state.forecast_lat:.5f}, "
+    f"lon = {st.session_state.forecast_lon:.5f}"
 )
 
+if not (30.0 <= st.session_state.forecast_lat <= 46.5 and -6.5 <= st.session_state.forecast_lon <= 37.0):
+    st.warning(
+        "These coordinates fall outside a broad Mediterranean bounding box. "
+        "Double-check that the selected point is correct and located within the Mediterranean forecasting domain."
+    )
+
+st.subheader("Map preview")
+
 m = folium.Map(
-    location=st.session_state.map_center,
-    zoom_start=st.session_state.map_zoom,
+    location=[st.session_state.forecast_lat, st.session_state.forecast_lon],
+    zoom_start=6,
     control_scale=True,
 )
 
 folium.Marker(
-    [st.session_state.selected_lat, st.session_state.selected_lon],
-    tooltip="Forecast point",
+    [st.session_state.forecast_lat, st.session_state.forecast_lon],
+    tooltip="Selected forecast point",
 ).add_to(m)
 
-map_data = st_folium(
+st_folium(
     m,
     width=900,
     height=500,
-    returned_objects=["last_clicked", "center", "zoom"],
-    key="forecast_map",
+    returned_objects=[],
+    key="forecast_map_preview",
 )
 
-if map_data:
-    if map_data.get("center"):
-        st.session_state.map_center = [
-            float(map_data["center"]["lat"]),
-            float(map_data["center"]["lng"]),
-        ]
-
-    if map_data.get("zoom") is not None:
-        st.session_state.map_zoom = int(map_data["zoom"])
-
-    if map_data.get("last_clicked"):
-        new_lat = float(map_data["last_clicked"]["lat"])
-        new_lon = float(map_data["last_clicked"]["lng"])
-
-        if (
-            new_lat != st.session_state.selected_lat
-            or new_lon != st.session_state.selected_lon
-        ):
-            st.session_state.selected_lat = new_lat
-            st.session_state.selected_lon = new_lon
-            st.session_state.map_center = [new_lat, new_lon]
-            st.rerun()
-
-col1, col2 = st.columns(2)
-with col1:
-    new_lat_input = st.number_input(
-        "Latitude [deg]",
-        value=float(st.session_state.selected_lat),
-        format="%.5f",
-        key="forecast_lat_input",
-    )
-with col2:
-    new_lon_input = st.number_input(
-        "Longitude [deg]",
-        value=float(st.session_state.selected_lon),
-        format="%.5f",
-        key="forecast_lon_input",
-    )
-
-if (
-    new_lat_input != st.session_state.selected_lat
-    or new_lon_input != st.session_state.selected_lon
-):
-    st.session_state.selected_lat = float(new_lat_input)
-    st.session_state.selected_lon = float(new_lon_input)
-
 st.caption(
-    f"Selected coordinates: lat = {st.session_state.selected_lat:.5f}, "
-    f"lon = {st.session_state.selected_lon:.5f}"
+    "The map is shown for confirmation only. Update the coordinates in the input boxes above if you want to move the forecast point."
 )
 
 if not fetch_button:
-    st.info("Select a point and click Fetch Mediterranean forecast.")
+    st.info("Enter an offshore point and click Fetch Mediterranean forecast.")
     st.stop()
 
 username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
@@ -207,8 +194,8 @@ if not username or not password:
 
 with st.spinner("Downloading Mediterranean wave forecast..."):
     forecast_df, hs_var, period_var = fetch_copernicus_wave_timeseries(
-        longitude=st.session_state.selected_lon,
-        latitude=st.session_state.selected_lat,
+        longitude=st.session_state.forecast_lon,
+        latitude=st.session_state.forecast_lat,
         username=username,
         password=password,
     )
@@ -248,6 +235,10 @@ st.pyplot(
     use_container_width=True,
 )
 
+st.caption(
+    "This figure shows the forecast wave forcing extracted at the selected offshore point."
+)
+
 st.subheader("Weekly runup envelope")
 st.pyplot(
     plot_envelope(envelope_df, threshold=threshold, mode="runup"),
@@ -255,11 +246,20 @@ st.pyplot(
     use_container_width=True,
 )
 
+st.caption(
+    "The shaded band shows the minimum-to-maximum spread across empirical runup models, "
+    "while the central line shows the mean across models."
+)
+
 st.subheader("Weekly total water level envelope")
 st.pyplot(
     plot_envelope(envelope_df, threshold=threshold, mode="twl"),
     clear_figure=False,
     use_container_width=True,
+)
+
+st.caption(
+    "This total water level envelope is computed as modelled runup plus the user-defined tide + storm surge offset."
 )
 
 st.subheader("Envelope data")
