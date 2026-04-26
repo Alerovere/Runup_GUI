@@ -1,8 +1,6 @@
-import folium
 import numpy as np
 import pandas as pd
 import streamlit as st
-from streamlit_folium import st_folium
 
 from src.copernicus_io import MED_DATASET_ID, fetch_copernicus_wave_timeseries
 from src.plotting import plot_envelope, plot_wave_timeseries
@@ -158,27 +156,17 @@ if not (30.0 <= st.session_state.forecast_lat <= 46.5 and -6.5 <= st.session_sta
 
 st.subheader("Map preview")
 
-m = folium.Map(
-    location=[st.session_state.forecast_lat, st.session_state.forecast_lon],
-    zoom_start=6,
-    control_scale=True,
+map_df = pd.DataFrame(
+    {
+        "lat": [st.session_state.forecast_lat],
+        "lon": [st.session_state.forecast_lon],
+    }
 )
 
-folium.Marker(
-    [st.session_state.forecast_lat, st.session_state.forecast_lon],
-    tooltip="Selected forecast point",
-).add_to(m)
-
-st_folium(
-    m,
-    width=900,
-    height=500,
-    returned_objects=[],
-    key="forecast_map_preview",
-)
+st.map(map_df, zoom=6, use_container_width=True)
 
 st.caption(
-    "The map is shown for confirmation only. Update the coordinates in the input boxes above if you want to move the forecast point."
+    "The map is shown for confirmation only. Update the coordinates in the input boxes above to move the forecast point."
 )
 
 if not fetch_button:
