@@ -28,12 +28,8 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     std_level = float(np.nanstd(levels, ddof=0))
     max_level = float(np.nanmax(levels))
 
-    # Detect which end is landward: the higher profile end is assumed landward
     left_is_landward = y[0] >= y[-1]
 
-    # ---------
-    # Extensions
-    # ---------
     target_min = -2.0
     target_max = max(max_level + 0.5, float(np.nanmax(y)))
 
@@ -43,10 +39,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     y_land_ext = None
 
     if left_is_landward:
-        # Landward side = left end (x minimum)
-        # Seaward side = right end (x maximum)
-
-        # Seaward extension to -2 m from last two points
         if np.nanmin(y) > target_min:
             x1, y1 = x[-2], y[-2]
             x2, y2 = x[-1], y[-1]
@@ -60,7 +52,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
                         x_sea_ext = np.array([x2, x_ext])
                         y_sea_ext = np.array([y2, target_min])
 
-        # Landward extension upward from first two points
         if np.nanmax(y) < target_max:
             x1, y1 = x[1], y[1]
             x2, y2 = x[0], y[0]
@@ -76,10 +67,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
                     y_land_ext = np.array([target_max, y2])
 
     else:
-        # Landward side = right end (x maximum)
-        # Seaward side = left end (x minimum)
-
-        # Seaward extension to -2 m from first two points
         if np.nanmin(y) > target_min:
             x1, y1 = x[0], y[0]
             x2, y2 = x[1], y[1]
@@ -93,7 +80,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
                         x_sea_ext = np.array([x_ext, x1])
                         y_sea_ext = np.array([target_min, y1])
 
-        # Landward extension upward from last two points
         if np.nanmax(y) < target_max:
             x1, y1 = x[-2], y[-2]
             x2, y2 = x[-1], y[-1]
@@ -108,7 +94,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
                     x_land_ext = np.array([x2, x_ext])
                     y_land_ext = np.array([y2, target_max])
 
-    # Build extended profile
     x_full = x.copy()
     y_full = y.copy()
 
@@ -148,7 +133,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
         if not intersections:
             return None
 
-        # Seaward-most intersection
         return max(intersections) if left_is_landward else min(intersections)
 
     x_min = float(np.nanmin(x_full))
@@ -161,17 +145,24 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    # Original profile
     ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
 
-    # Dotted extensions
+    extension_labeled = False
     if x_sea_ext is not None and y_sea_ext is not None:
-        ax.plot(x_sea_ext, y_sea_ext, color="black", linewidth=1.2, linestyle=":")
+        ax.plot(
+            x_sea_ext, y_sea_ext,
+            color="black", linewidth=1.2, linestyle=":",
+            label="Theoretical beach profile extension"
+        )
+        extension_labeled = True
 
     if x_land_ext is not None and y_land_ext is not None:
-        ax.plot(x_land_ext, y_land_ext, color="black", linewidth=1.2, linestyle=":")
+        ax.plot(
+            x_land_ext, y_land_ext,
+            color="black", linewidth=1.2, linestyle=":",
+            label=None if extension_labeled else "Theoretical beach profile extension"
+        )
 
-    # MSL from shoreline seaward
     if msl_intersection is not None:
         if left_is_landward:
             ax.hlines(0.0, msl_intersection, x_max, colors="royalblue", linewidth=1.4, label="Mean sea level")
@@ -180,17 +171,25 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             ax.hlines(0.0, x_min, msl_intersection, colors="royalblue", linewidth=1.4, label="Mean sea level")
             ax.text(x_min, 0.0, "MSL  ", color="royalblue", va="center", ha="right", fontsize=8)
 
-    # Individual model levels
+    single_model_labeled = False
     for _, row in results_df.iterrows():
         level = float(row[level_col])
         xi = find_intersection_x(level, x_full, y_full)
         if xi is not None:
             if left_is_landward:
-                ax.hlines(level, xi, x_max, colors="lightgray", linewidth=1.0, alpha=0.9)
+                ax.hlines(
+                    level, xi, x_max,
+                    colors="lightgray", linewidth=1.0, alpha=0.9, linestyles=":",
+                    label="Single model outputs" if not single_model_labeled else None
+                )
             else:
-                ax.hlines(level, x_min, xi, colors="lightgray", linewidth=1.0, alpha=0.9)
+                ax.hlines(
+                    level, x_min, xi,
+                    colors="lightgray", linewidth=1.0, alpha=0.9, linestyles=":",
+                    label="Single model outputs" if not single_model_labeled else None
+                )
+            single_model_labeled = True
 
-    # Mean ± 1 SD band
     if std_level > 0 and upper_intersection is not None and lower_intersection is not None:
         if left_is_landward:
             band_start = max(upper_intersection, lower_intersection)
@@ -204,16 +203,21 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             mean_level - std_level,
             mean_level + std_level,
             color="lightsteelblue",
-            alpha=0.5,
+            alpha=0.45,
             label="Mean ± 1 SD",
         )
 
-    # Mean level
     if mean_intersection is not None:
         if left_is_landward:
-            ax.hlines(mean_level, mean_intersection, x_max, colors="dimgray", linewidth=1.6, label="Model mean")
+            ax.hlines(
+                mean_level, mean_intersection, x_max,
+                colors="darkblue", linewidth=1.8, label="Model mean"
+            )
         else:
-            ax.hlines(mean_level, x_min, mean_intersection, colors="dimgray", linewidth=1.6, label="Model mean")
+            ax.hlines(
+                mean_level, x_min, mean_intersection,
+                colors="darkblue", linewidth=1.8, label="Model mean"
+            )
 
     ax.set_xlim(x_min, x_max)
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
@@ -222,7 +226,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     ax.tick_params(axis="x", labelsize=8)
     ax.tick_params(axis="y", labelsize=8)
-    ax.grid(True, alpha=0.2, linewidth=0.8)
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
