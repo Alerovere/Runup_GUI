@@ -16,7 +16,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     if len(profile) < 2:
         raise ValueError("Profile must contain at least two points.")
 
-    # Which level are we plotting?
     if "Total water level [m]" in results_df.columns:
         level_col = "Total water level [m]"
         title = "Beach profile and modelled total water levels"
@@ -29,72 +28,108 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     std_level = float(np.nanstd(levels, ddof=0))
     max_level = float(np.nanmax(levels))
 
-    # ---------------------------
-    # Seaward extension to -2 m
-    # ---------------------------
+    # Detect which end is landward: the higher profile end is assumed landward
+    left_is_landward = y[0] >= y[-1]
+
+    # ---------
+    # Extensions
+    # ---------
     target_min = -2.0
+    target_max = max(max_level + 0.5, float(np.nanmax(y)))
+
     x_sea_ext = None
     y_sea_ext = None
-
-    if np.nanmin(y) > target_min:
-        x1, y1 = x[0], y[0]
-        x2, y2 = x[1], y[1]
-
-        dx = x2 - x1
-        dy = y2 - y1
-
-        if dx != 0:
-            slope = dy / dx
-            if slope != 0:
-                x_ext = x1 + (target_min - y1) / slope
-                if np.isfinite(x_ext) and x_ext < x1:
-                    x_sea_ext = np.array([x_ext, x1])
-                    y_sea_ext = np.array([target_min, y1])
-
-    # -----------------------------------------
-    # Landward extension if runup exceeds crest
-    # -----------------------------------------
-    target_max = max(max_level + 0.5, float(np.nanmax(y)))
     x_land_ext = None
     y_land_ext = None
 
-    if np.nanmax(y) < target_max:
-        x1, y1 = x[-2], y[-2]
-        x2, y2 = x[-1], y[-1]
+    if left_is_landward:
+        # Landward side = left end (x minimum)
+        # Seaward side = right end (x maximum)
 
-        dx = x2 - x1
-        dy = y2 - y1
+        # Seaward extension to -2 m from last two points
+        if np.nanmin(y) > target_min:
+            x1, y1 = x[-2], y[-2]
+            x2, y2 = x[-1], y[-1]
+            dx = x2 - x1
+            dy = y2 - y1
+            if dx != 0:
+                slope = dy / dx
+                if slope != 0:
+                    x_ext = x2 + (target_min - y2) / slope
+                    if np.isfinite(x_ext) and x_ext > x2:
+                        x_sea_ext = np.array([x2, x_ext])
+                        y_sea_ext = np.array([y2, target_min])
 
-        if dx != 0:
-            slope = dy / dx
+        # Landward extension upward from first two points
+        if np.nanmax(y) < target_max:
+            x1, y1 = x[1], y[1]
+            x2, y2 = x[0], y[0]
+            dx = x2 - x1
+            dy = y2 - y1
+            if dx != 0:
+                slope = dy / dx
+                if slope <= 0:
+                    slope = -0.05
+                x_ext = x2 + (target_max - y2) / slope
+                if np.isfinite(x_ext) and x_ext < x2:
+                    x_land_ext = np.array([x_ext, x2])
+                    y_land_ext = np.array([target_max, y2])
 
-            # If the last segment is flat or downward, force a small positive slope
-            if slope <= 0:
-                slope = 0.05
+    else:
+        # Landward side = right end (x maximum)
+        # Seaward side = left end (x minimum)
 
-            x_ext = x2 + (target_max - y2) / slope
+        # Seaward extension to -2 m from first two points
+        if np.nanmin(y) > target_min:
+            x1, y1 = x[0], y[0]
+            x2, y2 = x[1], y[1]
+            dx = x2 - x1
+            dy = y2 - y1
+            if dx != 0:
+                slope = dy / dx
+                if slope != 0:
+                    x_ext = x1 + (target_min - y1) / slope
+                    if np.isfinite(x_ext) and x_ext < x1:
+                        x_sea_ext = np.array([x_ext, x1])
+                        y_sea_ext = np.array([target_min, y1])
 
-            if np.isfinite(x_ext) and x_ext > x2:
-                x_land_ext = np.array([x2, x_ext])
-                y_land_ext = np.array([y2, target_max])
+        # Landward extension upward from last two points
+        if np.nanmax(y) < target_max:
+            x1, y1 = x[-2], y[-2]
+            x2, y2 = x[-1], y[-1]
+            dx = x2 - x1
+            dy = y2 - y1
+            if dx != 0:
+                slope = dy / dx
+                if slope <= 0:
+                    slope = 0.05
+                x_ext = x2 + (target_max - y2) / slope
+                if np.isfinite(x_ext) and x_ext > x2:
+                    x_land_ext = np.array([x2, x_ext])
+                    y_land_ext = np.array([y2, target_max])
 
-    # -----------------------------------------
-    # Build extended profile for intersections
-    # -----------------------------------------
+    # Build extended profile
     x_full = x.copy()
     y_full = y.copy()
 
-    if x_sea_ext is not None:
-        x_full = np.concatenate([x_sea_ext[:-1], x_full])
-        y_full = np.concatenate([y_sea_ext[:-1], y_full])
-
     if x_land_ext is not None:
-        x_full = np.concatenate([x_full, x_land_ext[1:]])
-        y_full = np.concatenate([y_full, y_land_ext[1:]])
+        if left_is_landward:
+            x_full = np.concatenate([x_land_ext[:-1], x_full])
+            y_full = np.concatenate([y_land_ext[:-1], y_full])
+        else:
+            x_full = np.concatenate([x_full, x_land_ext[1:]])
+            y_full = np.concatenate([y_full, y_land_ext[1:]])
+
+    if x_sea_ext is not None:
+        if left_is_landward:
+            x_full = np.concatenate([x_full, x_sea_ext[1:]])
+            y_full = np.concatenate([y_full, y_sea_ext[1:]])
+        else:
+            x_full = np.concatenate([x_sea_ext[:-1], x_full])
+            y_full = np.concatenate([y_sea_ext[:-1], y_full])
 
     def find_intersection_x(level, xvals, yvals):
         intersections = []
-
         for i in range(len(xvals) - 1):
             xa, xb = xvals[i], xvals[i + 1]
             ya, yb = yvals[i], yvals[i + 1]
@@ -113,8 +148,8 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
         if not intersections:
             return None
 
-        # Use the seaward-most intersection
-        return max(intersections)
+        # Seaward-most intersection
+        return max(intersections) if left_is_landward else min(intersections)
 
     x_min = float(np.nanmin(x_full))
     x_max = float(np.nanmax(x_full))
@@ -126,67 +161,44 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    # Uploaded profile
+    # Original profile
     ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
 
-    # Dotted seaward extension
+    # Dotted extensions
     if x_sea_ext is not None and y_sea_ext is not None:
-        ax.plot(
-            x_sea_ext,
-            y_sea_ext,
-            color="black",
-            linewidth=1.2,
-            linestyle=":",
-        )
+        ax.plot(x_sea_ext, y_sea_ext, color="black", linewidth=1.2, linestyle=":")
 
-    # Dotted landward extension
     if x_land_ext is not None and y_land_ext is not None:
-        ax.plot(
-            x_land_ext,
-            y_land_ext,
-            color="black",
-            linewidth=1.2,
-            linestyle=":",
-        )
+        ax.plot(x_land_ext, y_land_ext, color="black", linewidth=1.2, linestyle=":")
 
-    # Mean sea level from shoreline intersection seaward
+    # MSL from shoreline seaward
     if msl_intersection is not None:
-        ax.hlines(
-            0.0,
-            msl_intersection,
-            x_max,
-            colors="royalblue",
-            linewidth=1.4,
-            label="Mean sea level",
-        )
-        ax.text(
-            x_max,
-            0.0,
-            "  MSL",
-            color="royalblue",
-            va="center",
-            ha="left",
-            fontsize=8,
-        )
+        if left_is_landward:
+            ax.hlines(0.0, msl_intersection, x_max, colors="royalblue", linewidth=1.4, label="Mean sea level")
+            ax.text(x_max, 0.0, "  MSL", color="royalblue", va="center", ha="left", fontsize=8)
+        else:
+            ax.hlines(0.0, x_min, msl_intersection, colors="royalblue", linewidth=1.4, label="Mean sea level")
+            ax.text(x_min, 0.0, "MSL  ", color="royalblue", va="center", ha="right", fontsize=8)
 
     # Individual model levels
     for _, row in results_df.iterrows():
         level = float(row[level_col])
         xi = find_intersection_x(level, x_full, y_full)
         if xi is not None:
-            ax.hlines(
-                level,
-                xi,
-                x_max,
-                colors="lightgray",
-                linewidth=1.0,
-                alpha=0.9,
-            )
+            if left_is_landward:
+                ax.hlines(level, xi, x_max, colors="lightgray", linewidth=1.0, alpha=0.9)
+            else:
+                ax.hlines(level, x_min, xi, colors="lightgray", linewidth=1.0, alpha=0.9)
 
     # Mean ± 1 SD band
     if std_level > 0 and upper_intersection is not None and lower_intersection is not None:
-        band_start = max(upper_intersection, lower_intersection)
-        xx = np.linspace(band_start, x_max, 200)
+        if left_is_landward:
+            band_start = max(upper_intersection, lower_intersection)
+            xx = np.linspace(band_start, x_max, 200)
+        else:
+            band_end = min(upper_intersection, lower_intersection)
+            xx = np.linspace(x_min, band_end, 200)
+
         ax.fill_between(
             xx,
             mean_level - std_level,
@@ -198,14 +210,10 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     # Mean level
     if mean_intersection is not None:
-        ax.hlines(
-            mean_level,
-            mean_intersection,
-            x_max,
-            colors="dimgray",
-            linewidth=1.6,
-            label="Model mean",
-        )
+        if left_is_landward:
+            ax.hlines(mean_level, mean_intersection, x_max, colors="dimgray", linewidth=1.6, label="Model mean")
+        else:
+            ax.hlines(mean_level, x_min, mean_intersection, colors="dimgray", linewidth=1.6, label="Model mean")
 
     ax.set_xlim(x_min, x_max)
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
