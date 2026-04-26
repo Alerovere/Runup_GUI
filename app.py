@@ -18,15 +18,29 @@ to the elevation reached by the shoreline during energetic conditions.
 """
 )
 
-st.image(
-    "https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41598-017-01362-7/MediaObjects/41598_2017_1362_Fig1_HTML.jpg?as=webp",
-    caption=(
-        "Conceptual components of coastal water levels. "
-        "Figure from Vitousek et al. (2017), Scientific Reports, 7, 1399. "
-        "https://doi.org/10.1038/s41598-017-01362-7"
-    ),
-    use_container_width=True,
-)
+col1, col2, col3 = st.columns([1, 2, 1])
+
+with col2:
+
+    st.image(
+
+        "https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41598-017-01362-7/MediaObjects/41598_2017_1362_Fig1_HTML.jpg?as=webp",
+
+        caption=(
+
+            "Conceptual components of coastal water levels. "
+
+            "Figure from Vitousek et al. (2017), Scientific Reports, 7, 1399. "
+
+            "https://doi.org/10.1038/s41598-017-01362-7. "
+
+            "Licensed under CC BY 4.0."
+
+        ),
+
+        width=250,
+
+    )
 
 st.subheader("What this app does")
 st.markdown(
