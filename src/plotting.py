@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(6.2, 3.8))
+    fig, ax = plt.subplots(figsize=(5.2, 2.5))
 
     ax.plot(
         profile_df["x"],
