@@ -4,3 +4,5 @@ pandas
 matplotlib
 py-wave-runup
 copernicusmarine
+folium
+streamlit-folium
