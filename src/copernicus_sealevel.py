@@ -76,6 +76,9 @@ def fetch_copernicus_sealevel_timeseries(
     if df.empty:
         raise ValueError("No sea-level records were returned for this point.")
 
+    mean_ssh = float(df["ssh [m]"].mean())
+    df["sea-level signal [m]"] = df["ssh [m]"] - mean_ssh
+
     return df.reset_index(drop=True), ssh_var
 
 
@@ -95,7 +98,7 @@ def merge_wave_and_sealevel(
         tolerance=pd.Timedelta(tolerance),
     )
 
-    merged = merged.dropna(subset=["ssh [m]"]).reset_index(drop=True)
+    merged = merged.dropna(subset=["sea-level signal [m]"]).reset_index(drop=True)
     if merged.empty:
         raise ValueError(
             "Wave and sea-level series could not be aligned in time."
