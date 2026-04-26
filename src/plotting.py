@@ -1,10 +1,22 @@
+from io import BytesIO
 from typing import Optional
 
 import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
+def fig_to_png_bytes(fig) -> bytes:
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+    buf.seek(0)
+    return buf.getvalue()
+
+
+def plot_profile_with_runup(
+    profile_df: pd.DataFrame,
+    results_df: pd.DataFrame,
+    threshold: Optional[float] = None,
+):
     import numpy as np
     import matplotlib.pyplot as plt
 
@@ -32,6 +44,8 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     target_min = -2.0
     target_max = max(max_level + 0.5, float(np.nanmax(y)))
+    if threshold is not None:
+        target_max = max(target_max, float(threshold) + 0.5)
 
     x_sea_ext = None
     y_sea_ext = None
@@ -145,30 +159,50 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    ax.plot(x, y, color="black", linewidth=1.8, label="Uploaded shoreline profile")
+    ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
 
     extension_labeled = False
     if x_sea_ext is not None and y_sea_ext is not None:
         ax.plot(
-            x_sea_ext, y_sea_ext,
-            color="black", linewidth=1.2, linestyle=":",
-            label="Theoretical beach profile extension"
+            x_sea_ext,
+            y_sea_ext,
+            color="black",
+            linewidth=1.2,
+            linestyle=":",
+            label="Theoretical beach profile extension",
         )
         extension_labeled = True
 
     if x_land_ext is not None and y_land_ext is not None:
         ax.plot(
-            x_land_ext, y_land_ext,
-            color="black", linewidth=1.2, linestyle=":",
-            label=None if extension_labeled else "Theoretical beach profile extension"
+            x_land_ext,
+            y_land_ext,
+            color="black",
+            linewidth=1.2,
+            linestyle=":",
+            label=None if extension_labeled else "Theoretical beach profile extension",
         )
 
     if msl_intersection is not None:
         if left_is_landward:
-            ax.hlines(0.0, msl_intersection, x_max, colors="royalblue", linewidth=1.4, label="Mean sea level")
+            ax.hlines(
+                0.0,
+                msl_intersection,
+                x_max,
+                colors="royalblue",
+                linewidth=1.4,
+                label="Mean sea level",
+            )
             ax.text(x_max, 0.0, "  MSL", color="royalblue", va="center", ha="left", fontsize=8)
         else:
-            ax.hlines(0.0, x_min, msl_intersection, colors="royalblue", linewidth=1.4, label="Mean sea level")
+            ax.hlines(
+                0.0,
+                x_min,
+                msl_intersection,
+                colors="royalblue",
+                linewidth=1.4,
+                label="Mean sea level",
+            )
             ax.text(x_min, 0.0, "MSL  ", color="royalblue", va="center", ha="right", fontsize=8)
 
     single_model_labeled = False
@@ -178,27 +212,33 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
         if xi is not None:
             if left_is_landward:
                 ax.hlines(
-                    level, xi, x_max,
-                    colors="gray", linewidth=1.0, linestyles=":",
-                    label="Single model outputs" if not single_model_labeled else None
+                    level,
+                    xi,
+                    x_max,
+                    colors="lightgray",
+                    linewidth=1.0,
+                    alpha=0.9,
+                    linestyles=":",
+                    label="Single model outputs" if not single_model_labeled else None,
                 )
             else:
                 ax.hlines(
-                    level, x_min, xi,
-                    colors="gray", linewidth=1.0, linestyles=":",
-                    label="Single model outputs" if not single_model_labeled else None
+                    level,
+                    x_min,
+                    xi,
+                    colors="lightgray",
+                    linewidth=1.0,
+                    alpha=0.9,
+                    linestyles=":",
+                    label="Single model outputs" if not single_model_labeled else None,
                 )
             single_model_labeled = True
 
     if std_level > 0 and upper_intersection is not None and lower_intersection is not None:
         if left_is_landward:
-            x_poly = [
-                upper_intersection, x_max, x_max, lower_intersection
-            ]
+            x_poly = [upper_intersection, x_max, x_max, lower_intersection]
         else:
-            x_poly = [
-                x_min, upper_intersection, lower_intersection, x_min
-            ]
+            x_poly = [x_min, upper_intersection, lower_intersection, x_min]
 
         y_poly = [
             mean_level + std_level,
@@ -213,20 +253,52 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             color="lightsteelblue",
             alpha=0.45,
             edgecolor="none",
-            label="Standard deviation of all models",
+            label="Mean ± 1 SD",
         )
 
     if mean_intersection is not None:
         if left_is_landward:
             ax.hlines(
-                mean_level, mean_intersection, x_max,
-                colors="lightsteelblue", linewidth=1.3, label="Average of all models"
+                mean_level,
+                mean_intersection,
+                x_max,
+                colors="darkblue",
+                linewidth=1.8,
+                label="Model mean",
             )
         else:
             ax.hlines(
-                mean_level, x_min, mean_intersection,
-                colors="lightsteelblue", linewidth=1.3, label="Average of all models"
+                mean_level,
+                x_min,
+                mean_intersection,
+                colors="darkblue",
+                linewidth=1.8,
+                label="Model mean",
             )
+
+    if threshold is not None:
+        threshold_intersection = find_intersection_x(float(threshold), x_full, y_full)
+        if threshold_intersection is not None:
+            if left_is_landward:
+                ax.hlines(
+                    float(threshold),
+                    threshold_intersection,
+                    x_max,
+                    colors="crimson",
+                    linewidth=1.4,
+                    linestyles="--",
+                    label="Critical elevation threshold",
+                )
+            else:
+                ax.hlines(
+                    float(threshold),
+                    x_min,
+                    threshold_intersection,
+                    colors="crimson",
+                    linewidth=1.4,
+                    linestyles="--",
+                    label="Critical elevation threshold",
+                )
 
     ax.set_xlim(x_min, x_max)
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
@@ -253,18 +325,17 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     return fig
 
 
-def plot_runup_twl_comparison(results_df: pd.DataFrame):
+def plot_runup_twl_comparison(
+    results_df: pd.DataFrame,
+    threshold: Optional[float] = None,
+    risk_color: Optional[str] = None,
+    risk_label: Optional[str] = None,
+):
     plot_df = results_df.copy()
 
-    if "Total water level [m]" in plot_df.columns:
-        plot_df = plot_df.sort_values("Total water level [m]", ascending=True).reset_index(drop=True)
-    else:
-        plot_df = plot_df.sort_values("Runup [m]", ascending=True).reset_index(drop=True)
-
-    plot_df["Short model"] = [
-        name.replace(" et al.", "")
-        for name in plot_df["Model"]
-    ]
+    sort_col = "Total water level [m]" if "Total water level [m]" in plot_df.columns else "Runup [m]"
+    plot_df = plot_df.sort_values(sort_col, ascending=True).reset_index(drop=True)
+    plot_df["Short model"] = [name.replace(" et al.", "") for name in plot_df["Model"]]
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
@@ -291,8 +362,19 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
             label="TWL addition",
         )
         title = "Runup and total water level"
+        compare_col = "Total water level [m]"
     else:
         title = "Runup"
+        compare_col = "Runup [m]"
+
+    if threshold is not None:
+        ax.axvline(
+            float(threshold),
+            color="crimson",
+            linestyle="--",
+            linewidth=1.4,
+            label="Critical elevation threshold",
+        )
 
     ax.set_yticks(list(y))
     ax.set_yticklabels(plot_df["Short model"], fontsize=8)
@@ -308,16 +390,28 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(False)
 
-    if "Total water level [m]" in plot_df.columns:
-        ax.legend(
-            frameon=False,
+    if risk_color is not None and risk_label is not None:
+        ax.text(
+            0.99,
+            1.02,
+            risk_label,
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
             fontsize=8,
-            loc="upper center",
-            bbox_to_anchor=(0.5, -0.18),
-            ncol=2,
-            handlelength=1.6,
-            columnspacing=1.4,
+            color="white",
+            bbox=dict(boxstyle="round,pad=0.25", facecolor=risk_color, edgecolor="none"),
         )
+
+    ax.legend(
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        handlelength=1.6,
+        columnspacing=1.4,
+    )
 
     fig.tight_layout()
     return fig
