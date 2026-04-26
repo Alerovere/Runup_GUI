@@ -145,7 +145,7 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
+    ax.plot(x, y, color="black", linewidth=1.8, label="Uploaded shoreline profile")
 
     extension_labeled = False
     if x_sea_ext is not None and y_sea_ext is not None:
@@ -212,19 +212,20 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             y_poly,
             color="lightsteelblue",
             alpha=0.45,
-            label="Mean ± 1 SD",
+            edgecolor="none",
+            label="Standard deviation of all models",
         )
 
     if mean_intersection is not None:
         if left_is_landward:
             ax.hlines(
                 mean_level, mean_intersection, x_max,
-                colors="darkblue", linewidth=1.8, label="Model mean"
+                colors="blue", linewidth=1.8, label="Average of all models"
             )
         else:
             ax.hlines(
                 mean_level, x_min, mean_intersection,
-                colors="darkblue", linewidth=1.8, label="Model mean"
+                colors="blue", linewidth=1.8, label="Average of all models"
             )
 
     ax.set_xlim(x_min, x_max)
