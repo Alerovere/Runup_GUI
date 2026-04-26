@@ -38,7 +38,7 @@ with col2:
 
         ),
 
-        width=250,
+        width=450,
 
     )
 
