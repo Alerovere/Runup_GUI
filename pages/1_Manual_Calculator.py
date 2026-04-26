@@ -133,5 +133,11 @@ if profile_df is not None:
     else:
         st.subheader("Beach profile with modelled runup elevations")
 
-    st.pyplot(plot_profile_with_runup(profile_df, results_df), clear_figure=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.pyplot(
+            plot_profile_with_runup(profile_df, results_df),
+            clear_figure=True,
+            use_container_width=False,
+        )
     st.dataframe(profile_df, use_container_width=True, hide_index=True)
