@@ -3,19 +3,34 @@ import pandas as pd
 import streamlit as st
 
 from src.copernicus_io import MED_DATASET_ID, fetch_copernicus_wave_timeseries
+from src.copernicus_sealevel import (
+    MED_SEALEVEL_DATASET_ID,
+    fetch_copernicus_sealevel_timeseries,
+    merge_wave_and_sealevel,
+)
 from src.plotting import plot_envelope, plot_wave_timeseries
 from src.runup_models import RunupInputs, compute_runup
 
 
-def compute_forecast_envelope(forecast_df: pd.DataFrame, slope: float, swl: float):
+def compute_forecast_envelope(
+    forcing_df: pd.DataFrame,
+    slope: float,
+    water_level_mode: str,
+    constant_eta: float = 0.0,
+):
     detail_rows = []
 
-    for _, row in forecast_df.iterrows():
+    for _, row in forcing_df.iterrows():
+        if water_level_mode == "Copernicus modelled sea level":
+            eta_value = float(row["ssh [m]"])
+        else:
+            eta_value = float(constant_eta)
+
         values = RunupInputs(
             hs=float(row["Hs [m]"]),
             tp=float(row["Tp [s]"]),
             slope=float(slope),
-            swl=float(swl),
+            swl=eta_value,
         )
         runup_results = compute_runup(values)
 
@@ -27,8 +42,9 @@ def compute_forecast_envelope(forecast_df: pd.DataFrame, slope: float, swl: floa
                         "Model": model_name,
                         "Hs [m]": values.hs,
                         "Tp [s]": values.tp,
+                        "Water level [m]": eta_value,
                         "Runup [m]": float(runup),
-                        "Total water level [m]": float(runup + swl),
+                        "Total water level [m]": float(runup + eta_value),
                     }
                 )
 
@@ -47,6 +63,7 @@ def compute_forecast_envelope(forecast_df: pd.DataFrame, slope: float, swl: floa
             twl_max=("Total water level [m]", "max"),
             hs_mean=("Hs [m]", "mean"),
             tp_mean=("Tp [s]", "mean"),
+            wl_mean=("Water level [m]", "mean"),
         )
         .reset_index()
     )
@@ -88,13 +105,28 @@ with st.sidebar:
         help="Beach-face slope entered as a decimal, for example 0.05 = 5%.",
     )
 
-    swl = st.number_input(
-        "Tide + storm surge eta [m]",
-        value=0.0,
-        step=0.1,
-        format="%.3f",
-        help="Still-water-level offset added to runup to estimate total water level.",
+    water_level_mode = st.radio(
+        "Water-level mode",
+        ["Constant tide + storm surge", "Copernicus modelled sea level"],
+        help=(
+            "Use a constant still-water-level offset, or use Copernicus Mediterranean "
+            "modelled sea surface height above geoid."
+        ),
     )
+
+    constant_eta = 0.0
+    if water_level_mode == "Constant tide + storm surge":
+        constant_eta = st.number_input(
+            "Tide + storm surge eta [m]",
+            value=0.0,
+            step=0.1,
+            format="%.3f",
+            help="Still-water-level offset added to runup to estimate total water level.",
+        )
+    else:
+        st.caption(
+            "Water level will be taken from Copernicus Mediterranean sea surface height above geoid."
+        )
 
     threshold_enabled = st.checkbox(
         "Add threshold elevation",
@@ -119,9 +151,9 @@ with st.sidebar:
     )
 
 if "forecast_lat" not in st.session_state:
-    st.session_state.forecast_lat = 44.09857
+    st.session_state.forecast_lat = 41.9000
 if "forecast_lon" not in st.session_state:
-    st.session_state.forecast_lon = 8.354871
+    st.session_state.forecast_lon = 12.5000
 
 st.subheader("Forecast point coordinates")
 
@@ -180,30 +212,66 @@ if not username or not password:
     st.error("Copernicus credentials are missing in Streamlit secrets.")
     st.stop()
 
-with st.spinner("Downloading Mediterranean wave forecast..."):
-    forecast_df, hs_var, period_var = fetch_copernicus_wave_timeseries(
+with st.spinner("Downloading Mediterranean forecast data..."):
+    wave_df, hs_var, period_var = fetch_copernicus_wave_timeseries(
         longitude=st.session_state.forecast_lon,
         latitude=st.session_state.forecast_lat,
         username=username,
         password=password,
     )
-    _, envelope_df = compute_forecast_envelope(forecast_df, slope, swl)
+
+    ssh_var = None
+    forcing_df = wave_df.copy()
+
+    if water_level_mode == "Copernicus modelled sea level":
+        sealevel_df, ssh_var = fetch_copernicus_sealevel_timeseries(
+            longitude=st.session_state.forecast_lon,
+            latitude=st.session_state.forecast_lat,
+            username=username,
+            password=password,
+        )
+        forcing_df = merge_wave_and_sealevel(wave_df, sealevel_df)
+
+    _, envelope_df = compute_forecast_envelope(
+        forcing_df,
+        slope=slope,
+        water_level_mode=water_level_mode,
+        constant_eta=constant_eta,
+    )
 
 if envelope_df.empty:
     st.warning("No forecast-based runup results were computed.")
     st.stop()
 
-st.caption(f"Dataset ID: {MED_DATASET_ID}")
-st.caption(f"Using variables: Hs = {hs_var}, period = {period_var}")
+st.caption(f"Wave dataset ID: {MED_DATASET_ID}")
+st.caption(f"Using wave variables: Hs = {hs_var}, period = {period_var}")
+
+if water_level_mode == "Copernicus modelled sea level":
+    st.caption(f"Sea-level dataset ID: {MED_SEALEVEL_DATASET_ID}")
+    st.caption(f"Using sea-level variable: {ssh_var}")
 
 st.subheader("Forecast preview")
-st.dataframe(forecast_df, use_container_width=True, hide_index=True)
+if water_level_mode == "Copernicus modelled sea level":
+    preview_df = forcing_df[["time", "Hs [m]", "Tp [s]", "ssh [m]"]]
+else:
+    preview_df = forcing_df[["time", "Hs [m]", "Tp [s]"]]
+st.dataframe(preview_df, use_container_width=True, hide_index=True)
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("Forecast records", len(envelope_df))
 c2.metric("Mean runup", f"{envelope_df['runup_mean'].mean():.2f} m")
 c3.metric("Mean TWL", f"{envelope_df['twl_mean'].mean():.2f} m")
 c4.metric("Max TWL", f"{envelope_df['twl_max'].max():.2f} m")
+
+if water_level_mode == "Copernicus modelled sea level":
+    st.caption(
+        "Total water level is computed using Copernicus Mediterranean modelled sea surface height above geoid. "
+        "This is a modelled sea-level component, not a local tide-gauge forecast."
+    )
+else:
+    st.caption(
+        f"Total water level is computed using a constant user-defined water-level offset of {constant_eta:.2f} m."
+    )
 
 if threshold is not None:
     c5, c6 = st.columns(2)
@@ -246,9 +314,14 @@ st.pyplot(
     use_container_width=True,
 )
 
-st.caption(
-    "This total water level envelope is computed as modelled runup plus the user-defined tide + storm surge offset."
-)
+if water_level_mode == "Copernicus modelled sea level":
+    st.caption(
+        "This total water level envelope is computed as modelled runup plus Copernicus Mediterranean sea surface height above geoid."
+    )
+else:
+    st.caption(
+        "This total water level envelope is computed as modelled runup plus the user-defined tide + storm surge offset."
+    )
 
 st.subheader("Envelope data")
 st.dataframe(envelope_df, use_container_width=True, hide_index=True)
@@ -268,6 +341,12 @@ st.caption(
     "'Mediterranean Sea Waves Analysis and Forecast' "
     "(Product ID: MEDSEA_ANALYSISFORECAST_WAV_006_017; DOI: 10.48670/mds-00373)."
 )
+
+if water_level_mode == "Copernicus modelled sea level":
+    st.caption(
+        "It also uses the Copernicus Marine Mediterranean sea-level forecast dataset "
+        f"({MED_SEALEVEL_DATASET_ID}) to retrieve sea surface height above geoid."
+    )
 
 st.caption(
     "Source: European Union, Copernicus Marine Service Information or Data, "
