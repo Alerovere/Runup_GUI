@@ -117,7 +117,14 @@ else:
 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 st.subheader("Model comparison")
-st.pyplot(plot_runup_twl_comparison(results_df), clear_figure=True)
+
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    st.pyplot(
+        plot_runup_twl_comparison(results_df),
+        clear_figure=True,
+        use_container_width=False,
+    )
 
 profile_df = read_profile(uploaded_profile)
 if profile_df is not None:
