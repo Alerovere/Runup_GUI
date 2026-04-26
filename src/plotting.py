@@ -3,7 +3,6 @@ from typing import Optional
 import matplotlib.pyplot as plt
 import pandas as pd
 
-
 def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     import numpy as np
     import matplotlib.pyplot as plt
@@ -13,31 +12,54 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     x = profile["x"].to_numpy(dtype=float)
     y = profile["y"].to_numpy(dtype=float)
 
-    # Extend the profile offshore/downward to at least -2 m if needed
     target_min = -2.0
-    if np.nanmin(y) > target_min and len(profile) >= 2:
-        x1, y1 = x[-2], y[-2]
-        x2, y2 = x[-1], y[-1]
 
-        if y2 != y1:
+    # Seaward/downward extension from first two points if profile does not reach -2 m
+    x_sea_ext = None
+    y_sea_ext = None
+    if np.nanmin(y) > target_min and len(profile) >= 2:
+        x1, y1 = x[0], y[0]
+        x2, y2 = x[1], y[1]
+        if x2 != x1 and y2 != y1:
             slope = (y2 - y1) / (x2 - x1)
             if slope != 0:
-                x_ext = x2 + (target_min - y2) / slope
+                x_ext = x1 + (target_min - y1) / slope
+                if np.isfinite(x_ext) and x_ext < x1:
+                    x_sea_ext = np.array([x_ext, x1])
+                    y_sea_ext = np.array([target_min, y1])
+
+    # Landward/upward extension from last two points if profile is not high enough
+    max_level = float(np.nanmax(
+        results_df["Total water level [m]"].to_numpy(dtype=float)
+        if "Total water level [m]" in results_df.columns
+        else results_df["Runup [m]"].to_numpy(dtype=float)
+    ))
+    target_max = max(max_level + 0.5, float(np.nanmax(y)))
+
+    x_land_ext = None
+    y_land_ext = None
+    if np.nanmax(y) < target_max and len(profile) >= 2:
+        x1, y1 = x[-2], y[-2]
+        x2, y2 = x[-1], y[-1]
+        if x2 != x1 and y2 != y1:
+            slope = (y2 - y1) / (x2 - x1)
+            if slope != 0:
+                x_ext = x2 + (target_max - y2) / slope
                 if np.isfinite(x_ext) and x_ext > x2:
-                    x_dotted = np.array([x2, x_ext])
-                    y_dotted = np.array([y2, target_min])
-                else:
-                    x_dotted = np.array([x2, x2 + 10])
-                    y_dotted = np.array([y2, target_min])
-            else:
-                x_dotted = np.array([x2, x2 + 10])
-                y_dotted = np.array([y2, target_min])
-        else:
-            x_dotted = np.array([x2, x2 + 10])
-            y_dotted = np.array([y2, target_min])
-    else:
-        x_dotted = None
-        y_dotted = None
+                    x_land_ext = np.array([x2, x_ext])
+                    y_land_ext = np.array([y2, target_max])
+
+    # Build extended profile for intersections
+    x_full = x.copy()
+    y_full = y.copy()
+
+    if x_sea_ext is not None:
+        x_full = np.concatenate([x_sea_ext[:-1], x_full])
+        y_full = np.concatenate([y_sea_ext[:-1], y_full])
+
+    if x_land_ext is not None:
+        x_full = np.concatenate([x_full, x_land_ext[1:]])
+        y_full = np.concatenate([y_full, y_land_ext[1:]])
 
     def find_intersection_x(level, xvals, yvals):
         intersections = []
@@ -59,7 +81,6 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
         if not intersections:
             return None
 
-        # Use the seaward-most intersection for horizontal water lines
         return max(intersections)
 
     if "Total water level [m]" in results_df.columns:
@@ -73,31 +94,36 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     mean_level = float(np.nanmean(levels))
     std_level = float(np.nanstd(levels, ddof=0))
 
-    x_max = float(np.nanmax(x))
-    msl_intersection = find_intersection_x(0.0, x, y)
-    mean_intersection = find_intersection_x(mean_level, x, y)
-    upper_intersection = find_intersection_x(mean_level + std_level, x, y)
-    lower_intersection = find_intersection_x(mean_level - std_level, x, y)
+    x_max = float(np.nanmax(x_full))
+    x_min = float(np.nanmin(x_full))
+
+    msl_intersection = find_intersection_x(0.0, x_full, y_full)
+    mean_intersection = find_intersection_x(mean_level, x_full, y_full)
+    upper_intersection = find_intersection_x(mean_level + std_level, x_full, y_full)
+    lower_intersection = find_intersection_x(mean_level - std_level, x_full, y_full)
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    # Shoreline / beach profile
+    # Original profile
     ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
 
-    # Dotted extension below zero / toward -2 m if needed
-    if x_dotted is not None and y_dotted is not None:
-        ax.plot(x_dotted, y_dotted, color="black", linewidth=1.2, linestyle=":")
+    # Seaward extension
+    if x_sea_ext is not None and y_sea_ext is not None:
+        ax.plot(x_sea_ext, y_sea_ext, color="black", linewidth=1.2, linestyle=":")
 
-    # Mean sea level line
-    if msl_intersection is not None:
-        ax.hlines(
-            0.0,
-            msl_intersection,
-            x_max,
-            colors="royalblue",
-            linewidth=1.4,
-            label="Mean sea level",
-        )
+    # Landward extension
+    if x_land_ext is not None and y_land_ext is not None:
+        ax.plot(x_land_ext, y_land_ext, color="black", linewidth=1.2, linestyle=":")
+
+    # Mean sea level
+    ax.hlines(
+        0.0,
+        x_min,
+        x_max,
+        colors="royalblue",
+        linewidth=1.4,
+        label="Mean sea level",
+    )
         ax.text(
             x_max,
             0.0,
@@ -108,10 +134,10 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             fontsize=8,
         )
 
-    # Individual model results in light gray, truncated at shoreline intersection
+    # Individual model lines
     for _, row in results_df.iterrows():
         level = float(row[level_col])
-        xi = find_intersection_x(level, x, y)
+        xi = find_intersection_x(level, x_full, y_full)
         if xi is not None:
             ax.hlines(
                 level,
@@ -122,7 +148,7 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
                 alpha=0.9,
             )
 
-    # Mean ± std band, also truncated at shoreline intersection
+    # Mean ± 1 SD band
     if std_level > 0 and upper_intersection is not None and lower_intersection is not None:
         band_start = max(upper_intersection, lower_intersection)
         xx = np.linspace(band_start, x_max, 200)
@@ -135,7 +161,7 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             label="Mean ± 1 SD",
         )
 
-    # Mean model level
+    # Mean level line
     if mean_intersection is not None:
         ax.hlines(
             mean_level,
@@ -146,6 +172,7 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             label="Model mean",
         )
 
+    ax.set_xlim(x_min, x_max)
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
     ax.set_ylabel("Elevation y [m]", fontsize=9)
     ax.set_title(title, fontsize=10, pad=8)
@@ -169,6 +196,7 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     fig.tight_layout()
     return fig
+
 
 def plot_runup_twl_comparison(results_df: pd.DataFrame):
     plot_df = results_df.copy()
@@ -238,7 +266,7 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
 
     fig.tight_layout()
     return fig
-    
+
 
 def plot_envelope(envelope_df: pd.DataFrame, threshold: Optional[float], mode: str):
     fig, ax = plt.subplots(figsize=(10, 5))
