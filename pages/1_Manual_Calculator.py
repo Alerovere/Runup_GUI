@@ -183,7 +183,8 @@ with col2:
         risk_color=risk_color,
         risk_label=risk_label,
     )
-    st.pyplot(fig_compare, clear_figure=True, use_container_width=False)
+    compare_png = fig_to_png_bytes(fig_compare)
+    st.pyplot(fig_compare, clear_figure=False, use_container_width=False)
 
 compare_png = fig_to_png_bytes(fig_compare)
 st.download_button(
@@ -232,7 +233,8 @@ if profile_df is not None:
             results_df,
             threshold=threshold if include_threshold else None,
         )
-        st.pyplot(fig_profile, clear_figure=True, use_container_width=False)
+        profile_png = fig_to_png_bytes(fig_profile)
+        st.pyplot(fig_profile, clear_figure=False, use_container_width=False)
 
     profile_png = fig_to_png_bytes(fig_profile)
     st.download_button(
