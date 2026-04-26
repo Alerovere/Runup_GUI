@@ -47,57 +47,73 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
 def plot_runup_twl_comparison(results_df: pd.DataFrame):
     plot_df = results_df.copy()
+
+    if "Total water level [m]" in plot_df.columns:
+        plot_df = plot_df.sort_values("Total water level [m]", ascending=True).reset_index(drop=True)
+    else:
+        plot_df = plot_df.sort_values("Runup [m]", ascending=True).reset_index(drop=True)
+
     plot_df["Short model"] = [
-        name.replace(" et al.", "").replace(" (", "\n(")
+        name.replace(" et al.", "")
         for name in plot_df["Model"]
     ]
 
-    fig, ax = plt.subplots(figsize=(4, 2))
+    fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
     y = range(len(plot_df))
 
     ax.barh(
         y,
         plot_df["Runup [m]"],
-        height=0.42,
+        height=0.5,
         edgecolor="none",
         label="Runup",
     )
 
     if "Total water level [m]" in plot_df.columns:
-        ax.scatter(
-            plot_df["Total water level [m]"],
+        twl_extension = plot_df["Total water level [m]"] - plot_df["Runup [m]"]
+        ax.barh(
             y,
-            marker="o",
-            s=15,
-            zorder=3,
-            label="TWL",
+            twl_extension,
+            left=plot_df["Runup [m]"],
+            height=0.5,
+            edgecolor="none",
+            alpha=0.5,
+            color="lightblue",
+            label="TWL addition",
         )
         title = "Runup and total water level"
     else:
         title = "Runup"
 
     ax.set_yticks(list(y))
-    ax.set_yticklabels(plot_df["Short model"], fontsize=6)
-    ax.set_xlabel("Elevation [m]", fontsize=6)
-    ax.set_ylabel("")
-    ax.set_title(title, fontsize=8, pad=8)
+    ax.set_yticklabels(plot_df["Short model"], fontsize=8)
+    ax.set_xlabel("Elevation [m]", fontsize=9)
+    ax.set_ylabel("Model", fontsize=9)
+    ax.set_title(title, fontsize=10, pad=8)
+
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
 
     ax.grid(True, axis="x", alpha=0.2, linewidth=0.8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
 
     if "Total water level [m]" in plot_df.columns:
         ax.legend(
             frameon=False,
             fontsize=8,
-            loc="lower right",
-            handlelength=1.2,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.18),
+            ncol=2,
+            handlelength=1.6,
+            columnspacing=1.4,
         )
 
     fig.tight_layout()
     return fig
-
+    
 
 def plot_envelope(envelope_df: pd.DataFrame, threshold: Optional[float], mode: str):
     fig, ax = plt.subplots(figsize=(10, 5))
