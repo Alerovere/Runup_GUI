@@ -116,14 +116,15 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
         ax.plot(x_land_ext, y_land_ext, color="black", linewidth=1.2, linestyle=":")
 
     # Mean sea level
-    ax.hlines(
-        0.0,
-        x_min,
-        x_max,
-        colors="royalblue",
-        linewidth=1.4,
-        label="Mean sea level",
-    )
+    if msl_intersection is not None:
+        ax.hlines(
+            0.0,
+            msl_intersection,
+            x_max,
+            colors="royalblue",
+            linewidth=1.4,
+            label="Mean sea level",
+        )
         ax.text(
             x_max,
             0.0,
