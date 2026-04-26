@@ -117,7 +117,7 @@ else:
 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 st.subheader("Model comparison")
-st.pyplot(plot_runup_twl_comparison(results_df))
+st.pyplot(plot_runup_twl_comparison(results_df), clear_figure=True)
 
 profile_df = read_profile(uploaded_profile)
 if profile_df is not None:
@@ -126,5 +126,5 @@ if profile_df is not None:
     else:
         st.subheader("Beach profile with modelled runup elevations")
 
-    st.pyplot(plot_profile_with_runup(profile_df, results_df))
+    st.pyplot(plot_profile_with_runup(profile_df, results_df), clear_figure=True)
     st.dataframe(profile_df, use_container_width=True, hide_index=True)

@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+    fig, ax = plt.subplots(figsize=(6.2, 3.8))
 
     ax.plot(
         profile_df["x"],
@@ -30,51 +30,71 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             x_min,
             x_max,
             linestyles="--",
-            linewidth=1.2,
+            linewidth=1.0,
             label=row["Model"],
         )
 
-    ax.set_xlabel("Cross-shore distance x [m]")
-    ax.set_ylabel("Elevation y [m]")
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=8, ncol=2)
+    ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
+    ax.set_ylabel("Elevation y [m]", fontsize=9)
+    ax.set_title(title, fontsize=10, pad=8)
+    ax.grid(True, alpha=0.25, linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.legend(fontsize=7, ncol=2, frameon=False)
     fig.tight_layout()
     return fig
 
 
 def plot_runup_twl_comparison(results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(6.8, 3.8))
+    plot_df = results_df.copy()
+    plot_df["Short model"] = [
+        name.replace(" et al.", "").replace(" (", "\n(")
+        for name in plot_df["Model"]
+    ]
 
-    y = range(len(results_df))
+    fig, ax = plt.subplots(figsize=(5.8, 2.8))
+
+    y = range(len(plot_df))
 
     ax.barh(
         y,
-        results_df["Runup [m]"],
-        height=0.55,
-        label="Runup [m]",
+        plot_df["Runup [m]"],
+        height=0.42,
+        edgecolor="none",
+        label="Runup",
     )
 
-    if "Total water level [m]" in results_df.columns:
+    if "Total water level [m]" in plot_df.columns:
         ax.scatter(
-            results_df["Total water level [m]"],
+            plot_df["Total water level [m]"],
             y,
             marker="o",
-            s=45,
-            label="Total water level [m]",
+            s=28,
             zorder=3,
+            label="TWL",
         )
-        title = "Runup and total water level across models"
+        title = "Runup and total water level"
     else:
-        title = "Runup across models"
+        title = "Runup"
 
     ax.set_yticks(list(y))
-    ax.set_yticklabels(results_df["Model"])
-    ax.set_xlabel("Elevation [m]")
-    ax.set_ylabel("Model")
-    ax.set_title(title)
-    ax.grid(True, axis="x", alpha=0.3)
-    ax.legend()
+    ax.set_yticklabels(plot_df["Short model"], fontsize=7.5)
+    ax.set_xlabel("Elevation [m]", fontsize=9)
+    ax.set_ylabel("")
+    ax.set_title(title, fontsize=10, pad=8)
+
+    ax.grid(True, axis="x", alpha=0.2, linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    if "Total water level [m]" in plot_df.columns:
+        ax.legend(
+            frameon=False,
+            fontsize=8,
+            loc="lower right",
+            handlelength=1.2,
+        )
+
     fig.tight_layout()
     return fig
 
