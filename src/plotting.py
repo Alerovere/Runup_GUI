@@ -5,7 +5,7 @@ import pandas as pd
 
 
 def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(5.2, 2.5))
+    fig, ax = plt.subplots(figsize=(4, 2))
 
     ax.plot(
         profile_df["x"],
@@ -36,7 +36,7 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
     ax.set_ylabel("Elevation y [m]", fontsize=9)
-    ax.set_title(title, fontsize=10, pad=8)
+    ax.set_title(title, fontsize=6, pad=8)
     ax.grid(True, alpha=0.25, linewidth=0.8)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
@@ -52,7 +52,7 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
         for name in plot_df["Model"]
     ]
 
-    fig, ax = plt.subplots(figsize=(5.2, 2.5))
+    fig, ax = plt.subplots(figsize=(4, 2))
 
     y = range(len(plot_df))
 
@@ -69,7 +69,7 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
             plot_df["Total water level [m]"],
             y,
             marker="o",
-            s=28,
+            s=15,
             zorder=3,
             label="TWL",
         )
@@ -78,10 +78,10 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
         title = "Runup"
 
     ax.set_yticks(list(y))
-    ax.set_yticklabels(plot_df["Short model"], fontsize=7.5)
-    ax.set_xlabel("Elevation [m]", fontsize=9)
+    ax.set_yticklabels(plot_df["Short model"], fontsize=6)
+    ax.set_xlabel("Elevation [m]", fontsize=6)
     ax.set_ylabel("")
-    ax.set_title(title, fontsize=10, pad=8)
+    ax.set_title(title, fontsize=8, pad=8)
 
     ax.grid(True, axis="x", alpha=0.2, linewidth=0.8)
     ax.spines["top"].set_visible(False)
