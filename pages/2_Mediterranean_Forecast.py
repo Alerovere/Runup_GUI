@@ -58,40 +58,113 @@ def compute_forecast_envelope(forecast_df: pd.DataFrame, slope: float, swl: floa
 
 st.title("Mediterranean forecast")
 
+st.info(
+    "Use this page to extract a single-point Mediterranean wave forecast from Copernicus Marine "
+    "and compute weekly envelopes of runup and total water level across empirical models. "
+    "Select a point on the map, or refine it manually with the coordinate fields."
+)
+
 with st.sidebar:
     st.header("Forecast inputs")
-    slope = st.number_input("Beach slope beta [-]", min_value=0.001, max_value=0.999, value=0.05, step=0.005, format="%.3f")
-    swl = st.number_input("Tide + storm surge eta [m]", value=0.0, step=0.1, format="%.3f")
-    threshold_enabled = st.checkbox("Add threshold elevation", value=True)
-    threshold = st.number_input("Threshold elevation [m]", value=2.0, step=0.1, format="%.3f") if threshold_enabled else None
-    fetch_button = st.button("Fetch Mediterranean forecast", type="primary", use_container_width=True)
 
-st.write("Click on the map to select the forecast point.")
+    slope = st.number_input(
+        "Beach slope beta [-]",
+        min_value=0.001,
+        max_value=0.999,
+        value=0.05,
+        step=0.005,
+        format="%.3f",
+        help="Beach-face slope entered as a decimal, for example 0.05 = 5%.",
+    )
+
+    swl = st.number_input(
+        "Tide + storm surge eta [m]",
+        value=0.0,
+        step=0.1,
+        format="%.3f",
+        help="Still-water-level offset added to runup to estimate total water level.",
+    )
+
+    threshold_enabled = st.checkbox(
+        "Add threshold elevation",
+        value=True,
+        help="Enable this to compare forecast runup or TWL against a critical elevation threshold.",
+    )
+
+    threshold = (
+        st.number_input(
+            "Threshold elevation [m]",
+            value=2.0,
+            step=0.1,
+            format="%.3f",
+            help="Critical elevation used to interpret exceedance of model envelopes.",
+        )
+        if threshold_enabled
+        else None
+    )
+
+    fetch_button = st.button(
+        "Fetch Mediterranean forecast",
+        type="primary",
+        use_container_width=True,
+    )
 
 if "selected_lat" not in st.session_state:
-    st.session_state.selected_lat = 41.9
+    st.session_state.selected_lat = 41.9000
 if "selected_lon" not in st.session_state:
-    st.session_state.selected_lon = 12.5
+    st.session_state.selected_lon = 12.5000
 
-m = folium.Map(location=[st.session_state.selected_lat, st.session_state.selected_lon], zoom_start=5)
+st.subheader("Select forecast point")
+st.write(
+    "Click on the map to move the forecast point. You can then fine-tune the coordinates manually below."
+)
+
+m = folium.Map(
+    location=[st.session_state.selected_lat, st.session_state.selected_lon],
+    zoom_start=5,
+    control_scale=True,
+)
+
 folium.Marker(
     [st.session_state.selected_lat, st.session_state.selected_lon],
-    tooltip="Selected point",
+    tooltip="Forecast point",
 ).add_to(m)
 
-map_data = st_folium(m, width=900, height=500)
+map_data = st_folium(
+    m,
+    width=900,
+    height=500,
+    returned_objects=["last_clicked"],
+    key="forecast_map",
+)
 
 if map_data and map_data.get("last_clicked"):
-    st.session_state.selected_lat = map_data["last_clicked"]["lat"]
-    st.session_state.selected_lon = map_data["last_clicked"]["lng"]
+    st.session_state.selected_lat = float(map_data["last_clicked"]["lat"])
+    st.session_state.selected_lon = float(map_data["last_clicked"]["lng"])
 
-st.write(
-    f"Selected coordinates: lat = {st.session_state.selected_lat:.4f}, "
-    f"lon = {st.session_state.selected_lon:.4f}"
+col1, col2 = st.columns(2)
+with col1:
+    st.session_state.selected_lat = st.number_input(
+        "Latitude [deg]",
+        value=float(st.session_state.selected_lat),
+        format="%.5f",
+        key="forecast_lat_input",
+    )
+with col2:
+    st.session_state.selected_lon = st.number_input(
+        "Longitude [deg]",
+        value=float(st.session_state.selected_lon),
+        format="%.5f",
+        key="forecast_lon_input",
+    )
+
+st.caption(
+    f"Selected coordinates: lat = {st.session_state.selected_lat:.5f}, "
+    f"lon = {st.session_state.selected_lon:.5f}"
 )
 
 if not fetch_button:
-    st.info("Select a point on the map, then click Fetch Mediterranean forecast.")
+    st.info("Select a point and click Fetch Mediterranean forecast.")
     st.stop()
 
 username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
@@ -128,17 +201,34 @@ c4.metric("Max TWL", f"{envelope_df['twl_max'].max():.2f} m")
 
 if threshold is not None:
     c5, c6 = st.columns(2)
-    c5.metric("Timesteps mean TWL > threshold", int((envelope_df["twl_mean"] > threshold).sum()))
-    c6.metric("Timesteps max TWL > threshold", int((envelope_df["twl_max"] > threshold).sum()))
+    c5.metric(
+        "Timesteps mean TWL > threshold",
+        int((envelope_df["twl_mean"] > threshold).sum()),
+    )
+    c6.metric(
+        "Timesteps max TWL > threshold",
+        int((envelope_df["twl_max"] > threshold).sum()),
+    )
 
 st.subheader("Weekly wave forcing")
-st.pyplot(plot_wave_timeseries(envelope_df))
+st.pyplot(plot_wave_timeseries(envelope_df), clear_figure=False, use_container_width=True)
 
 st.subheader("Weekly runup envelope")
-st.pyplot(plot_envelope(envelope_df, threshold=threshold, mode="runup"))
+st.pyplot(
+    plot_envelope(envelope_df, threshold=threshold, mode="runup"),
+    clear_figure=False,
+    use_container_width=True,
+)
 
 st.subheader("Weekly total water level envelope")
-st.pyplot(plot_envelope(envelope_df, threshold=threshold, mode="twl"))
+st.pyplot(
+    plot_envelope(envelope_df, threshold=threshold, mode="twl"),
+    clear_figure=False,
+    use_container_width=True,
+)
+
+st.subheader("Envelope data")
+st.dataframe(envelope_df, use_container_width=True, hide_index=True)
 
 csv_data = envelope_df.to_csv(index=False).encode("utf-8")
 st.download_button(
