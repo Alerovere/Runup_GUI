@@ -61,7 +61,7 @@ st.title("Mediterranean forecast")
 st.info(
     "Use this page to extract a single-point Mediterranean wave forecast from Copernicus Marine "
     "and compute weekly envelopes of runup and total water level across empirical models. "
-    "Select a point on the map, or refine it manually with the coordinate fields."
+    "Select a point on the map and, if needed, refine it with the coordinate fields."
 )
 
 with st.sidebar:
@@ -88,7 +88,7 @@ with st.sidebar:
     threshold_enabled = st.checkbox(
         "Add threshold elevation",
         value=True,
-        help="Enable this to compare forecast runup or TWL against a critical elevation threshold.",
+        help="Enable this to compare forecast runup or total water level against a critical elevation threshold.",
     )
 
     threshold = (
@@ -113,15 +113,22 @@ if "selected_lat" not in st.session_state:
     st.session_state.selected_lat = 41.9000
 if "selected_lon" not in st.session_state:
     st.session_state.selected_lon = 12.5000
+if "map_center" not in st.session_state:
+    st.session_state.map_center = [
+        st.session_state.selected_lat,
+        st.session_state.selected_lon,
+    ]
+if "map_zoom" not in st.session_state:
+    st.session_state.map_zoom = 5
 
 st.subheader("Select forecast point")
 st.write(
-    "Click on the map to move the forecast point. You can then fine-tune the coordinates manually below."
+    "Click on the map to move the forecast point. The map preserves its current zoom and center as you work."
 )
 
 m = folium.Map(
-    location=[st.session_state.selected_lat, st.session_state.selected_lon],
-    zoom_start=5,
+    location=st.session_state.map_center,
+    zoom_start=st.session_state.map_zoom,
     control_scale=True,
 )
 
@@ -134,13 +141,23 @@ map_data = st_folium(
     m,
     width=900,
     height=500,
-    returned_objects=["last_clicked"],
+    returned_objects=["last_clicked", "center", "zoom"],
     key="forecast_map",
 )
 
-if map_data and map_data.get("last_clicked"):
-    st.session_state.selected_lat = float(map_data["last_clicked"]["lat"])
-    st.session_state.selected_lon = float(map_data["last_clicked"]["lng"])
+if map_data:
+    if map_data.get("center"):
+        st.session_state.map_center = [
+            float(map_data["center"]["lat"]),
+            float(map_data["center"]["lng"]),
+        ]
+
+    if map_data.get("zoom") is not None:
+        st.session_state.map_zoom = int(map_data["zoom"])
+
+    if map_data.get("last_clicked"):
+        st.session_state.selected_lat = float(map_data["last_clicked"]["lat"])
+        st.session_state.selected_lon = float(map_data["last_clicked"]["lng"])
 
 col1, col2 = st.columns(2)
 with col1:
@@ -236,4 +253,34 @@ st.download_button(
     data=csv_data,
     file_name="weekly_runup_envelope.csv",
     mime="text/csv",
+)
+
+st.subheader("Copernicus Marine data source and licence")
+
+st.caption(
+    "This page uses the Copernicus Marine product "
+    "'Mediterranean Sea Waves Analysis and Forecast' "
+    "(Product ID: MEDSEA_ANALYSISFORECAST_WAV_006_017; DOI: 10.48670/mds-00373)."
+)
+
+st.caption(
+    "Source: European Union, Copernicus Marine Service Information or Data, "
+    "implemented by Mercator Ocean International."
+)
+
+st.markdown(
+    """
+Generated using **E.U. Copernicus Marine Service Information**.
+
+Recommended product citation:  
+*Mediterranean Sea Waves Analysis and Forecast. E.U. Copernicus Marine Service Information (CMEMS). Marine Data Store (MDS). DOI: 10.48670/mds-00373 (accessed on 26 Apr 2026).*
+
+This application uses Copernicus Marine data to generate a derivative educational product.  
+Use of Copernicus Marine information remains subject to the Copernicus Marine licence and terms of service.
+"""
+)
+
+st.info(
+    "Copernicus Marine forecast data shown here are regional model outputs and may differ from local nearshore conditions. "
+    "This page is intended for scientific exploration and teaching, not for operational coastal-risk decisions."
 )
