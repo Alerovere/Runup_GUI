@@ -165,11 +165,11 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     if msl_intersection is not None:
         if left_is_landward:
-            ax.hlines(0.0, msl_intersection, x_max, colors="royalblue", linewidth=1.4, label="Mean sea level")
-            ax.text(x_max, 0.0, "  MSL", color="royalblue", va="center", ha="left", fontsize=8)
+            ax.hlines(0.0, msl_intersection, x_max, colors="lightsteelblue", linewidth=1.4, label="Mean sea level")
+            ax.text(x_max, 0.0, "  MSL", color="lightsteelblue", va="center", ha="left", fontsize=8)
         else:
-            ax.hlines(0.0, x_min, msl_intersection, colors="royalblue", linewidth=1.4, label="Mean sea level")
-            ax.text(x_min, 0.0, "MSL  ", color="royalblue", va="center", ha="right", fontsize=8)
+            ax.hlines(0.0, x_min, msl_intersection, colors="lightsteelblue", linewidth=1.4, label="Mean sea level")
+            ax.text(x_min, 0.0, "MSL  ", color="lightsteelblue", va="center", ha="right", fontsize=8)
 
     single_model_labeled = False
     for _, row in results_df.iterrows():
@@ -179,13 +179,13 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
             if left_is_landward:
                 ax.hlines(
                     level, xi, x_max,
-                    colors="lightgray", linewidth=1.0, alpha=0.9, linestyles=":",
+                    colors="gray", linewidth=1.0, alpha=0.9, linestyles=":",
                     label="Single model outputs" if not single_model_labeled else None
                 )
             else:
                 ax.hlines(
                     level, x_min, xi,
-                    colors="lightgray", linewidth=1.0, alpha=0.9, linestyles=":",
+                    colors="gray", linewidth=1.0, alpha=0.9, linestyles=":",
                     label="Single model outputs" if not single_model_labeled else None
                 )
             single_model_labeled = True
