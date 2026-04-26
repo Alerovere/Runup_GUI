@@ -192,16 +192,24 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
 
     if std_level > 0 and upper_intersection is not None and lower_intersection is not None:
         if left_is_landward:
-            band_start = max(upper_intersection, lower_intersection)
-            xx = np.linspace(band_start, x_max, 200)
+            x_poly = [
+                upper_intersection, x_max, x_max, lower_intersection
+            ]
         else:
-            band_end = min(upper_intersection, lower_intersection)
-            xx = np.linspace(x_min, band_end, 200)
+            x_poly = [
+                x_min, upper_intersection, lower_intersection, x_min
+            ]
 
-        ax.fill_between(
-            xx,
-            mean_level - std_level,
+        y_poly = [
             mean_level + std_level,
+            mean_level + std_level,
+            mean_level - std_level,
+            mean_level - std_level,
+        ]
+
+        ax.fill(
+            x_poly,
+            y_poly,
             color="lightsteelblue",
             alpha=0.45,
             label="Mean ± 1 SD",
