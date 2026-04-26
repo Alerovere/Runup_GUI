@@ -5,31 +5,46 @@ import pandas as pd
 
 
 def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(9, 5))
-    ax.plot(profile_df["x"], profile_df["y"], label="Beach profile")
+    fig, ax = plt.subplots(figsize=(7.2, 4.2))
+
+    ax.plot(
+        profile_df["x"],
+        profile_df["y"],
+        linewidth=2,
+        label="Beach profile",
+    )
 
     x_min = float(profile_df["x"].min())
     x_max = float(profile_df["x"].max())
 
+    if "Total water level [m]" in results_df.columns:
+        level_col = "Total water level [m]"
+        title = "Beach profile with modelled total water levels"
+    else:
+        level_col = "Runup [m]"
+        title = "Beach profile with modelled runup elevations"
+
     for _, row in results_df.iterrows():
         ax.hlines(
-            float(row["Total water level [m]"]),
+            float(row[level_col]),
             x_min,
             x_max,
             linestyles="--",
+            linewidth=1.2,
             label=row["Model"],
         )
 
     ax.set_xlabel("Cross-shore distance x [m]")
     ax.set_ylabel("Elevation y [m]")
-    ax.set_title("Beach profile with modelled total water levels")
+    ax.set_title(title)
     ax.grid(True, alpha=0.3)
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
     return fig
 
 
 def plot_runup_twl_comparison(results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(7, 3.8))
+    fig, ax = plt.subplots(figsize=(6.8, 3.8))
 
     y = range(len(results_df))
 
@@ -49,12 +64,15 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
             label="Total water level [m]",
             zorder=3,
         )
+        title = "Runup and total water level across models"
+    else:
+        title = "Runup across models"
 
     ax.set_yticks(list(y))
     ax.set_yticklabels(results_df["Model"])
     ax.set_xlabel("Elevation [m]")
     ax.set_ylabel("Model")
-    ax.set_title("Runup and total water level across models")
+    ax.set_title(title)
     ax.grid(True, axis="x", alpha=0.3)
     ax.legend()
     fig.tight_layout()

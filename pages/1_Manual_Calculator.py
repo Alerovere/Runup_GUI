@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from src.plotting import plot_runup_twl_comparison, plot_profile_with_runup
+from src.plotting import plot_profile_with_runup, plot_runup_twl_comparison
 from src.profile_tools import read_profile
 from src.runup_models import MODEL_ORDER, RunupInputs, compute_runup
 
@@ -13,7 +13,7 @@ st.info(
     "Use this page to estimate wave runup and, optionally, total water level for a single "
     "user-defined scenario. Enter representative values for significant wave height, peak wave period, "
     "and beach slope. You can optionally include tide + storm surge and upload a beach profile "
-    "to visualize the modelled water levels on a cross-shore section."
+    "to visualize the modelled elevations on a cross-shore section."
 )
 
 with st.sidebar:
