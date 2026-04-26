@@ -5,45 +5,170 @@ import pandas as pd
 
 
 def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(4, 2))
+    import numpy as np
+    import matplotlib.pyplot as plt
 
-    ax.plot(
-        profile_df["x"],
-        profile_df["y"],
-        linewidth=2,
-        label="Beach profile",
-    )
+    profile = profile_df.copy().sort_values("x").reset_index(drop=True)
 
-    x_min = float(profile_df["x"].min())
-    x_max = float(profile_df["x"].max())
+    x = profile["x"].to_numpy(dtype=float)
+    y = profile["y"].to_numpy(dtype=float)
+
+    # Extend the profile offshore/downward to at least -2 m if needed
+    target_min = -2.0
+    if np.nanmin(y) > target_min and len(profile) >= 2:
+        x1, y1 = x[-2], y[-2]
+        x2, y2 = x[-1], y[-1]
+
+        if y2 != y1:
+            slope = (y2 - y1) / (x2 - x1)
+            if slope != 0:
+                x_ext = x2 + (target_min - y2) / slope
+                if np.isfinite(x_ext) and x_ext > x2:
+                    x_dotted = np.array([x2, x_ext])
+                    y_dotted = np.array([y2, target_min])
+                else:
+                    x_dotted = np.array([x2, x2 + 10])
+                    y_dotted = np.array([y2, target_min])
+            else:
+                x_dotted = np.array([x2, x2 + 10])
+                y_dotted = np.array([y2, target_min])
+        else:
+            x_dotted = np.array([x2, x2 + 10])
+            y_dotted = np.array([y2, target_min])
+    else:
+        x_dotted = None
+        y_dotted = None
+
+    def find_intersection_x(level, xvals, yvals):
+        intersections = []
+        for i in range(len(xvals) - 1):
+            x1, x2 = xvals[i], xvals[i + 1]
+            y1, y2 = yvals[i], yvals[i + 1]
+
+            if (y1 - level) == 0:
+                intersections.append(x1)
+
+            if (y1 - level) * (y2 - level) < 0:
+                frac = (level - y1) / (y2 - y1)
+                xi = x1 + frac * (x2 - x1)
+                intersections.append(xi)
+
+            if (y2 - level) == 0:
+                intersections.append(x2)
+
+        if not intersections:
+            return None
+
+        # Use the seaward-most intersection for horizontal water lines
+        return max(intersections)
 
     if "Total water level [m]" in results_df.columns:
         level_col = "Total water level [m]"
-        title = "Beach profile with modelled total water levels"
+        title = "Beach profile and modelled total water levels"
     else:
         level_col = "Runup [m]"
-        title = "Beach profile with modelled runup elevations"
+        title = "Beach profile and modelled runup elevations"
 
-    for _, row in results_df.iterrows():
+    levels = results_df[level_col].to_numpy(dtype=float)
+    mean_level = float(np.nanmean(levels))
+    std_level = float(np.nanstd(levels, ddof=0))
+
+    x_max = float(np.nanmax(x))
+    msl_intersection = find_intersection_x(0.0, x, y)
+    mean_intersection = find_intersection_x(mean_level, x, y)
+    upper_intersection = find_intersection_x(mean_level + std_level, x, y)
+    lower_intersection = find_intersection_x(mean_level - std_level, x, y)
+
+    fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
+
+    # Shoreline / beach profile
+    ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
+
+    # Dotted extension below zero / toward -2 m if needed
+    if x_dotted is not None and y_dotted is not None:
+        ax.plot(x_dotted, y_dotted, color="black", linewidth=1.2, linestyle=":")
+
+    # Mean sea level line
+    if msl_intersection is not None:
         ax.hlines(
-            float(row[level_col]),
-            x_min,
+            0.0,
+            msl_intersection,
             x_max,
-            linestyles="--",
-            linewidth=1.0,
-            label=row["Model"],
+            colors="royalblue",
+            linewidth=1.4,
+            label="Mean sea level",
+        )
+        ax.text(
+            x_max,
+            0.0,
+            "  MSL",
+            color="royalblue",
+            va="center",
+            ha="left",
+            fontsize=8,
+        )
+
+    # Individual model results in light gray, truncated at shoreline intersection
+    for _, row in results_df.iterrows():
+        level = float(row[level_col])
+        xi = find_intersection_x(level, x, y)
+        if xi is not None:
+            ax.hlines(
+                level,
+                xi,
+                x_max,
+                colors="lightgray",
+                linewidth=1.0,
+                alpha=0.9,
+            )
+
+    # Mean ± std band, also truncated at shoreline intersection
+    if std_level > 0 and upper_intersection is not None and lower_intersection is not None:
+        band_start = max(upper_intersection, lower_intersection)
+        xx = np.linspace(band_start, x_max, 200)
+        ax.fill_between(
+            xx,
+            mean_level - std_level,
+            mean_level + std_level,
+            color="lightsteelblue",
+            alpha=0.5,
+            label="Mean ± 1 SD",
+        )
+
+    # Mean model level
+    if mean_intersection is not None:
+        ax.hlines(
+            mean_level,
+            mean_intersection,
+            x_max,
+            colors="dimgray",
+            linewidth=1.6,
+            label="Model mean",
         )
 
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
     ax.set_ylabel("Elevation y [m]", fontsize=9)
-    ax.set_title(title, fontsize=6, pad=8)
-    ax.grid(True, alpha=0.25, linewidth=0.8)
+    ax.set_title(title, fontsize=10, pad=8)
+
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.grid(True, alpha=0.2, linewidth=0.8)
+
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.legend(fontsize=7, ncol=2, frameon=False)
+
+    ax.legend(
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        handlelength=1.6,
+        columnspacing=1.4,
+    )
+
     fig.tight_layout()
     return fig
-
 
 def plot_runup_twl_comparison(results_df: pd.DataFrame):
     plot_df = results_df.copy()
