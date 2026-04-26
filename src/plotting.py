@@ -52,7 +52,7 @@ def plot_runup_twl_comparison(results_df: pd.DataFrame):
         for name in plot_df["Model"]
     ]
 
-    fig, ax = plt.subplots(figsize=(5.8, 2.8))
+    fig, ax = plt.subplots(figsize=(5.2, 2.5))
 
     y = range(len(plot_df))
 
