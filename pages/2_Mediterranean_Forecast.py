@@ -119,9 +119,9 @@ with st.sidebar:
     )
 
 if "forecast_lat" not in st.session_state:
-    st.session_state.forecast_lat = 41.9000
+    st.session_state.forecast_lat = 44.09857
 if "forecast_lon" not in st.session_state:
-    st.session_state.forecast_lon = 12.5000
+    st.session_state.forecast_lon = 8.354871
 
 st.subheader("Forecast point coordinates")
 
