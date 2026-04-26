@@ -28,13 +28,36 @@ def plot_profile_with_runup(profile_df: pd.DataFrame, results_df: pd.DataFrame):
     return fig
 
 
-def plot_barh(df: pd.DataFrame, category_col: str, value_col: str, title: str, xlabel: str):
-    fig, ax = plt.subplots(figsize=(8, 4.5))
-    ax.barh(df[category_col], df[value_col])
-    ax.set_title(title)
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(category_col)
+def plot_runup_twl_comparison(results_df: pd.DataFrame):
+    fig, ax = plt.subplots(figsize=(7, 3.8))
+
+    y = range(len(results_df))
+
+    ax.barh(
+        y,
+        results_df["Runup [m]"],
+        height=0.55,
+        label="Runup [m]",
+    )
+
+    if "Total water level [m]" in results_df.columns:
+        ax.scatter(
+            results_df["Total water level [m]"],
+            y,
+            marker="o",
+            s=45,
+            label="Total water level [m]",
+            zorder=3,
+        )
+
+    ax.set_yticks(list(y))
+    ax.set_yticklabels(results_df["Model"])
+    ax.set_xlabel("Elevation [m]")
+    ax.set_ylabel("Model")
+    ax.set_title("Runup and total water level across models")
     ax.grid(True, axis="x", alpha=0.3)
+    ax.legend()
+    fig.tight_layout()
     return fig
 
 

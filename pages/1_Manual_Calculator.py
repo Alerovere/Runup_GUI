@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from src.plotting import plot_barh, plot_profile_with_runup
+from src.plotting import plot_runup_twl_comparison, plot_profile_with_runup
 from src.profile_tools import read_profile
 from src.runup_models import MODEL_ORDER, RunupInputs, compute_runup
 
@@ -116,26 +116,8 @@ else:
 
 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-st.pyplot(
-    plot_barh(
-        results_df,
-        "Model",
-        "Runup [m]",
-        "Comparison of wave runup across models",
-        "Runup [m]",
-    )
-)
-
-if include_swl:
-    st.pyplot(
-        plot_barh(
-            results_df,
-            "Model",
-            "Total water level [m]",
-            "Comparison of total water level across models",
-            "Total water level [m]",
-        )
-    )
+st.subheader("Model comparison")
+st.pyplot(plot_runup_twl_comparison(results_df))
 
 profile_df = read_profile(uploaded_profile)
 if profile_df is not None:
