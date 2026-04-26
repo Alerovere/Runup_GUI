@@ -91,17 +91,15 @@ with st.sidebar:
         help="Enable this to compare forecast runup or total water level against a critical elevation threshold.",
     )
 
-    threshold = (
-        st.number_input(
+    threshold = None
+    if threshold_enabled:
+        threshold = st.number_input(
             "Threshold elevation [m]",
             value=2.0,
             step=0.1,
             format="%.3f",
             help="Critical elevation used to interpret exceedance of model envelopes.",
         )
-        if threshold_enabled
-        else None
-    )
 
     fetch_button = st.button(
         "Fetch Mediterranean forecast",
@@ -123,7 +121,7 @@ if "map_zoom" not in st.session_state:
 
 st.subheader("Select forecast point")
 st.write(
-    "Click on the map to move the forecast point. The map preserves its current zoom and center as you work."
+    "Click on the map to place the forecast point. The map preserves its zoom and center."
 )
 
 m = folium.Map(
@@ -156,24 +154,40 @@ if map_data:
         st.session_state.map_zoom = int(map_data["zoom"])
 
     if map_data.get("last_clicked"):
-        st.session_state.selected_lat = float(map_data["last_clicked"]["lat"])
-        st.session_state.selected_lon = float(map_data["last_clicked"]["lng"])
+        new_lat = float(map_data["last_clicked"]["lat"])
+        new_lon = float(map_data["last_clicked"]["lng"])
+
+        if (
+            new_lat != st.session_state.selected_lat
+            or new_lon != st.session_state.selected_lon
+        ):
+            st.session_state.selected_lat = new_lat
+            st.session_state.selected_lon = new_lon
+            st.session_state.map_center = [new_lat, new_lon]
+            st.rerun()
 
 col1, col2 = st.columns(2)
 with col1:
-    st.session_state.selected_lat = st.number_input(
+    new_lat_input = st.number_input(
         "Latitude [deg]",
         value=float(st.session_state.selected_lat),
         format="%.5f",
         key="forecast_lat_input",
     )
 with col2:
-    st.session_state.selected_lon = st.number_input(
+    new_lon_input = st.number_input(
         "Longitude [deg]",
         value=float(st.session_state.selected_lon),
         format="%.5f",
         key="forecast_lon_input",
     )
+
+if (
+    new_lat_input != st.session_state.selected_lat
+    or new_lon_input != st.session_state.selected_lon
+):
+    st.session_state.selected_lat = float(new_lat_input)
+    st.session_state.selected_lon = float(new_lon_input)
 
 st.caption(
     f"Selected coordinates: lat = {st.session_state.selected_lat:.5f}, "
@@ -228,7 +242,11 @@ if threshold is not None:
     )
 
 st.subheader("Weekly wave forcing")
-st.pyplot(plot_wave_timeseries(envelope_df), clear_figure=False, use_container_width=True)
+st.pyplot(
+    plot_wave_timeseries(envelope_df),
+    clear_figure=False,
+    use_container_width=True,
+)
 
 st.subheader("Weekly runup envelope")
 st.pyplot(
@@ -272,7 +290,7 @@ st.markdown(
     """
 Generated using **E.U. Copernicus Marine Service Information**.
 
-Recommended product citation:  
+**Recommended product citation**  
 *Mediterranean Sea Waves Analysis and Forecast. E.U. Copernicus Marine Service Information (CMEMS). Marine Data Store (MDS). DOI: 10.48670/mds-00373 (accessed on 26 Apr 2026).*
 
 This application uses Copernicus Marine data to generate a derivative educational product.  
