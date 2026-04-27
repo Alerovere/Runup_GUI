@@ -464,15 +464,15 @@ def plot_wave_timeseries(envelope_df: pd.DataFrame):
 
     # Significant wave height
     axes[0].plot(time, envelope_df["hs_mean"], color="skyblue", linewidth=2)
-    axes[0].set_ylabel("Hs [m]", fontsize=9)
+    axes[0].set_ylabel("Significant wave height v", fontsize=9)
     axes[0].set_title("Wave and water-level forcing", fontsize=10, pad=8)
 
     # Peak period
     axes[1].plot(time, envelope_df["tp_mean"], color="goldenrod", linewidth=2)
-    axes[1].set_ylabel("Tp [s]", fontsize=9)
+    axes[1].set_ylabel("Peak wave periods [s]", fontsize=9)
 
     # Water level
-    axes[2].plot(time, envelope_df["wl_mean"], color="cornflowerblue", linewidth=2)
+    axes[2].plot(time, envelope_df["Water level [m]"], color="cornflowerblue", linewidth=2)
     axes[2].set_ylabel("WL [m]", fontsize=9)
 
     # Shared styling
