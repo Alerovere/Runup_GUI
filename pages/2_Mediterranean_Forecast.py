@@ -428,16 +428,20 @@ st.download_button(
 st.subheader("Copernicus Marine data source and licence")
 
 st.caption(
-    "This page uses the Copernicus Marine product "
-    "'Mediterranean Sea Waves Analysis and Forecast' "
-    "(Product ID: MEDSEA_ANALYSISFORECAST_WAV_006_017; DOI: 10.48670/mds-00373)."
+    "This page uses two Copernicus Marine products:"
 )
 
-if water_level_mode == "Copernicus mean-removed sea-level signal":
-    st.caption(
-        "It also uses the Copernicus Marine Mediterranean sea-level forecast dataset "
-        f"({MED_SEALEVEL_DATASET_ID}) and derives a mean-removed sea-level signal from sea surface height above geoid."
-    )
+st.markdown(
+    """
+- **Mediterranean Sea Waves Analysis and Forecast**  
+  Product ID: `MEDSEA_ANALYSISFORECAST_WAV_006_017`  
+  DOI: `10.48670/mds-00373`
+
+- **Mediterranean Sea Physics Analysis and Forecast**  
+  Product ID: `MEDSEA_ANALYSISFORECAST_PHY_006_013`  
+  DOI: `10.48670/mds-00359`
+"""
+)
 
 st.caption(
     "Source: European Union, Copernicus Marine Service Information or Data, implemented by Mercator Ocean International."
@@ -447,14 +451,20 @@ st.markdown(
     """
 Generated using **E.U. Copernicus Marine Service Information**.
 
-**Recommended product citation**  
-*Mediterranean Sea Waves Analysis and Forecast. E.U. Copernicus Marine Service Information (CMEMS). Marine Data Store (MDS). DOI: 10.48670/mds-00373 (accessed on 26 Apr 2026).*
+**Recommended product citations**
 
-This application uses Copernicus Marine data to generate a derivative educational product.  
+*Mediterranean Sea Waves Analysis and Forecast. E.U. Copernicus Marine Service Information (CMEMS). Marine Data Store (MDS). DOI: 10.48670/mds-00373 (accessed on 27 Apr 2026).*
+
+*Mediterranean Sea Physics Analysis and Forecast. E.U. Copernicus Marine Service Information (CMEMS). Marine Data Store (MDS). DOI: 10.48670/mds-00359 (accessed on 27 Apr 2026).*
+
+This application uses Copernicus Marine products to generate a derivative educational product.  
 Use of Copernicus Marine information remains subject to the Copernicus Marine licence and terms of service.
 """
 )
 
 st.info(
-    "Copernicus Marine forecast data shown here are regional model outputs and may differ from local nearshore conditions. This page is intended for scientific exploration and teaching, not for operational coastal-risk decisions."
+    "The wave component is derived from the Mediterranean wave forecast product. "
+    "When selected, the water-level component is derived from the Mediterranean physics forecast "
+    "using sea surface height above geoid, mean-removed over the downloaded period. "
+    "These are regional model outputs and may differ from local nearshore conditions or tide-gauge records."
 )
