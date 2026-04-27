@@ -624,3 +624,131 @@ def plot_forecast_model_timeseries(
 
     fig.tight_layout()
     return fig
+
+def plot_wave_rose(df: pd.DataFrame):
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    plot_df = df.copy()
+    dirs = np.mod(plot_df["Dir [deg]"].to_numpy(dtype=float), 360.0)
+    hs = plot_df["Hs [m]"].to_numpy(dtype=float)
+
+    dir_edges = np.arange(0, 361, 45)
+    dir_centers = np.deg2rad((dir_edges[:-1] + dir_edges[1:]) / 2.0)
+    width = np.deg2rad(45)
+
+    hs_bins = [0, 1, 2, 3, 4, 6, np.inf]
+    hs_labels = ["0–1", "1–2", "2–3", "3–4", "4–6", ">6"]
+
+    counts = np.zeros((len(hs_labels), len(dir_centers)))
+
+    dir_idx = np.digitize(dirs, dir_edges, right=False) - 1
+    dir_idx[dir_idx == len(dir_centers)] = 0
+
+    hs_idx = np.digitize(hs, hs_bins, right=False) - 1
+    hs_idx = np.clip(hs_idx, 0, len(hs_labels) - 1)
+
+    for i in range(len(hs)):
+        counts[hs_idx[i], dir_idx[i]] += 1
+
+    counts_pct = counts / max(counts.sum(), 1) * 100.0
+
+    fig, ax = plt.subplots(figsize=(5.8, 5.2), dpi=160, subplot_kw={"projection": "polar"})
+    bottom = np.zeros(len(dir_centers))
+
+    colors = ["#d6ecff", "#9ed0ff", "#66b3ff", "#3399ff", "#0073e6", "#004c99"]
+
+    for i, label in enumerate(hs_labels):
+        ax.bar(
+            dir_centers,
+            counts_pct[i],
+            width=width,
+            bottom=bottom,
+            color=colors[i],
+            edgecolor="white",
+            linewidth=0.8,
+            align="center",
+            label=f"Hs {label} m",
+        )
+        bottom += counts_pct[i]
+
+    ax.set_theta_zero_location("N")
+    ax.set_theta_direction(-1)
+    ax.set_title("Wave rose", fontsize=10, pad=12)
+    ax.tick_params(labelsize=8)
+    ax.legend(
+        frameon=False,
+        fontsize=7,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.12),
+        ncol=3,
+    )
+    fig.tight_layout()
+    return fig
+
+
+def plot_wave_climate_timeseries(df: pd.DataFrame):
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(7.2, 5.6),
+        dpi=160,
+        sharex=True,
+    )
+
+    time = pd.to_datetime(df["time"])
+
+    axes[0].plot(time, df["Hs [m]"], color="skyblue", linewidth=1.5)
+    axes[0].set_ylabel("Hs [m]", fontsize=9)
+    axes[0].set_title("Extracted wave time series", fontsize=10, pad=8)
+
+    axes[1].plot(time, df["Tp [s]"], color="goldenrod", linewidth=1.5)
+    axes[1].set_ylabel("Tp [s]", fontsize=9)
+
+    axes[2].plot(time, df["Dir [deg]"], color="slategray", linewidth=1.2)
+    axes[2].set_ylabel("Dir [deg]", fontsize=9)
+
+    for ax in axes:
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(False)
+
+    axes[2].xaxis.set_major_locator(mdates.YearLocator(base=2))
+    axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    axes[2].tick_params(axis="x", labelsize=8, rotation=0)
+    axes[2].set_xlabel("Date", fontsize=9)
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_return_values(return_df: pd.DataFrame):
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6.4, 4.0), dpi=160)
+
+    ax.plot(
+        return_df["Return period [years]"],
+        return_df["Return Hs [m]"],
+        marker="o",
+        linewidth=1.8,
+        color="darkblue",
+    )
+
+    ax.set_xscale("log")
+    ax.set_xlabel("Return period [years]", fontsize=9)
+    ax.set_ylabel("Return Hs [m]", fontsize=9)
+    ax.set_title("Sector-based return values of Hs", fontsize=10, pad=8)
+
+    ax.tick_params(axis="x", labelsize=8)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(False)
+
+    fig.tight_layout()
+    return fig

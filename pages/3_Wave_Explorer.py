@@ -1,0 +1,242 @@
+import pandas as pd
+import streamlit as st
+
+from src.copernicus_wave_climate import fetch_copernicus_wave_climate_timeseries
+from src.extremes import (
+    annual_maxima,
+    build_return_value_table,
+    filter_by_sector,
+    summarize_wave_series,
+)
+from src.plotting import (
+    fig_to_png_bytes,
+    plot_return_values,
+    plot_wave_climate_timeseries,
+    plot_wave_rose,
+)
+
+
+st.title("Wave Explorer")
+
+st.info(
+    "Use this page to explore the long-term wave climate at a single offshore point in the Mediterranean. "
+    "You can inspect the directional distribution, filter by sector, and estimate return values of significant wave height."
+)
+
+st.markdown(
+    """
+This page uses a **single-point historical wave time series** from Copernicus Marine reanalysis.
+Choose a point that is **reasonably offshore**, so that it represents open-water forcing rather than a shoreline or harbour grid cell.
+"""
+)
+
+with st.sidebar:
+    st.header("Wave Explorer inputs")
+
+    start_date = st.date_input(
+        "Start date",
+        value=pd.Timestamp("1993-01-01").date(),
+        help="Beginning of the historical wave time series.",
+    )
+
+    end_date = st.date_input(
+        "End date",
+        value=pd.Timestamp("2024-12-31").date(),
+        help="End of the historical wave time series.",
+    )
+
+    sector_name = st.selectbox(
+        "Directional sector",
+        [
+            "All directions",
+            "N", "NE", "E", "SE", "S", "SW", "W", "NW",
+        ],
+        help="Filter the time series by wave direction before return-value estimation.",
+    )
+
+    return_periods = st.multiselect(
+        "Return periods to display [years]",
+        [1, 2, 5, 10, 20, 50],
+        default=[1, 5, 10, 20],
+        help="Return periods used for Hs return-value estimation.",
+    )
+
+    fetch_button = st.button(
+        "Fetch wave climate",
+        type="primary",
+        use_container_width=True,
+    )
+
+if "wave_explorer_lat" not in st.session_state:
+    st.session_state.wave_explorer_lat = 44.046833
+if "wave_explorer_lon" not in st.session_state:
+    st.session_state.wave_explorer_lon = 8.389593
+
+st.subheader("Point coordinates")
+
+col1, col2 = st.columns(2)
+with col1:
+    st.session_state.wave_explorer_lat = st.number_input(
+        "Latitude [deg]",
+        value=float(st.session_state.wave_explorer_lat),
+        format="%.5f",
+        key="wave_explorer_lat_input",
+        help="Latitude of the offshore wave-climate point.",
+    )
+with col2:
+    st.session_state.wave_explorer_lon = st.number_input(
+        "Longitude [deg]",
+        value=float(st.session_state.wave_explorer_lon),
+        format="%.5f",
+        key="wave_explorer_lon_input",
+        help="Longitude of the offshore wave-climate point.",
+    )
+
+st.caption(
+    f"Selected coordinates: lat = {st.session_state.wave_explorer_lat:.5f}, "
+    f"lon = {st.session_state.wave_explorer_lon:.5f}"
+)
+
+map_df = pd.DataFrame(
+    {
+        "lat": [st.session_state.wave_explorer_lat],
+        "lon": [st.session_state.wave_explorer_lon],
+    }
+)
+st.map(map_df, zoom=6, use_container_width=True)
+
+if not fetch_button:
+    st.info("Enter an offshore point, choose a time range, and click Fetch wave climate.")
+    st.stop()
+
+if start_date >= end_date:
+    st.error("End date must be later than start date.")
+    st.stop()
+
+if not return_periods:
+    st.error("Select at least one return period.")
+    st.stop()
+
+username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
+password = st.secrets.get("COPERNICUSMARINE_PASSWORD") or st.secrets.get("COPERNICUS_PASSWORD")
+
+if not username or not password:
+    st.error("Copernicus credentials are missing in Streamlit secrets.")
+    st.stop()
+
+with st.spinner("Downloading historical wave time series..."):
+    climate_df, metadata = fetch_copernicus_wave_climate_timeseries(
+        longitude=st.session_state.wave_explorer_lon,
+        latitude=st.session_state.wave_explorer_lat,
+        start_date=start_date,
+        end_date=end_date,
+        username=username,
+        password=password,
+    )
+
+sector_df = filter_by_sector(climate_df, sector_name)
+
+if sector_df.empty:
+    st.warning("No wave data are available in the selected directional sector for this period.")
+    st.stop()
+
+stats = summarize_wave_series(climate_df)
+sector_stats = summarize_wave_series(sector_df)
+
+st.caption(f"Wave reanalysis dataset ID: {metadata['dataset_id']}")
+st.caption(
+    f"Using variables: Hs = {metadata['hs_var']}, Tp = {metadata['tp_var']}, Direction = {metadata['dir_var']}"
+)
+
+st.subheader("Wave climate summary")
+
+st.markdown(
+    f"""
+**Selected period**  
+{pd.to_datetime(climate_df['time'].min()).strftime("%A, %B")} {pd.to_datetime(climate_df['time'].min()).day}, {pd.to_datetime(climate_df['time'].min()).year}
+to
+{pd.to_datetime(climate_df['time'].max()).strftime("%A, %B")} {pd.to_datetime(climate_df['time'].max()).day}, {pd.to_datetime(climate_df['time'].max()).year}
+
+**Directional sector used for extremes**  
+{sector_name}
+"""
+)
+
+c1, c2, c3 = st.columns(3)
+c1.metric("Mean Hs (all data)", f"{stats['mean_hs']:.2f} m")
+c2.metric("Max Hs (all data)", f"{stats['max_hs']:.2f} m")
+c3.metric("95th percentile Hs", f"{stats['p95_hs']:.2f} m")
+
+st.subheader("Wave rose")
+
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+with col2:
+    fig_rose = plot_wave_rose(climate_df)
+    rose_png = fig_to_png_bytes(fig_rose)
+    st.pyplot(fig_rose, clear_figure=False, use_container_width=False)
+
+st.download_button(
+    label="Download wave rose (PNG)",
+    data=rose_png,
+    file_name="wave_rose.png",
+    mime="image/png",
+)
+
+st.caption(
+    "The wave rose summarizes the directional distribution of wave occurrence at the selected offshore point."
+)
+
+st.subheader("Extracted wave time series")
+
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+with col2:
+    fig_ts = plot_wave_climate_timeseries(climate_df)
+    ts_png = fig_to_png_bytes(fig_ts)
+    st.pyplot(fig_ts, clear_figure=False, use_container_width=False)
+
+st.download_button(
+    label="Download wave time-series plot (PNG)",
+    data=ts_png,
+    file_name="wave_timeseries.png",
+    mime="image/png",
+)
+
+st.caption(
+    "This figure shows the historical significant wave height, peak period, and mean wave direction extracted at the selected point."
+)
+
+st.subheader("Return values by directional sector")
+
+annual_max_df = annual_maxima(sector_df)
+return_df = build_return_value_table(
+    annual_max_df=annual_max_df,
+    return_periods=sorted(return_periods),
+)
+
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+with col2:
+    fig_ret = plot_return_values(return_df)
+    ret_png = fig_to_png_bytes(fig_ret)
+    st.pyplot(fig_ret, clear_figure=False, use_container_width=False)
+
+st.download_button(
+    label="Download return-value plot (PNG)",
+    data=ret_png,
+    file_name="wave_return_values.png",
+    mime="image/png",
+)
+
+st.caption(
+    "Return values are estimated from annual maxima of Hs within the selected directional sector. "
+    "The associated peak period is derived from nearby observed extreme events."
+)
+
+st.dataframe(return_df, use_container_width=True, hide_index=True)
+
+csv_data = climate_df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download extracted wave time series (CSV)",
+    data=csv_data,
+    file_name="wave_climate_timeseries.csv",
+    mime="text/csv",
+)
