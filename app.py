@@ -18,7 +18,7 @@ coastal flooding, overtopping, or the possible inundation of low-lying infrastru
 """
 )
 
-col1, col2, col3 = st.columns([1, 2, 1])
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
     st.image(
         "https://media.springernature.com/full/springer-static/image/art%3A10.1038%2Fs41598-017-01362-7/MediaObjects/41598_2017_1362_Fig1_HTML.jpg?as=webp",
@@ -40,35 +40,103 @@ either for a **single user-defined scenario** or for a **short Mediterranean for
 
 **Manual calculator**  
 This page is designed for single scenarios. You can enter significant wave height, peak period,
-beach slope, and optionally a water-level contribution and a critical elevation threshold.
-You can also upload a beach profile to visualize how the modelled runup or total water level
-intersects the shore.
-
-It is useful for:
-- comparing empirical runup models
-- testing sensitivity to waves, slope, and water level
-- visualizing possible exceedance of a critical elevation
-- teaching how model spread affects coastal water-level estimates
+beach slope, and optionally a water-level contribution, a critical elevation threshold, and a beach profile.
+The app compares several empirical runup models, highlights threshold exceedance, and can project the results onto a shoreline profile.
 
 **Mediterranean forecast**  
-This page is designed for short-term exploration of forecast conditions at a selected offshore point
-in the Mediterranean. The app extracts wave conditions from Copernicus Marine and computes a time-varying
-runup or total water level signal across the available empirical models.
-
-Depending on the selected option, total water level can be estimated using:
-- a constant user-defined water-level offset
-- or a **Copernicus mean-removed sea-level signal**
-
-This page is useful for:
-- identifying the most energetic forecast day
-- exploring how runup evolves through the forecast window
-- checking possible exceedance of a critical threshold using a daily traffic-light summary
+This page is designed for short-term exploration of forecast conditions at a selected offshore point in the Mediterranean.
+The app extracts wave conditions from Copernicus Marine and computes a time-varying runup or total water level signal across the available empirical models.
+Depending on the selected option, total water level can be estimated using either a constant user-defined offset
+or a **Copernicus mean-removed sea-level signal** derived from modelled sea surface height.
 
 ### Important note
 
 This app is intended for **scientific exploration, teaching, and preliminary screening only**.  
 It is **not** a substitute for site-specific engineering analysis, hazard assessment, or operational coastal-risk decisions.  
 Use at your own risk.
+"""
+)
+
+st.subheader("Acknowledgements")
+
+st.markdown(
+    """
+This application builds on the Python package **py-wave-runup**, which provides implementations of empirical wave runup models for coastal scientists and engineers.
+"""
+)
+
+st.caption("py-wave-runup repository: https://github.com/chrisleaman/py-wave-runup")
+
+st.markdown(
+    """
+The Mediterranean forecast page uses two Copernicus Marine products:
+
+- **Mediterranean Sea Waves Analysis and Forecast**  
+  Product ID: `MEDSEA_ANALYSISFORECAST_WAV_006_017`  
+  DOI: `10.48670/mds-00373`
+
+- **Mediterranean Sea Physics Analysis and Forecast**  
+  Product ID: `MEDSEA_ANALYSISFORECAST_PHY_006_013`  
+  DOI: `10.48670/mds-00359`
+"""
+)
+
+st.caption(
+    "Source: European Union, Copernicus Marine Service Information or Data, implemented by Mercator Ocean International."
+)
+
+st.markdown(
+    """
+Generated using **E.U. Copernicus Marine Service Information**.
+"""
+)
+
+st.subheader("Key references")
+
+st.markdown(
+    """
+Vitousek, S., Barnard, P. L., Fletcher, C. H., Frazer, N., Erikson, L., & Storlazzi, C. D. (2017).  
+*Doubling of coastal flooding frequency within decades due to sea-level rise.*  
+**Scientific Reports, 7**, 1399.  
+https://doi.org/10.1038/s41598-017-01362-7
+
+Stockdon, H. F., Holman, R. A., Howd, P. A., & Sallenger, A. H. (2006).  
+*Empirical parameterization of setup, swash, and runup.*  
+**Coastal Engineering, 53**(7), 573-588.  
+https://doi.org/10.1016/j.coastaleng.2005.12.005
+
+Holman, R. A. (1986).  
+*Extreme value statistics for wave run-up on a natural beach.*  
+**Coastal Engineering, 9**, 527-544.  
+https://doi.org/10.1016/0378-3839(86)90002-5
+
+Nielsen, P. (2009).  
+*Coastal and Estuarine Processes.*  
+World Scientific.
+
+Ruggiero, P., Komar, P. D., McDougal, W. G., Marra, J. J., & Beach, R. A. (2001).  
+*Wave runup, extreme water levels and the erosion of properties backing beaches.*  
+**Journal of Coastal Research, 17**, 407-419.
+
+Vousdoukas, M. I., Wziatek, D., & Almeida, L. P. (2012).  
+*Coastal vulnerability assessment based on video wave run-up observations at a mesotidal, steep-sloped beach.*  
+**Ocean Dynamics, 62**, 123-137.  
+https://doi.org/10.1007/s10236-011-0480-x
+
+Atkinson, A. L., Power, H. E., Moura, T., Hammond, T., Callaghan, D. P., & Baldock, T. E. (2017).  
+*Assessment of runup predictions by empirical models on non-truncated beaches on the south-east Australian coast.*  
+**Coastal Engineering, 119**, 15-31.  
+https://doi.org/10.1016/j.coastaleng.2016.10.001
+
+Passarella, M., Goldstein, E. B., De Muro, S., & Coco, G. (2018).  
+*The use of genetic programming to develop a predictor of swash excursion on sandy beaches.*  
+**Natural Hazards and Earth System Sciences, 18**, 599-611.  
+https://doi.org/10.5194/nhess-18-599-2018
+
+Senechal, N., Coco, G., Bryan, K. R., & Holman, R. A. (2011).  
+*Wave runup during extreme storm conditions.*  
+**Journal of Geophysical Research, 116**.  
+https://doi.org/10.1029/2010JC006819
 """
 )
 
