@@ -35,13 +35,13 @@ with st.sidebar:
 
     start_date = st.date_input(
         "Start date",
-        value=pd.Timestamp("1993-01-01").date(),
-        help="Beginning of the historical wave time series.",
+    value=pd.Timestamp("1985-01-01").date(),
+    help="Beginning of the historical wave time series.",
     )
 
     end_date = st.date_input(
         "End date",
-        value=pd.Timestamp("2024-12-31").date(),
+        value=pd.Timestamp("2026-03-31").date(),
         help="End of the historical wave time series.",
     )
 
@@ -226,13 +226,19 @@ st.download_button(
     mime="image/png",
 )
 
+return_csv = return_df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download return-value table (CSV)",
+    data=return_csv,
+    file_name="wave_return_values.csv",
+    mime="text/csv",
+)
+
 st.caption(
     "Return values are estimated from annual maxima of Hs within the selected directional sector using a Gumbel distribution. "
     "The associated peak period is derived from nearby observed extreme events. "
     "Long return periods such as 50 and 100 years should be interpreted cautiously, especially when the available record length is limited."
 )
-
-st.dataframe(return_df, use_container_width=True, hide_index=True)
 
 csv_data = climate_df.to_csv(index=False).encode("utf-8")
 st.download_button(

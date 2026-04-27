@@ -653,7 +653,7 @@ def plot_wave_rose(df: pd.DataFrame):
 
     counts_pct = counts / max(counts.sum(), 1) * 100.0
 
-    fig, ax = plt.subplots(figsize=(5.8, 5.2), dpi=160, subplot_kw={"projection": "polar"})
+    fig, ax = plt.subplots(figsize=(3.5, 3.1), dpi=160, subplot_kw={"projection": "polar"})
     bottom = np.zeros(len(dir_centers))
 
     colors = ["#d6ecff", "#9ed0ff", "#66b3ff", "#3399ff", "#0073e6", "#004c99"]
