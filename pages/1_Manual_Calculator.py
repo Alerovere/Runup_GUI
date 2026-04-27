@@ -175,7 +175,7 @@ if include_threshold and threshold is not None:
 
 st.subheader("Model comparison")
 
-col1, col2, col3 = st.columns([0.8, 3.4, 0.8])
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
     fig_compare = plot_runup_twl_comparison(
         results_df,
@@ -226,7 +226,7 @@ if profile_df is not None:
     else:
         st.subheader("Beach profile")
 
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
     with col2:
         fig_profile = plot_profile_with_runup(
             profile_df,
