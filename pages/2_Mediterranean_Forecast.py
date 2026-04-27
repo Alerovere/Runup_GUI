@@ -8,7 +8,18 @@ from src.copernicus_sealevel import (
     fetch_copernicus_sealevel_timeseries,
     merge_wave_and_sealevel,
 )
-from src.plotting import plot_envelope, plot_wave_timeseries
+from src.forecast_thresholds import (
+    build_daily_threshold_status,
+    build_threshold_timeseries,
+    describe_threshold_logic,
+    describe_worst_status,
+    summarize_threshold_status,
+)
+from src.plotting import (
+    plot_daily_threshold_bar,
+    plot_envelope,
+    plot_wave_timeseries,
+)
 from src.runup_models import RunupInputs, compute_runup
 
 
@@ -71,38 +82,6 @@ def compute_forecast_envelope(
     return detail_df, envelope_df
 
 
-def compute_forecast_risk_status(envelope_df: pd.DataFrame, compare_col: str, threshold: float):
-    values = envelope_df[compare_col].to_numpy(dtype=float)
-
-    mean_val = float(np.mean(values))
-    std_val = float(np.std(values, ddof=0))
-    max_val = float(np.max(values))
-
-    if threshold > max_val:
-        return (
-            "green",
-            "GREEN",
-            f"The critical threshold ({threshold:.2f} m) is above all forecast {compare_col} values.",
-        )
-    if threshold > mean_val + std_val:
-        return (
-            "#d8b400",
-            "YELLOW",
-            f"The threshold ({threshold:.2f} m) is exceeded only by the upper part of the forecast distribution.",
-        )
-    if threshold > mean_val - std_val:
-        return (
-            "orange",
-            "ORANGE",
-            f"The threshold ({threshold:.2f} m) lies within the mean ± 1 SD range of the forecast {compare_col} values.",
-        )
-    return (
-        "red",
-        "RED",
-        f"The threshold ({threshold:.2f} m) is below the mean - 1 SD level, indicating robust exceedance.",
-    )
-
-
 st.title("Mediterranean forecast")
 
 st.info(
@@ -157,7 +136,8 @@ with st.sidebar:
         )
     else:
         st.caption(
-            "Water level will be taken from Copernicus Mediterranean sea surface height above geoid, then centered by subtracting the mean of the downloaded period."
+            "Water level will be taken from Copernicus Mediterranean sea surface height above geoid, "
+            "then centered by subtracting the mean of the downloaded period."
         )
 
     threshold_enabled = st.checkbox(
@@ -264,7 +244,7 @@ with st.spinner("Downloading Mediterranean forecast data..."):
         )
         forcing_df = merge_wave_and_sealevel(wave_df, sealevel_df)
 
-    _, envelope_df = compute_forecast_envelope(
+    detail_df, envelope_df = compute_forecast_envelope(
         forcing_df,
         slope=slope,
         water_level_mode=water_level_mode,
@@ -340,34 +320,47 @@ else:
     )
 
 if threshold is not None:
-    compare_col = "runup_mean"
+    compare_value_col = "Runup [m]"
     compare_label = "runup"
 
     if show_twl:
-        compare_col = "twl_mean"
+        compare_value_col = "Total water level [m]"
         compare_label = "total water level"
 
-    risk_color, risk_label, risk_text = compute_forecast_risk_status(
-        envelope_df,
-        compare_col,
-        float(threshold),
+    threshold_ts_df = build_threshold_timeseries(
+        detail_df=detail_df,
+        value_col=compare_value_col,
+        threshold=float(threshold),
     )
 
-    st.markdown(
-        f"""
-**Threshold interpretation**  
-The critical threshold is evaluated against forecast **{compare_label}**.  
-Green = threshold above all forecast values.  
-Yellow = threshold exceeded only by the upper part of the forecast distribution.  
-Orange = threshold lies within the mean ± 1 SD range.  
-Red = threshold is below mean - 1 SD, indicating robust exceedance.
-"""
+    daily_status_df = build_daily_threshold_status(threshold_ts_df)
+    threshold_summary = summarize_threshold_status(threshold_ts_df)
+
+    st.subheader("Daily threshold status")
+    st.pyplot(
+        plot_daily_threshold_bar(
+            daily_status_df,
+            title=f"Daily threshold status for forecast {compare_label}",
+        ),
+        clear_figure=False,
+        use_container_width=True,
     )
 
+    st.markdown(describe_threshold_logic(compare_label, float(threshold)))
+
     st.markdown(
-        f"<div style='padding:0.6rem 0.8rem;border-radius:0.5rem;background:{risk_color};color:white;font-weight:600;'>{risk_text}</div>",
+        f"<div style='padding:0.6rem 0.8rem;border-radius:0.5rem;background:{threshold_summary['worst_color']};color:white;font-weight:600;'>{describe_worst_status(threshold_summary['worst_status'], float(threshold), compare_label)}</div>",
         unsafe_allow_html=True,
     )
+
+    if threshold_summary["first_exceedance"] is not None:
+        first_ex = threshold_summary["first_exceedance"]
+        st.caption(
+            "First non-green exceedance: "
+            + first_ex.strftime("%A, %B ")
+            + str(first_ex.day)
+            + first_ex.strftime(", %Y %H:%M")
+        )
 
 st.subheader("Weekly wave forcing")
 st.pyplot(
@@ -391,21 +384,22 @@ st.caption(
     "The shaded band shows the minimum-to-maximum spread across empirical runup models, while the central line shows the mean across models."
 )
 
-st.subheader("Weekly total water level envelope")
-st.pyplot(
-    plot_envelope(envelope_df, threshold=threshold, mode="twl"),
-    clear_figure=False,
-    use_container_width=True,
-)
+if show_twl:
+    st.subheader("Weekly total water level envelope")
+    st.pyplot(
+        plot_envelope(envelope_df, threshold=threshold, mode="twl"),
+        clear_figure=False,
+        use_container_width=True,
+    )
 
-if water_level_mode == "Copernicus mean-removed sea-level signal":
-    st.caption(
-        "This total water level envelope is computed as modelled runup plus a mean-removed Copernicus Mediterranean sea-level signal."
-    )
-else:
-    st.caption(
-        "This total water level envelope is computed as modelled runup plus the user-defined tide + storm surge offset."
-    )
+    if water_level_mode == "Copernicus mean-removed sea-level signal":
+        st.caption(
+            "This total water level envelope is computed as modelled runup plus a mean-removed Copernicus Mediterranean sea-level signal."
+        )
+    else:
+        st.caption(
+            "This total water level envelope is computed as modelled runup plus the user-defined tide + storm surge offset."
+        )
 
 st.subheader("Envelope data")
 st.dataframe(envelope_df, use_container_width=True, hide_index=True)

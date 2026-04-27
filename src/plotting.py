@@ -459,3 +459,51 @@ def plot_wave_timeseries(envelope_df: pd.DataFrame):
     ax.legend()
     fig.autofmt_xdate()
     return fig
+
+
+def plot_daily_threshold_bar(daily_status_df: pd.DataFrame, title: str = "Daily threshold status"):
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(6.0, 1.8), dpi=160)
+
+    for i, row in daily_status_df.iterrows():
+        ax.bar(
+            i,
+            1,
+            color=row["color"],
+            width=0.95,
+            edgecolor="white",
+            linewidth=1.0,
+        )
+
+    ax.set_xlim(-0.5, len(daily_status_df) - 0.5)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([])
+
+    labels = [
+        pd.to_datetime(str(d)).strftime("%a\n%d %b")
+        for d in daily_status_df["date"]
+    ]
+    ax.set_xticks(range(len(daily_status_df)))
+    ax.set_xticklabels(labels, fontsize=8)
+
+    ax.set_title(title, fontsize=10, pad=8)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(False)
+
+    for i, row in daily_status_df.iterrows():
+        ax.text(
+            i,
+            0.5,
+            row["label"][0],
+            ha="center",
+            va="center",
+            fontsize=8,
+            color="white",
+            fontweight="bold",
+        )
+
+    fig.tight_layout()
+    return fig
