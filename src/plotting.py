@@ -449,15 +449,51 @@ def plot_envelope(envelope_df: pd.DataFrame, threshold: Optional[float], mode: s
 
 
 def plot_wave_timeseries(envelope_df: pd.DataFrame):
-    fig, ax = plt.subplots(figsize=(10, 4.5))
-    ax.plot(envelope_df["time"], envelope_df["hs_mean"], label="Hs [m]")
-    ax.plot(envelope_df["time"], envelope_df["tp_mean"], label="Tp [s]")
-    ax.set_title("Forecast wave conditions at selected point")
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Value")
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.autofmt_xdate()
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(
+        3,
+        1,
+        figsize=(7.2, 5.6),
+        dpi=160,
+        sharex=True,
+    )
+
+    time = pd.to_datetime(envelope_df["time"])
+
+    # Significant wave height
+    axes[0].plot(time, envelope_df["hs_mean"], color="skyblue", linewidth=2)
+    axes[0].set_ylabel("Hs [m]", fontsize=9)
+    axes[0].set_title("Wave and water-level forcing", fontsize=10, pad=8)
+
+    # Peak period
+    axes[1].plot(time, envelope_df["tp_mean"], color="goldenrod", linewidth=2)
+    axes[1].set_ylabel("Tp [s]", fontsize=9)
+
+    # Water level
+    axes[2].plot(time, envelope_df["wl_mean"], color="cornflowerblue", linewidth=2)
+    axes[2].set_ylabel("WL [m]", fontsize=9)
+
+    # Shared styling
+    for ax in axes:
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(False)
+
+    # Date formatting: Apr 4, Apr 5, ...
+    axes[2].xaxis.set_major_locator(mdates.DayLocator())
+    try:
+        axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    except ValueError:
+        # Fallback for systems that do not support %-d
+        axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+
+    axes[2].tick_params(axis="x", labelsize=8, rotation=0)
+    axes[2].set_xlabel("Date", fontsize=9)
+
+    fig.tight_layout()
     return fig
 
 
