@@ -472,8 +472,8 @@ def plot_wave_timeseries(envelope_df: pd.DataFrame):
     axes[1].set_ylabel("Peak wave periods [s]", fontsize=9)
 
     # Water level
-    axes[2].plot(time, envelope_df["Water level [m]"], color="cornflowerblue", linewidth=2)
-    axes[2].set_ylabel("WL [m]", fontsize=9)
+    axes[2].plot(time, envelope_df["wl_mean"], color="cornflowerblue", linewidth=2)
+    axes[2].set_ylabel("Water level [m]", fontsize=9)
 
     # Shared styling
     for ax in axes:
