@@ -16,8 +16,9 @@ from src.forecast_thresholds import (
     summarize_threshold_status,
 )
 from src.plotting import (
+    fig_to_png_bytes,
     plot_daily_threshold_bar,
-    plot_envelope,
+    plot_forecast_model_timeseries,
     plot_wave_timeseries,
 )
 from src.runup_models import RunupInputs, compute_runup
@@ -373,33 +374,45 @@ st.caption(
     "This figure shows the forecast wave forcing extracted at the selected offshore point."
 )
 
-st.subheader("Weekly runup envelope")
-st.pyplot(
-    plot_envelope(envelope_df, threshold=threshold, mode="runup"),
-    clear_figure=False,
-    use_container_width=True,
-)
+plot_value_col = "Runup [m]"
+plot_title = "Forecast runup across empirical models"
 
-st.caption(
-    "The shaded band shows the minimum-to-maximum spread across empirical runup models, while the central line shows the mean across models."
+if show_twl:
+    plot_value_col = "Total water level [m]"
+    plot_title = "Forecast total water level across empirical models"
+
+st.subheader("Forecast model time series")
+
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+with col2:
+    fig_forecast = plot_forecast_model_timeseries(
+        detail_df=detail_df,
+        value_col=plot_value_col,
+        threshold=threshold,
+        title=plot_title,
+    )
+    forecast_png = fig_to_png_bytes(fig_forecast)
+    st.pyplot(fig_forecast, clear_figure=False, use_container_width=False)
+
+st.download_button(
+    label="Download forecast graph (PNG)",
+    data=forecast_png,
+    file_name="forecast_model_timeseries.png",
+    mime="image/png",
 )
 
 if show_twl:
-    st.subheader("Weekly total water level envelope")
-    st.pyplot(
-        plot_envelope(envelope_df, threshold=threshold, mode="twl"),
-        clear_figure=False,
-        use_container_width=True,
+    st.caption(
+        "The dotted gray lines show the individual empirical model outputs through time. "
+        "The dark blue line is the model mean, the blue envelope shows ±1 standard deviation, "
+        "and the red dashed line marks the critical elevation threshold."
     )
-
-    if water_level_mode == "Copernicus mean-removed sea-level signal":
-        st.caption(
-            "This total water level envelope is computed as modelled runup plus a mean-removed Copernicus Mediterranean sea-level signal."
-        )
-    else:
-        st.caption(
-            "This total water level envelope is computed as modelled runup plus the user-defined tide + storm surge offset."
-        )
+else:
+    st.caption(
+        "The dotted gray lines show the individual empirical runup model outputs through time. "
+        "The dark blue line is the model mean, the blue envelope shows ±1 standard deviation, "
+        "and the red dashed line marks the critical elevation threshold."
+    )
 
 st.subheader("Envelope data")
 st.dataframe(envelope_df, use_container_width=True, hide_index=True)

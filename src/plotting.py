@@ -417,37 +417,6 @@ def plot_runup_twl_comparison(
     return fig
 
 
-def plot_envelope(envelope_df: pd.DataFrame, threshold: Optional[float], mode: str):
-    fig, ax = plt.subplots(figsize=(10, 5))
-
-    if mode == "runup":
-        low = envelope_df["runup_min"]
-        mid = envelope_df["runup_mean"]
-        high = envelope_df["runup_max"]
-        ylabel = "Runup [m]"
-        title = "Weekly runup envelope across models"
-    else:
-        low = envelope_df["twl_min"]
-        mid = envelope_df["twl_mean"]
-        high = envelope_df["twl_max"]
-        ylabel = "Total water level [m]"
-        title = "Weekly total water level envelope across models"
-
-    ax.fill_between(envelope_df["time"], low, high, alpha=0.25, label="Model range")
-    ax.plot(envelope_df["time"], mid, linewidth=2, label="Model mean")
-
-    if threshold is not None:
-        ax.axhline(threshold, linestyle="--", linewidth=1.5, label="Threshold elevation")
-
-    ax.set_title(title)
-    ax.set_xlabel("Time")
-    ax.set_ylabel(ylabel)
-    ax.grid(True, alpha=0.3)
-    ax.legend()
-    fig.autofmt_xdate()
-    return fig
-
-
 def plot_wave_timeseries(envelope_df: pd.DataFrame):
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
@@ -463,12 +432,12 @@ def plot_wave_timeseries(envelope_df: pd.DataFrame):
     time = pd.to_datetime(envelope_df["time"])
 
     # Significant wave height
-    axes[0].plot(time, envelope_df["hs_mean"], color="skyblue", linewidth=2)
-    axes[0].set_ylabel("Significant wave height v", fontsize=9)
+    axes[0].plot(time, envelope_df["hs_mean"], color="cornflowerblue", linewidth=2)
+    axes[0].set_ylabel("Significant wave height [m]", fontsize=9)
     axes[0].set_title("Wave and water-level forcing", fontsize=10, pad=8)
 
     # Peak period
-    axes[1].plot(time, envelope_df["tp_mean"], color="goldenrod", linewidth=2)
+    axes[1].plot(time, envelope_df["tp_mean"], color="cornflowerblue", linewidth=2)
     axes[1].set_ylabel("Peak wave periods [s]", fontsize=9)
 
     # Water level
@@ -540,6 +509,118 @@ def plot_daily_threshold_bar(daily_status_df: pd.DataFrame, title: str = "Daily 
             color="white",
             fontweight="bold",
         )
+
+    fig.tight_layout()
+    return fig
+
+
+def plot_forecast_model_timeseries(
+    detail_df: pd.DataFrame,
+    value_col: str,
+    threshold: float | None = None,
+    title: str | None = None,
+):
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+    import pandas as pd
+
+    df = detail_df.copy()
+    df["time"] = pd.to_datetime(df["time"])
+
+    pivot_df = df.pivot(index="time", columns="Model", values=value_col).sort_index()
+
+    mean_series = pivot_df.mean(axis=1)
+    std_series = pivot_df.std(axis=1).fillna(0.0)
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
+
+    # Single model outputs
+    for model in pivot_df.columns:
+        ax.plot(
+            pivot_df.index,
+            pivot_df[model],
+            color="lightgray",
+            linestyle=":",
+            linewidth=1.0,
+            alpha=0.9,
+        )
+
+    # Standard deviation envelope
+    ax.fill_between(
+        pivot_df.index,
+        mean_series - std_series,
+        mean_series + std_series,
+        color="lightsteelblue",
+        alpha=0.45,
+        edgecolor="none",
+        label="Mean ± 1 SD",
+    )
+
+    # Mean line
+    ax.plot(
+        pivot_df.index,
+        mean_series,
+        color="darkblue",
+        linewidth=2.0,
+        label="Model mean",
+    )
+
+    # Threshold
+    if threshold is not None:
+        ax.axhline(
+            float(threshold),
+            color="crimson",
+            linestyle="--",
+            linewidth=1.4,
+            label="Critical elevation threshold",
+        )
+
+    if title is None:
+        title = value_col
+
+    ax.set_title(title, fontsize=10, pad=8)
+    ax.set_ylabel(value_col, fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+
+    ax.tick_params(axis="y", labelsize=8)
+    ax.tick_params(axis="x", labelsize=8, rotation=0)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+    ax.grid(False)
+
+    ax.xaxis.set_major_locator(mdates.DayLocator())
+    try:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    except ValueError:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+
+    # Custom legend entry for single models
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    legend_handles = [
+        Line2D([0], [0], color="lightgray", linestyle=":", linewidth=1.2, label="Single model outputs"),
+        Line2D([0], [0], color="darkblue", linewidth=2.0, label="Model mean"),
+        Patch(facecolor="lightsteelblue", edgecolor="none", alpha=0.45, label="Mean ± 1 SD"),
+    ]
+
+    if threshold is not None:
+        legend_handles.append(
+            Line2D([0], [0], color="crimson", linestyle="--", linewidth=1.4, label="Critical elevation threshold")
+        )
+
+    ax.legend(
+        handles=legend_handles,
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        handlelength=1.6,
+        columnspacing=1.4,
+    )
 
     fig.tight_layout()
     return fig
