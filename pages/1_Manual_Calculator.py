@@ -175,7 +175,7 @@ if include_threshold and threshold is not None:
 
 st.subheader("Model comparison")
 
-col1, col2, col3 = st.columns([1, 2, 1])
+col1, col2, col3 = st.columns([0.8, 3.4, 0.8])
 with col2:
     fig_compare = plot_runup_twl_comparison(
         results_df,
