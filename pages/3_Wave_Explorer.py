@@ -56,9 +56,9 @@ with st.sidebar:
 
     return_periods = st.multiselect(
         "Return periods to display [years]",
-        [1, 2, 5, 10, 20, 50],
-        default=[1, 5, 10, 20],
-        help="Return periods used for Hs return-value estimation.",
+        [1, 2, 5, 10, 20, 50, 100],
+        default=[1, 5, 10, 20, 50, 100],
+        help="Return periods used for Hs return-value estimation with a Gumbel fit to annual maxima.",
     )
 
     fetch_button = st.button(
@@ -227,8 +227,9 @@ st.download_button(
 )
 
 st.caption(
-    "Return values are estimated from annual maxima of Hs within the selected directional sector. "
-    "The associated peak period is derived from nearby observed extreme events."
+    "Return values are estimated from annual maxima of Hs within the selected directional sector using a Gumbel distribution. "
+    "The associated peak period is derived from nearby observed extreme events. "
+    "Long return periods such as 50 and 100 years should be interpreted cautiously, especially when the available record length is limited."
 )
 
 st.dataframe(return_df, use_container_width=True, hide_index=True)
