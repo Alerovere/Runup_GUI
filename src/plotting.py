@@ -29,7 +29,7 @@ def plot_profile_with_runup(
         raise ValueError("Profile must contain at least two points.")
 
     # Always orient profile so that seaward is to the right.
-    # Heuristic: the seaward side is the side with the lower end elevation.
+    # The seaward end is assumed to be the lower of the two profile ends.
     if y_raw[-1] > y_raw[0]:
         x = x_raw[::-1].copy()
         y = y_raw[::-1].copy()
@@ -49,55 +49,46 @@ def plot_profile_with_runup(
     std_level = float(np.nanstd(levels, ddof=0))
     max_level = float(np.nanmax(levels))
 
-    # Plot limits
     target_min = min(-2.0, float(np.nanmin(y)))
     target_max = max(float(np.nanmax(y)), max_level + 0.5)
     if threshold is not None:
         target_max = max(target_max, float(threshold) + 0.5)
 
-    # Build seaward extension only if needed and only downward
+    # Seaward extension: continue offshore downward to the right if needed
     x_ext_sea = None
     y_ext_sea = None
     if np.nanmin(y) > target_min:
-        # seaward is to the right
         x1, y1 = x[-2], y[-2]
         x2, y2 = x[-1], y[-1]
         dx = x2 - x1
         dy = y2 - y1
-
         if dx != 0:
             slope = dy / dx
-            # force a negative offshore slope if needed
             if slope >= 0:
-                slope = -abs(slope) if slope != 0 else -0.05
-
+                slope = -0.05 if slope == 0 else -abs(slope)
             x_to_target = x2 + (target_min - y2) / slope
             if np.isfinite(x_to_target) and x_to_target > x2:
                 x_ext_sea = np.array([x2, x_to_target])
                 y_ext_sea = np.array([y2, target_min])
 
-    # Build landward extension only if needed and only upward
+    # Landward extension: continue inland upward to the left if needed
     x_ext_land = None
     y_ext_land = None
     if np.nanmax(y) < target_max:
-        # landward is to the left
         x1, y1 = x[1], y[1]
         x2, y2 = x[0], y[0]
         dx = x2 - x1
         dy = y2 - y1
-
         if dx != 0:
             slope = dy / dx
-            # force a positive-upward profile when extrapolating landward
             if slope >= 0:
-                slope = -abs(slope) if slope != 0 else -0.05
-
+                slope = -0.05 if slope == 0 else -abs(slope)
             x_to_target = x2 + (target_max - y2) / slope
             if np.isfinite(x_to_target) and x_to_target < x2:
                 x_ext_land = np.array([x_to_target, x2])
                 y_ext_land = np.array([target_max, y2])
 
-    # Extended profile for intersection tests
+    # Extended profile for intersections
     x_full = x.copy()
     y_full = y.copy()
 
@@ -132,35 +123,23 @@ def plot_profile_with_runup(
         if not intersections:
             return []
 
-        # unique and sorted
-        return sorted(set([float(v) for v in intersections]))
+        return sorted(set(float(v) for v in intersections))
 
-    def get_landward_intersection_or_edge(level):
+    # Landward is left, seaward is right
+    def left_intersection_or_edge(level):
         xs = find_intersections(level, x_full, y_full)
-        if xs:
-            # landward is to the left
-            return min(xs)
-        # if no intersection, continue to the end of the graph
-        return x_min
+        return min(xs) if xs else x_min
 
-    def get_seaward_intersection_or_edge(level):
-        xs = find_intersections(level, x_full, y_full)
-        if xs:
-            # seaward is to the right
-            return max(xs)
-        return x_max
-
-    mean_left = get_landward_intersection_or_edge(mean_level)
-    upper_left = get_landward_intersection_or_edge(mean_level + std_level)
-    lower_left = get_landward_intersection_or_edge(mean_level - std_level)
-    msl_left = get_landward_intersection_or_edge(0.0)
+    mean_left = left_intersection_or_edge(mean_level)
+    upper_left = left_intersection_or_edge(mean_level + std_level)
+    lower_left = left_intersection_or_edge(mean_level - std_level)
+    msl_left = left_intersection_or_edge(0.0)
 
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    # Original uploaded profile
+    # Profile
     ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
 
-    # Theoretical extensions
     extension_labeled = False
     if x_ext_sea is not None and y_ext_sea is not None:
         ax.plot(
@@ -206,7 +185,7 @@ def plot_profile_with_runup(
     single_model_labeled = False
     for _, row in results_df.iterrows():
         level = float(row[level_col])
-        x_left = get_landward_intersection_or_edge(level)
+        x_left = left_intersection_or_edge(level)
         ax.hlines(
             level,
             x_left,
@@ -237,7 +216,7 @@ def plot_profile_with_runup(
             label="Mean ± 1 SD",
         )
 
-    # Mean line
+    # Mean
     ax.hlines(
         mean_level,
         mean_left,
@@ -249,7 +228,7 @@ def plot_profile_with_runup(
 
     # Threshold
     if threshold is not None:
-        threshold_left = get_landward_intersection_or_edge(float(threshold))
+        threshold_left = left_intersection_or_edge(float(threshold))
         ax.hlines(
             float(threshold),
             threshold_left,
