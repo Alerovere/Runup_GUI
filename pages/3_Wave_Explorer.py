@@ -3,8 +3,8 @@ import streamlit as st
 
 from src.copernicus_wave_climate import fetch_copernicus_wave_climate_timeseries
 from src.extremes import (
-    annual_maxima,
     build_return_value_table,
+    extract_storm_maxima,
     filter_by_sector,
     summarize_wave_series,
 )
@@ -35,13 +35,13 @@ with st.sidebar:
 
     start_date = st.date_input(
         "Start date",
-    value=pd.Timestamp("1985-01-01").date(),
-    help="Beginning of the historical wave time series.",
+        value=pd.Timestamp("1985-01-01").date(),
+        help="Beginning of the historical wave time series. The Mediterranean wave reanalysis starts in January 1985.",
     )
 
     end_date = st.date_input(
         "End date",
-        value=pd.Timestamp("2026-03-31").date(),
+        value=pd.Timestamp("2024-12-31").date(),
         help="End of the historical wave time series.",
     )
 
@@ -54,11 +54,29 @@ with st.sidebar:
         help="Filter the time series by wave direction before return-value estimation.",
     )
 
+    storm_quantile = st.slider(
+        "Storm threshold quantile for Hs",
+        min_value=0.90,
+        max_value=0.99,
+        value=0.95,
+        step=0.01,
+        help="Hs quantile used to identify storm events before extracting independent storm maxima.",
+    )
+
+    min_separation_hours = st.number_input(
+        "Minimum separation between storms [hours]",
+        min_value=12,
+        max_value=120,
+        value=48,
+        step=6,
+        help="Minimum time separation used to decluster independent storm events.",
+    )
+
     return_periods = st.multiselect(
         "Return periods to display [years]",
         [1, 2, 5, 10, 20, 50, 100],
         default=[1, 5, 10, 20, 50, 100],
-        help="Return periods used for Hs return-value estimation with a Gumbel fit to annual maxima.",
+        help="Return periods used for Hs return-value estimation with a Gumbel fit to storm maxima.",
     )
 
     fetch_button = st.button(
@@ -141,7 +159,6 @@ if sector_df.empty:
     st.stop()
 
 stats = summarize_wave_series(climate_df)
-sector_stats = summarize_wave_series(sector_df)
 
 st.caption(f"Wave reanalysis dataset ID: {metadata['dataset_id']}")
 st.caption(
@@ -207,9 +224,14 @@ st.caption(
 
 st.subheader("Return values by directional sector")
 
-annual_max_df = annual_maxima(sector_df)
+storm_max_df = extract_storm_maxima(
+    sector_df,
+    threshold_quantile=float(storm_quantile),
+    min_separation_hours=int(min_separation_hours),
+)
+
 return_df = build_return_value_table(
-    annual_max_df=annual_max_df,
+    storm_max_df=storm_max_df,
     return_periods=sorted(return_periods),
 )
 
@@ -235,8 +257,9 @@ st.download_button(
 )
 
 st.caption(
-    "Return values are estimated from annual maxima of Hs within the selected directional sector using a Gumbel distribution. "
-    "The associated peak period is derived from nearby observed extreme events. "
+    "Return values are estimated by fitting a Gumbel distribution to independent storm maxima of Hs within the selected directional sector. "
+    "Storms are identified using the selected Hs quantile threshold and declustered with the chosen minimum separation time. "
+    "Associated peak periods are derived from the Hs–Tp relationship of the storm-peak events. "
     "Long return periods such as 50 and 100 years should be interpreted cautiously, especially when the available record length is limited."
 )
 
@@ -250,9 +273,13 @@ top10_df = (
 )
 
 top10_df.insert(0, "Rank", range(1, len(top10_df) + 1))
+top10_df["Sector"] = sector_name
 
-top10_display = top10_df[["Rank", "time", "Hs [m]", "Tp [s]", "Dir [deg]"]].copy()
+top10_display = top10_df[["Rank", "time", "Hs [m]", "Tp [s]", "Dir [deg]", "Sector"]].copy()
 top10_display["time"] = pd.to_datetime(top10_display["time"]).dt.strftime("%Y-%m-%d %H:%M")
+top10_display["Hs [m]"] = top10_display["Hs [m]"].round(3)
+top10_display["Tp [s]"] = top10_display["Tp [s]"].round(3)
+top10_display["Dir [deg]"] = top10_display["Dir [deg]"].round(1)
 
 st.dataframe(top10_display, use_container_width=True, hide_index=True)
 
@@ -262,6 +289,10 @@ st.download_button(
     data=top10_csv,
     file_name="top10_swells.csv",
     mime="text/csv",
+)
+
+st.caption(
+    "This table lists the 10 strongest independent storm peaks identified within the selected directional sector and analysis settings."
 )
 
 csv_data = climate_df.to_csv(index=False).encode("utf-8")
