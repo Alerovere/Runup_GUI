@@ -574,15 +574,18 @@ def plot_wave_rose(df: pd.DataFrame):
     import matplotlib.pyplot as plt
 
     plot_df = df.copy()
+
     dirs = np.mod(plot_df["Dir [deg]"].to_numpy(dtype=float), 360.0)
     hs = plot_df["Hs [m]"].to_numpy(dtype=float)
 
-    dir_edges = np.arange(0, 361, 45)
+    # 16 directional sectors
+    dir_edges = np.arange(0, 361, 22.5)
     dir_centers = np.deg2rad((dir_edges[:-1] + dir_edges[1:]) / 2.0)
-    width = np.deg2rad(45)
+    width = np.deg2rad(22.5)
 
-    hs_bins = [0, 1, 2, 3, 4, 6, np.inf]
-    hs_labels = ["0–1", "1–2", "2–3", "3–4", "4–6", ">6"]
+    # Simpler Hs classes
+    hs_bins = [0, 1, 2, 4, np.inf]
+    hs_labels = ["0–1", "1–2", "2–4", ">4"]
 
     counts = np.zeros((len(hs_labels), len(dir_centers)))
 
@@ -597,10 +600,14 @@ def plot_wave_rose(df: pd.DataFrame):
 
     counts_pct = counts / max(counts.sum(), 1) * 100.0
 
-    fig, ax = plt.subplots(figsize=(3.5, 3.1), dpi=160, subplot_kw={"projection": "polar"})
-    bottom = np.zeros(len(dir_centers))
+    fig, ax = plt.subplots(
+        figsize=(4.8, 4.8),
+        dpi=160,
+        subplot_kw={"projection": "polar"},
+    )
 
-    colors = ["#d6ecff", "#9ed0ff", "#66b3ff", "#3399ff", "#0073e6", "#004c99"]
+    bottom = np.zeros(len(dir_centers))
+    colors = ["#dbe9f6", "#9ec9f5", "#4f9be6", "#0b5cad"]
 
     for i, label in enumerate(hs_labels):
         ax.bar(
@@ -610,7 +617,7 @@ def plot_wave_rose(df: pd.DataFrame):
             bottom=bottom,
             color=colors[i],
             edgecolor="white",
-            linewidth=0.8,
+            linewidth=0.6,
             align="center",
             label=f"Hs {label} m",
         )
@@ -618,15 +625,22 @@ def plot_wave_rose(df: pd.DataFrame):
 
     ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
-    ax.set_title("Wave rose", fontsize=10, pad=12)
+
+    ax.set_title("Wave rose", fontsize=10, pad=14)
+
     ax.tick_params(labelsize=8)
+    ax.grid(color="0.7", linewidth=0.8)
+
+    ax.spines["polar"].set_linewidth(1.0)
+
     ax.legend(
         frameon=False,
-        fontsize=7,
+        fontsize=8,
         loc="upper center",
         bbox_to_anchor=(0.5, -0.12),
-        ncol=3,
+        ncol=2,
     )
+
     fig.tight_layout()
     return fig
 
