@@ -207,7 +207,7 @@ st.download_button(
 )
 
 st.subheader("Extracted wave time series")
-st.caption("This figure shows the historical significant wave height, peak period, and mean wave direction extracted at the selected point.")
+st.caption("This figure shows the historical significant wave height and peak period extracted at the selected point.")
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
