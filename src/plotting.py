@@ -360,43 +360,6 @@ def plot_runup_twl_comparison(
     fig.tight_layout()
     return fig
 
-
-def plot_wave_climate_timeseries(df: pd.DataFrame):
-    import matplotlib.dates as mdates
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(
-        2,
-        1,
-        figsize=(7.2, 4.4),
-        dpi=160,
-        sharex=True,
-    )
-
-    time = pd.to_datetime(df["time"])
-
-    axes[0].plot(time, df["Hs [m]"], color="skyblue", linewidth=1.5)
-    axes[0].set_ylabel("Hs [m]", fontsize=9)
-    axes[0].set_title("Extracted wave time series", fontsize=10, pad=8)
-
-    axes[1].plot(time, df["Tp [s]"], color="goldenrod", linewidth=1.5)
-    axes[1].set_ylabel("Tp [s]", fontsize=9)
-
-    for ax in axes:
-        ax.tick_params(axis="y", labelsize=8)
-        ax.spines["top"].set_visible(False)
-        ax.spines["right"].set_visible(False)
-        ax.grid(False)
-
-    axes[1].xaxis.set_major_locator(mdates.YearLocator(base=2))
-    axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-    axes[1].tick_params(axis="x", labelsize=8, rotation=0)
-    axes[1].set_xlabel("Date", fontsize=9)
-
-    fig.tight_layout()
-    return fig
-
-
 def plot_daily_threshold_bar(daily_status_df: pd.DataFrame, title: str = "Daily threshold status"):
     import matplotlib.pyplot as plt
 
@@ -637,9 +600,9 @@ def plot_wave_climate_timeseries(df: pd.DataFrame):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(
-        3,
+        2,
         1,
-        figsize=(7.2, 5.6),
+        figsize=(7.2, 4.4),
         dpi=160,
         sharex=True,
     )
@@ -653,22 +616,20 @@ def plot_wave_climate_timeseries(df: pd.DataFrame):
     axes[1].plot(time, df["Tp [s]"], color="goldenrod", linewidth=1.5)
     axes[1].set_ylabel("Tp [s]", fontsize=9)
 
-    axes[2].plot(time, df["Dir [deg]"], color="slategray", linewidth=1.2)
-    axes[2].set_ylabel("Dir [deg]", fontsize=9)
-
     for ax in axes:
         ax.tick_params(axis="y", labelsize=8)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.grid(False)
 
-    axes[2].xaxis.set_major_locator(mdates.YearLocator(base=2))
-    axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
-    axes[2].tick_params(axis="x", labelsize=8, rotation=0)
-    axes[2].set_xlabel("Date", fontsize=9)
+    axes[1].xaxis.set_major_locator(mdates.YearLocator(base=2))
+    axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    axes[1].tick_params(axis="x", labelsize=8, rotation=0)
+    axes[1].set_xlabel("Date", fontsize=9)
 
     fig.tight_layout()
     return fig
+
 
 
 def plot_return_values(return_df: pd.DataFrame):
