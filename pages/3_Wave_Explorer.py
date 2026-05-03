@@ -240,6 +240,30 @@ st.caption(
     "Long return periods such as 50 and 100 years should be interpreted cautiously, especially when the available record length is limited."
 )
 
+st.subheader("Top 10 swells by significant wave height")
+
+top10_df = (
+    storm_max_df.sort_values("Hs [m]", ascending=False)
+    .head(10)
+    .copy()
+    .reset_index(drop=True)
+)
+
+top10_df.insert(0, "Rank", range(1, len(top10_df) + 1))
+
+top10_display = top10_df[["Rank", "time", "Hs [m]", "Tp [s]", "Dir [deg]"]].copy()
+top10_display["time"] = pd.to_datetime(top10_display["time"]).dt.strftime("%Y-%m-%d %H:%M")
+
+st.dataframe(top10_display, use_container_width=True, hide_index=True)
+
+top10_csv = top10_display.to_csv(index=False).encode("utf-8")
+st.download_button(
+    label="Download top 10 swells (CSV)",
+    data=top10_csv,
+    file_name="top10_swells.csv",
+    mime="text/csv",
+)
+
 csv_data = climate_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     label="Download extracted wave time series (CSV)",
