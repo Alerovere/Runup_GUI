@@ -31,7 +31,7 @@ def plot_profile_with_runup(
     # -------------------------------------------------
     # 1. Always orient profile so that seaward is right
     # -------------------------------------------------
-    # Heuristic: the side closest to the global minimum elevation is assumed seaward.
+    # Heuristic: the side closest to the minimum elevation is assumed seaward.
     idx_min = int(np.argmin(y_raw))
     flip_profile = idx_min < len(y_raw) / 2
 
@@ -60,7 +60,7 @@ def plot_profile_with_runup(
     max_level = float(np.nanmax(levels))
 
     # -------------------------------------------------
-    # 2. Plot bounds
+    # 2. Plot limits
     # -------------------------------------------------
     target_min = min(-2.0, float(np.nanmin(y)))
     target_max = max(float(np.nanmax(y)), max_level + 0.5)
@@ -144,15 +144,19 @@ def plot_profile_with_runup(
     lower_left = landward_intersection_or_edge(mean_level - std_level)
     msl_start = shoreline_intersection_or_edge(0.0)
 
-    # -------------------------------------------------
-    # 5. Plot
-    # -------------------------------------------------
+    # Shared left boundary for model spread
+    if std_level > 0:
+        band_left = min(upper_left, lower_left)
+    else:
+        band_left = mean_left
+
     fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
 
-    # Uploaded profile
+    # -------------------------------------------------
+    # 5. Plot profile
+    # -------------------------------------------------
     ax.plot(x, y, color="black", linewidth=1.8, label="Shoreline/profile")
 
-    # Offshore theoretical extension
     if x_ext_sea is not None and y_ext_sea is not None:
         ax.plot(
             x_ext_sea,
@@ -187,6 +191,7 @@ def plot_profile_with_runup(
     for _, row in results_df.iterrows():
         level = float(row[level_col])
         x_left = landward_intersection_or_edge(level)
+        x_left = min(x_left, band_left)
 
         ax.hlines(
             level,
@@ -202,8 +207,6 @@ def plot_profile_with_runup(
 
     # Mean ± 1 SD band
     if std_level > 0:
-        band_left = min(upper_left, lower_left)
-
         ax.fill_between(
             [band_left, x_max],
             [mean_level - std_level, mean_level - std_level],
@@ -217,7 +220,7 @@ def plot_profile_with_runup(
     # Mean line
     ax.hlines(
         mean_level,
-        mean_left,
+        band_left,
         x_max,
         colors="darkblue",
         linewidth=1.8,
@@ -227,6 +230,8 @@ def plot_profile_with_runup(
     # Threshold
     if threshold is not None:
         threshold_left = landward_intersection_or_edge(float(threshold))
+        threshold_left = min(threshold_left, band_left)
+
         ax.hlines(
             float(threshold),
             threshold_left,
