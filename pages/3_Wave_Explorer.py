@@ -27,6 +27,8 @@ st.markdown(
     """
 This page uses a **single-point historical wave time series** from Copernicus Marine reanalysis.
 Choose a point that is **reasonably offshore**, so that it represents open-water forcing rather than a shoreline or harbour grid cell.
+
+The directional sector selector is applied to the extreme-value analysis, so return values and the top-swells table can be explored for specific incoming wave sectors.
 """
 )
 
@@ -51,7 +53,7 @@ with st.sidebar:
             "All directions",
             "N", "NE", "E", "SE", "S", "SW", "W", "NW",
         ],
-        help="Filter the time series by wave direction before return-value estimation.",
+        help="Filter the time series by wave direction before return-value estimation and storm ranking.",
     )
 
     storm_quantile = st.slider(
@@ -91,6 +93,7 @@ if "wave_explorer_lon" not in st.session_state:
     st.session_state.wave_explorer_lon = 8.389593
 
 st.subheader("Point coordinates")
+st.caption("These coordinates define the offshore point from which the historical wave climate is extracted.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -114,6 +117,9 @@ st.caption(
     f"Selected coordinates: lat = {st.session_state.wave_explorer_lat:.5f}, "
     f"lon = {st.session_state.wave_explorer_lon:.5f}"
 )
+
+st.subheader("Map preview")
+st.caption("The map is shown for confirmation only. Update the coordinate fields above to move the analysis point.")
 
 map_df = pd.DataFrame(
     {
@@ -185,6 +191,7 @@ c2.metric("Max Hs (all data)", f"{stats['max_hs']:.2f} m")
 c3.metric("95th percentile Hs", f"{stats['p95_hs']:.2f} m")
 
 st.subheader("Wave rose")
+st.caption("The wave rose summarizes the directional distribution of wave occurrence at the selected offshore point.")
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
@@ -199,11 +206,8 @@ st.download_button(
     mime="image/png",
 )
 
-st.caption(
-    "The wave rose summarizes the directional distribution of wave occurrence at the selected offshore point."
-)
-
 st.subheader("Extracted wave time series")
+st.caption("This figure shows the historical significant wave height, peak period, and mean wave direction extracted at the selected point.")
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
@@ -218,11 +222,12 @@ st.download_button(
     mime="image/png",
 )
 
-st.caption(
-    "This figure shows the historical significant wave height, peak period, and mean wave direction extracted at the selected point."
-)
-
 st.subheader("Return values by directional sector")
+st.caption(
+    "Return values are estimated by fitting a Gumbel distribution to independent storm maxima of Hs within the selected directional sector. "
+    "Storms are identified using the selected Hs quantile threshold and declustered with the chosen minimum separation time. "
+    "Associated peak periods are derived from the Hs–Tp relationship of the storm-peak events."
+)
 
 storm_max_df = extract_storm_maxima(
     sector_df,
@@ -248,22 +253,10 @@ st.download_button(
     mime="image/png",
 )
 
-return_csv = return_df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    label="Download return-value table (CSV)",
-    data=return_csv,
-    file_name="wave_return_values.csv",
-    mime="text/csv",
-)
-
-st.caption(
-    "Return values are estimated by fitting a Gumbel distribution to independent storm maxima of Hs within the selected directional sector. "
-    "Storms are identified using the selected Hs quantile threshold and declustered with the chosen minimum separation time. "
-    "Associated peak periods are derived from the Hs–Tp relationship of the storm-peak events. "
-    "Long return periods such as 50 and 100 years should be interpreted cautiously, especially when the available record length is limited."
-)
-
 st.subheader("Top 10 swells by significant wave height")
+st.caption(
+    "This table lists the 10 strongest independent storm peaks identified within the selected directional sector and analysis settings."
+)
 
 top10_df = (
     storm_max_df.sort_values("Hs [m]", ascending=False)
@@ -282,23 +275,3 @@ top10_display["Tp [s]"] = top10_display["Tp [s]"].round(3)
 top10_display["Dir [deg]"] = top10_display["Dir [deg]"].round(1)
 
 st.dataframe(top10_display, use_container_width=True, hide_index=True)
-
-top10_csv = top10_display.to_csv(index=False).encode("utf-8")
-st.download_button(
-    label="Download top 10 swells (CSV)",
-    data=top10_csv,
-    file_name="top10_swells.csv",
-    mime="text/csv",
-)
-
-st.caption(
-    "This table lists the 10 strongest independent storm peaks identified within the selected directional sector and analysis settings."
-)
-
-csv_data = climate_df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    label="Download extracted wave time series (CSV)",
-    data=csv_data,
-    file_name="wave_climate_timeseries.csv",
-    mime="text/csv",
-)

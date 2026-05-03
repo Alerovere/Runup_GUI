@@ -92,15 +92,12 @@ st.info(
 
 st.markdown(
     """
-**How to choose the point**
-
 Enter the latitude and longitude of a point that is **reasonably offshore**, rather than directly on the shoreline.
-This helps avoid selecting land grid cells and is more consistent with the offshore wave-model nature of the Copernicus product.
+This helps avoid land grid cells and is more consistent with the offshore wave-model nature of the Copernicus products.
 
-A practical rule is to choose a point:
-- just offshore of the beach or coastal sector of interest
-- clearly at sea, not on land
-- not inside very small harbours, lagoons, or enclosed basins
+You can estimate total water level using either:
+- a constant user-defined water-level offset
+- or a **Copernicus mean-removed sea-level signal** derived from modelled sea surface height
 """
 )
 
@@ -121,8 +118,8 @@ with st.sidebar:
         "Water-level mode",
         ["Constant tide + storm surge", "Copernicus mean-removed sea-level signal"],
         help=(
-            "Use a constant still-water-level offset, or use Copernicus Mediterranean "
-            "modelled sea surface height above geoid after removing the mean over the downloaded period."
+            "Use a constant still-water-level offset, or use Copernicus Mediterranean modelled sea surface height "
+            "after removing the mean over the downloaded period."
         ),
     )
 
@@ -138,7 +135,7 @@ with st.sidebar:
     else:
         st.caption(
             "Water level will be taken from Copernicus Mediterranean sea surface height above geoid, "
-            "then centered by subtracting the mean of the downloaded period."
+            "then centered by subtracting the mean over the downloaded period."
         )
 
     threshold_enabled = st.checkbox(
@@ -154,7 +151,7 @@ with st.sidebar:
             value=2.0,
             step=0.1,
             format="%.3f",
-            help="Critical elevation used to interpret exceedance of model envelopes.",
+            help="Critical elevation used to interpret exceedance of forecast values.",
         )
 
     fetch_button = st.button(
@@ -169,6 +166,7 @@ if "forecast_lon" not in st.session_state:
     st.session_state.forecast_lon = 8.389593
 
 st.subheader("Forecast point coordinates")
+st.caption("These coordinates define the offshore point from which wave and optional modelled sea-level signals are extracted.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -200,6 +198,7 @@ if not (30.0 <= st.session_state.forecast_lat <= 46.5 and -6.5 <= st.session_sta
     )
 
 st.subheader("Map preview")
+st.caption("The map is shown for confirmation only. Update the coordinate fields above to move the forecast point.")
 
 map_df = pd.DataFrame(
     {
@@ -207,12 +206,7 @@ map_df = pd.DataFrame(
         "lon": [st.session_state.forecast_lon],
     }
 )
-
 st.map(map_df, zoom=6, use_container_width=True)
-
-st.caption(
-    "The map is shown for confirmation only. Update the coordinates in the input boxes above to move the forecast point."
-)
 
 if not fetch_button:
     st.info("Enter an offshore point and click Fetch Mediterranean forecast.")
@@ -302,7 +296,6 @@ c2.metric("Maximum runup", f"{max_runup:.2f} m")
 if show_twl:
     mean_twl = float(envelope_df["twl_mean"].mean())
     max_twl = float(envelope_df["twl_max"].max())
-
     c3, c4 = st.columns(2)
     c3.metric("Mean TWL", f"{mean_twl:.2f} m")
     c4.metric("Maximum TWL", f"{max_twl:.2f} m")
@@ -338,13 +331,24 @@ if threshold is not None:
     threshold_summary = summarize_threshold_status(threshold_ts_df)
 
     st.subheader("Daily threshold status")
-    st.pyplot(
-        plot_daily_threshold_bar(
+    st.caption(
+        "This chart summarizes the worst threshold class reached on each forecast day using the empirical-model spread at each timestep."
+    )
+
+    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+    with col2:
+        fig_daily = plot_daily_threshold_bar(
             daily_status_df,
             title=f"Daily threshold status for forecast {compare_label}",
-        ),
-        clear_figure=False,
-        use_container_width=True,
+        )
+        daily_png = fig_to_png_bytes(fig_daily)
+        st.pyplot(fig_daily, clear_figure=False, use_container_width=False)
+
+    st.download_button(
+        "Download daily threshold status (PNG)",
+        data=daily_png,
+        file_name="daily_threshold_status.png",
+        mime="image/png",
     )
 
     st.markdown(describe_threshold_logic(compare_label, float(threshold)))
@@ -363,15 +367,22 @@ if threshold is not None:
             + first_ex.strftime(", %Y %H:%M")
         )
 
-st.subheader("Weekly wave forcing")
-st.pyplot(
-    plot_wave_timeseries(envelope_df),
-    clear_figure=False,
-    use_container_width=True,
+st.subheader("Wave and water-level forcing")
+st.caption(
+    "This multi-panel plot shows the extracted significant wave height, peak period, and water-level component through the forecast period."
 )
 
-st.caption(
-    "This figure shows the forecast wave forcing extracted at the selected offshore point."
+col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+with col2:
+    fig_forcing = plot_wave_timeseries(envelope_df)
+    forcing_png = fig_to_png_bytes(fig_forcing)
+    st.pyplot(fig_forcing, clear_figure=False, use_container_width=False)
+
+st.download_button(
+    "Download forcing plot (PNG)",
+    data=forcing_png,
+    file_name="forecast_forcing.png",
+    mime="image/png",
 )
 
 plot_value_col = "Runup [m]"
@@ -382,6 +393,10 @@ if show_twl:
     plot_title = "Forecast total water level across empirical models"
 
 st.subheader("Forecast model time series")
+st.caption(
+    "The dotted gray lines show the individual empirical model outputs through time, the dark blue line shows the model mean, "
+    "the blue envelope shows ±1 standard deviation, and the red dashed line marks the critical elevation threshold."
+)
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
@@ -401,35 +416,13 @@ st.download_button(
     mime="image/png",
 )
 
-if show_twl:
-    st.caption(
-        "The dotted gray lines show the individual empirical model outputs through time. "
-        "The dark blue line is the model mean, the blue envelope shows ±1 standard deviation, "
-        "and the red dashed line marks the critical elevation threshold."
-    )
-else:
-    st.caption(
-        "The dotted gray lines show the individual empirical runup model outputs through time. "
-        "The dark blue line is the model mean, the blue envelope shows ±1 standard deviation, "
-        "and the red dashed line marks the critical elevation threshold."
-    )
-
 st.subheader("Envelope data")
+st.caption("This table reports the forecast summary statistics used for the plots above.")
 st.dataframe(envelope_df, use_container_width=True, hide_index=True)
-
-csv_data = envelope_df.to_csv(index=False).encode("utf-8")
-st.download_button(
-    label="Download weekly envelope as CSV",
-    data=csv_data,
-    file_name="weekly_runup_envelope.csv",
-    mime="text/csv",
-)
 
 st.subheader("Copernicus Marine data source and licence")
 
-st.caption(
-    "This page uses two Copernicus Marine products:"
-)
+st.caption("This page uses two Copernicus Marine products:")
 
 st.markdown(
     """

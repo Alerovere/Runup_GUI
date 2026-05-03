@@ -174,6 +174,10 @@ if include_threshold and threshold is not None:
     risk_color, risk_label, risk_text = compute_risk_status(results_df, include_swl, float(threshold))
 
 st.subheader("Model comparison")
+st.caption(
+    "This plot compares the empirical model results for the selected scenario. "
+    "If a water-level offset is included, the darker bar shows runup and the lighter extension shows the added water-level contribution."
+)
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
@@ -186,23 +190,12 @@ with col2:
     compare_png = fig_to_png_bytes(fig_compare)
     st.pyplot(fig_compare, clear_figure=False, use_container_width=False)
 
-compare_png = fig_to_png_bytes(fig_compare)
 st.download_button(
     "Download model comparison image (PNG)",
     data=compare_png,
     file_name="model_comparison.png",
     mime="image/png",
 )
-
-if include_swl:
-    st.caption(
-        "This figure compares total water level results across empirical models. "
-        "The darker bar shows wave runup, while the light-blue extension represents the added tide + storm surge contribution."
-    )
-else:
-    st.caption(
-        "This figure compares wave runup results across empirical models for the selected conditions."
-    )
 
 if include_threshold and threshold is not None:
     st.markdown(
@@ -221,10 +214,17 @@ Red = threshold below mean - 1 SD, indicating robust exceedance.
 
 profile_df = read_profile(uploaded_profile)
 if profile_df is not None:
+    st.subheader("Beach profile")
     if include_swl:
-        st.subheader("Beach profile")
+        st.caption(
+            "This plot shows the uploaded beach profile together with individual modelled total water levels, "
+            "their mean, and the ±1 standard deviation range."
+        )
     else:
-        st.subheader("Beach profile")
+        st.caption(
+            "This plot shows the uploaded beach profile together with individual modelled runup elevations, "
+            "their mean, and the ±1 standard deviation range."
+        )
 
     col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
     with col2:
@@ -236,23 +236,9 @@ if profile_df is not None:
         profile_png = fig_to_png_bytes(fig_profile)
         st.pyplot(fig_profile, clear_figure=False, use_container_width=False)
 
-    profile_png = fig_to_png_bytes(fig_profile)
     st.download_button(
         "Download beach profile image (PNG)",
         data=profile_png,
         file_name="beach_profile.png",
         mime="image/png",
     )
-
-    if include_swl:
-        st.caption(
-            "The beach-profile plot shows modelled total water levels intersecting the shoreline profile. "
-            "Light gray dotted lines represent individual model outputs, the dark blue line is the model mean, "
-            "and the blue band shows ±1 standard deviation."
-        )
-    else:
-        st.caption(
-            "The beach-profile plot shows modelled runup elevations intersecting the shoreline profile. "
-            "Light gray dotted lines represent individual model outputs, the dark blue line is the model mean, "
-            "and the blue band shows ±1 standard deviation."
-        )
