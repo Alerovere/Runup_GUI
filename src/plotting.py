@@ -202,17 +202,12 @@ def plot_profile_with_runup(
 
     # Mean ± 1 SD band
     if std_level > 0:
-        x_poly = [upper_left, x_max, x_max, lower_left]
-        y_poly = [
-            mean_level + std_level,
-            mean_level + std_level,
-            mean_level - std_level,
-            mean_level - std_level,
-        ]
+        band_left = min(upper_left, lower_left)
 
-        ax.fill(
-            x_poly,
-            y_poly,
+        ax.fill_between(
+            [band_left, x_max],
+            [mean_level - std_level, mean_level - std_level],
+            [mean_level + std_level, mean_level + std_level],
             color="lightsteelblue",
             alpha=0.45,
             edgecolor="none",
