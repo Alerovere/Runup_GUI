@@ -6,3 +6,4 @@ py-wave-runup
 copernicusmarine
 folium
 streamlit-folium
+requests

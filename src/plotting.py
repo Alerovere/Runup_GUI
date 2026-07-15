@@ -676,6 +676,60 @@ def plot_wave_climate_timeseries(df: pd.DataFrame):
 
 
 
+def plot_multi_source_hs_comparison(combined_df: pd.DataFrame, source_names: list):
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.2), dpi=160)
+
+    time = pd.to_datetime(combined_df["time"])
+    colors = ["darkblue", "crimson", "goldenrod", "seagreen"]
+
+    for i, source_name in enumerate(source_names):
+        col = f"{source_name} Hs [m]"
+        if col not in combined_df.columns:
+            continue
+        ax.plot(
+            time,
+            combined_df[col],
+            color=colors[i % len(colors)],
+            linewidth=1.8,
+            marker="o",
+            markersize=2.5,
+            label=source_name,
+        )
+
+    ax.set_title("Significant wave height by source", fontsize=10, pad=8)
+    ax.set_ylabel("Hs [m]", fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+
+    ax.tick_params(axis="y", labelsize=8)
+    ax.tick_params(axis="x", labelsize=8, rotation=0)
+
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(False)
+
+    ax.xaxis.set_major_locator(mdates.DayLocator())
+    try:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    except ValueError:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+
+    ax.legend(
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=3,
+        handlelength=1.6,
+        columnspacing=1.4,
+    )
+
+    fig.tight_layout()
+    return fig
+
+
 def plot_return_values(return_df: pd.DataFrame):
     import matplotlib.pyplot as plt
 

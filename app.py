@@ -49,6 +49,10 @@ The app extracts wave conditions from Copernicus Marine and computes a time-vary
 Depending on the selected option, total water level can be estimated using either a constant user-defined offset
 or a **Copernicus mean-removed sea-level signal** derived from modelled sea surface height.
 
+**Multi-source forecast**  
+This page compares independent wave forecasts at a single point from Copernicus Marine, NOAA WaveWatch III, and Open-Meteo Marine,
+merging them into one table so forecast agreement between sources can be checked before relying on any single model.
+
 ### Important note
 
 This app is intended for **scientific exploration, teaching, and preliminary screening only**.  
@@ -88,6 +92,15 @@ st.caption(
 st.markdown(
     """
 Generated using **E.U. Copernicus Marine Service Information**.
+"""
+)
+
+st.markdown(
+    """
+The Multi-source forecast page additionally cross-checks the Copernicus Mediterranean wave forecast against:
+
+- **NOAA WaveWatch III**, global wave model operated by NOAA/NCEP, accessed via the PacIOOS ERDDAP server
+- **Open-Meteo Marine API**, a free aggregator of several global wave models (NOAA GFS-Wave, DWD ICON-Wave, ECMWF WAM)
 """
 )
 
@@ -140,4 +153,4 @@ https://doi.org/10.1029/2010JC006819
 """
 )
 
-st.info("Use the sidebar to open the Manual calculator or the Mediterranean forecast page.")
+st.info("Use the sidebar to open the Manual calculator, Mediterranean forecast, Wave Explorer, or Multi-source forecast page.")
