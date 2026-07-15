@@ -6,21 +6,26 @@ window, then merged into one wide table for cross-checking:
 
     - Copernicus Marine  - Mediterranean Sea Waves Analysis and Forecast
                             (same product used elsewhere in this app)
-    - NOAA WaveWatch III - global forecast, re-published via the PacIOOS
-                            ERDDAP mirror (NOAA's own NOMADS OPeNDAP/DODS
-                            service for gfswave was retired in Feb 2026 in
-                            favor of a GRIB-filter-only interface, so the
-                            ERDDAP mirror is used here instead of parsing
-                            GRIB2 files directly)
+    - NOAA GEFS-Wave      - 31-member global wave ensemble (1 control + 30
+                            perturbed members), pulled directly from NOAA's
+                            NOMADS GRIB filter and parsed with cfgrib. NOAA's
+                            NOMADS OPeNDAP/DODS service (and any ERDDAP mirror
+                            depending on it) was retired in Feb 2026, so the
+                            GRIB filter is now the only live route to this
+                            data; there is no bulk CSV/OPeNDAP shortcut, which
+                            means one HTTP request per member per forecast
+                            hour. Requests are parallelized, but expect this
+                            source to take noticeably longer than the other two.
     - Open-Meteo Marine  - free, no-auth aggregator of several global wave
                             models (NOAA GFS-Wave, DWD ICON-Wave, ECMWF WAM)
 
-All three fetchers return a DataFrame with the same column convention used
-throughout this app: "time", "Hs [m]", "Tp [s]" (peak period), "Dir [deg]".
+All fetchers return a DataFrame with the column convention used throughout
+this app: "time", "Hs [m]", "Tp [s]", "Dir [deg]".
 """
 
+import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
-from io import StringIO
 from typing import List, Optional
 
 import numpy as np
@@ -33,6 +38,11 @@ try:
 except ImportError:
     copernicusmarine = None
 
+try:
+    import xarray as xr
+except ImportError:
+    xr = None
+
 
 MED_WAVE_FORECAST_DATASET_ID = "cmems_mod_med_wav_anfc_4.2km_PT1H-i"
 
@@ -44,8 +54,14 @@ PREFERRED_DIR_VARS = [
     "sea_surface_wave_from_direction_at_variance_spectral_density_maximum",
 ]
 
-NOAA_ERDDAP_BASE = "https://pae-paha.pacioos.hawaii.edu/erddap/griddap/ww3_global"
 OPENMETEO_URL = "https://marine-api.open-meteo.com/v1/marine"
+
+# NOAA GEFS-Wave ensemble (31 members, 0.25 deg global), via NOMADS GRIB filter
+NOAA_GRIB_FILTER_URL = "https://nomads.ncep.noaa.gov/cgi-bin/filter_gefs_wave_0p25.pl"
+GEFS_WAVE_MEMBERS = ["c00"] + [f"p{i:02d}" for i in range(1, 31)]  # 1 control + 30 perturbed = 31
+GEFS_WAVE_FORECAST_HOURS = list(range(0, 97, 6))  # every 6h out to 4 days = 17 steps
+GEFS_WAVE_CYCLE_LAG_HOURS = 5  # processing/publication delay after each 00/06/12/18Z cycle
+GEFS_WAVE_MAX_WORKERS = 8
 
 
 def _find_first_present_name(candidates: List[str], names: List[str]) -> Optional[str]:
@@ -122,39 +138,158 @@ def fetch_copernicus_med_wave_forecast(
     return df.reset_index(drop=True)
 
 
+def _latest_gefs_wave_cycle() -> tuple:
+    """Most recent GEFS-Wave cycle (00/06/12/18Z) that should already be published."""
+    lagged = datetime.now(timezone.utc) - timedelta(hours=GEFS_WAVE_CYCLE_LAG_HOURS)
+    cycle_hour = (lagged.hour // 6) * 6
+    cycle_date = lagged.strftime("%Y%m%d")
+    return cycle_date, cycle_hour
+
+
+def _circular_mean_deg(degrees: np.ndarray) -> float:
+    radians = np.deg2rad(degrees)
+    mean_angle = np.arctan2(np.nanmean(np.sin(radians)), np.nanmean(np.cos(radians)))
+    return float(np.rad2deg(mean_angle) % 360.0)
+
+
+def _fetch_one_gefs_wave_member_hour(
+    cycle_date: str,
+    cycle_hour: int,
+    member: str,
+    forecast_hour: int,
+    longitude: float,
+    latitude: float,
+    buffer_deg: float = 1.0,
+):
+    """Download one small GRIB2 subset (1 member, 1 forecast hour, cropped to the point) and parse it."""
+    if xr is None:
+        raise ImportError("xarray is not installed.")
+
+    lon_360 = longitude % 360.0
+    params = {
+        "dir": f"/gefs.{cycle_date}/{cycle_hour:02d}/wave/gridded",
+        "file": f"gefs.wave.t{cycle_hour:02d}z.{member}.global.0p25.f{forecast_hour:03d}.grib2",
+        "var_HTSGW": "on",
+        "var_PERPW": "on",
+        "var_DIRPW": "on",
+        "lev_surface": "on",
+        "subregion": "",
+        "leftlon": round(lon_360 - buffer_deg, 2),
+        "rightlon": round(lon_360 + buffer_deg, 2),
+        "toplat": round(latitude + buffer_deg, 2),
+        "bottomlat": round(latitude - buffer_deg, 2),
+    }
+
+    resp = requests.get(NOAA_GRIB_FILTER_URL, params=params, timeout=60)
+    resp.raise_for_status()
+
+    if len(resp.content) < 100:
+        # Too small to be a real GRIB2 message; this member/hour is unavailable.
+        return None
+
+    with tempfile.NamedTemporaryFile(suffix=".grib2") as tmp:
+        tmp.write(resp.content)
+        tmp.flush()
+        ds = xr.open_dataset(tmp.name, engine="cfgrib", backend_kwargs={"indexpath": ""})
+
+        lon_vals = ds["longitude"].values
+        target_lon = lon_360 if np.nanmax(lon_vals) > 180 else (((longitude + 180) % 360) - 180)
+
+        point = ds.sel(latitude=latitude, longitude=target_lon, method="nearest")
+
+        valid_time = pd.to_datetime(point["valid_time"].values)
+        hs = float(point["swh"].values) if "swh" in point else np.nan
+        tp = float(point["perpw"].values) if "perpw" in point else np.nan
+        wave_dir = float(point["dirpw"].values) if "dirpw" in point else np.nan
+
+    return {
+        "time": valid_time,
+        "Model": member,
+        "Hs [m]": hs,
+        "Tp [s]": tp,
+        "Dir [deg]": wave_dir,
+    }
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
-def fetch_noaa_ww3_forecast(
+def fetch_noaa_gefs_wave_ensemble(
     longitude: float,
     latitude: float,
     forecast_days: int = 5,
-) -> pd.DataFrame:
-    """Hs / Tp / Dir forecast at a point from NOAA WaveWatch III (global), via PacIOOS ERDDAP."""
-    start_dt = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    end_dt = start_dt + timedelta(days=forecast_days)
+) -> "tuple[pd.DataFrame, pd.DataFrame, dict]":
+    """
+    Full 31-member NOAA GEFS-Wave ensemble at a point.
 
-    def iso(dt):
-        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    Returns (detail_df, summary_df, metadata):
+      - detail_df: one row per (member, forecast hour) with columns
+        time, Model (member id), Hs [m], Tp [s], Dir [deg]
+      - summary_df: ensemble mean/min/max per forecast hour, columns
+        time, Hs [m], Tp [s], Dir [deg] (Hs/Tp are the ensemble mean;
+        Hs min/max are also included for the spread plot)
+      - metadata: cycle date/hour used and how many member-hour requests
+        succeeded out of how many were attempted
+    """
+    cycle_date, cycle_hour = _latest_gefs_wave_cycle()
 
-    query = (
-        f"Thgt[({iso(start_dt)}):1:({iso(end_dt)})][({latitude}):1:({latitude})][({longitude}):1:({longitude})],"
-        f"Tper[({iso(start_dt)}):1:({iso(end_dt)})][({latitude}):1:({latitude})][({longitude}):1:({longitude})],"
-        f"Tdir[({iso(start_dt)}):1:({iso(end_dt)})][({latitude}):1:({latitude})][({longitude}):1:({longitude})]"
-    )
-    url = f"{NOAA_ERDDAP_BASE}.csv?{query}"
+    max_hour = min(int(forecast_days) * 24, max(GEFS_WAVE_FORECAST_HOURS))
+    forecast_hours = [h for h in GEFS_WAVE_FORECAST_HOURS if h <= max_hour]
 
-    resp = requests.get(url, timeout=60)
-    resp.raise_for_status()
+    tasks = [
+        (cycle_date, cycle_hour, member, fhour, longitude, latitude)
+        for member in GEFS_WAVE_MEMBERS
+        for fhour in forecast_hours
+    ]
 
-    # ERDDAP CSV: row 0 = column names, row 1 = units, row 2+ = data
-    df = pd.read_csv(StringIO(resp.text), skiprows=[1])
-    df = df.rename(columns={"Thgt": "Hs [m]", "Tper": "Tp [s]", "Tdir": "Dir [deg]"})
-    df = df[["time", "Hs [m]", "Tp [s]", "Dir [deg]"]].dropna()
-    df["time"] = pd.to_datetime(df["time"], utc=True)
+    rows = []
+    failures = 0
 
-    if df.empty:
-        raise ValueError("No NOAA WaveWatch III records were returned for this point.")
+    with ThreadPoolExecutor(max_workers=GEFS_WAVE_MAX_WORKERS) as executor:
+        futures = {executor.submit(_fetch_one_gefs_wave_member_hour, *task): task for task in tasks}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+                if result is not None:
+                    rows.append(result)
+                else:
+                    failures += 1
+            except Exception:
+                failures += 1
 
-    return df.reset_index(drop=True)
+    metadata = {
+        "cycle_date": cycle_date,
+        "cycle_hour": cycle_hour,
+        "requested": len(tasks),
+        "succeeded": len(rows),
+        "failed": failures,
+    }
+
+    if not rows:
+        raise ValueError(
+            f"No GEFS-Wave ensemble records were returned for this point (cycle {cycle_date} {cycle_hour:02d}Z)."
+        )
+
+    detail_df = pd.DataFrame(rows).dropna(subset=["Hs [m]"]).sort_values(["time", "Model"]).reset_index(drop=True)
+
+    if detail_df.empty:
+        raise ValueError("GEFS-Wave ensemble requests succeeded but returned no usable values.")
+
+    summary_rows = []
+    for time_val, group in detail_df.groupby("time"):
+        summary_rows.append(
+            {
+                "time": time_val,
+                "Hs [m]": float(group["Hs [m]"].mean()),
+                "Hs min [m]": float(group["Hs [m]"].min()),
+                "Hs max [m]": float(group["Hs [m]"].max()),
+                "Tp [s]": float(group["Tp [s]"].mean()),
+                "Dir [deg]": _circular_mean_deg(group["Dir [deg]"].to_numpy(dtype=float)),
+                "Members": int(group["Model"].nunique()),
+            }
+        )
+
+    summary_df = pd.DataFrame(summary_rows).sort_values("time").reset_index(drop=True)
+
+    return detail_df, summary_df, metadata
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -163,11 +298,18 @@ def fetch_openmeteo_wave_forecast(
     latitude: float,
     forecast_days: int = 5,
 ) -> pd.DataFrame:
-    """Hs / Tp / Dir forecast at a point from the Open-Meteo Marine API (no auth required)."""
+    """Hs / Tp / Dir forecast at a point from the Open-Meteo Marine API (no auth required).
+
+    Note: Open-Meteo's combined "wave_period" field is a mean period across the
+    combined wind-sea + swell spectrum, not strictly the spectral peak period.
+    A dedicated peak-period field only exists for the wind-sea and swell
+    partitions separately (wind_wave_peak_period / swell_wave_peak_period),
+    not for the combined field, so "wave_period" is the closest available match.
+    """
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "hourly": "wave_height,wave_peak_period,wave_direction",
+        "hourly": "wave_height,wave_period,wave_direction",
         "forecast_days": max(1, min(int(forecast_days), 7)),
         "timezone": "UTC",
     }
@@ -182,7 +324,7 @@ def fetch_openmeteo_wave_forecast(
         {
             "time": pd.to_datetime(data["time"], utc=True),
             "Hs [m]": data.get("wave_height"),
-            "Tp [s]": data.get("wave_peak_period"),
+            "Tp [s]": data.get("wave_period"),
             "Dir [deg]": data.get("wave_direction"),
         }
     ).dropna()
@@ -203,7 +345,7 @@ def merge_multi_source(source_frames: dict) -> pd.DataFrame:
                 "Tp [s]": f"{source_name} Tp [s]",
                 "Dir [deg]": f"{source_name} Dir [deg]",
             }
-        ).set_index("time")
+        )[["time", f"{source_name} Hs [m]", f"{source_name} Tp [s]", f"{source_name} Dir [deg]"]].set_index("time")
 
         combined = renamed if combined is None else combined.join(renamed, how="outer")
 

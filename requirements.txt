@@ -7,3 +7,6 @@ copernicusmarine
 folium
 streamlit-folium
 requests
+xarray
+cfgrib
+eccodes

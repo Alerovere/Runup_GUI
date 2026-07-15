@@ -50,7 +50,7 @@ Depending on the selected option, total water level can be estimated using eithe
 or a **Copernicus mean-removed sea-level signal** derived from modelled sea surface height.
 
 **Multi-source forecast**  
-This page compares independent wave forecasts at a single point from Copernicus Marine, NOAA WaveWatch III, and Open-Meteo Marine,
+This page compares independent wave forecasts at a single point from Copernicus Marine, the NOAA GEFS-Wave 31-member ensemble, and Open-Meteo Marine,
 merging them into one table so forecast agreement between sources can be checked before relying on any single model.
 
 ### Important note
@@ -99,7 +99,7 @@ st.markdown(
     """
 The Multi-source forecast page additionally cross-checks the Copernicus Mediterranean wave forecast against:
 
-- **NOAA WaveWatch III**, global wave model operated by NOAA/NCEP, accessed via the PacIOOS ERDDAP server
+- **NOAA GEFS-Wave ensemble**, 31-member global wave ensemble operated by NOAA/NCEP, accessed directly from NOAA's NOMADS GRIB feed
 - **Open-Meteo Marine API**, a free aggregator of several global wave models (NOAA GFS-Wave, DWD ICON-Wave, ECMWF WAM)
 """
 )

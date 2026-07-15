@@ -2,14 +2,19 @@ import pandas as pd
 import streamlit as st
 
 from src.multi_source_forecast import (
+    GEFS_WAVE_FORECAST_HOURS,
+    GEFS_WAVE_MEMBERS,
     MED_WAVE_FORECAST_DATASET_ID,
-    NOAA_ERDDAP_BASE,
     fetch_copernicus_med_wave_forecast,
-    fetch_noaa_ww3_forecast,
+    fetch_noaa_gefs_wave_ensemble,
     fetch_openmeteo_wave_forecast,
     merge_multi_source,
 )
-from src.plotting import fig_to_png_bytes, plot_multi_source_hs_comparison
+from src.plotting import (
+    fig_to_png_bytes,
+    plot_forecast_model_timeseries,
+    plot_multi_source_hs_comparison,
+)
 
 st.title("Multi-Source Forecast")
 
@@ -24,7 +29,9 @@ st.markdown(
 Sources compared on this page:
 
 - **Copernicus Marine** - Mediterranean Sea Waves Analysis and Forecast (same product used on the Mediterranean forecast page)
-- **NOAA WaveWatch III** - global forecast, accessed via the PacIOOS ERDDAP mirror
+- **NOAA GEFS-Wave ensemble** - all 31 members (1 control + 30 perturbed) of NOAA's global wave ensemble, pulled directly
+  from NOAA's GRIB feed. This source is noticeably slower than the other two (roughly 1-3 minutes) because there is no
+  bulk download option: each of the 31 members requires its own series of requests.
 - **Open-Meteo Marine** - free aggregator of several global wave models (no account needed)
 
 Enter a point that is **reasonably offshore**, rather than directly on the shoreline, to avoid land grid cells.
@@ -35,15 +42,18 @@ with st.sidebar:
     st.header("Multi-source forecast inputs")
 
     use_copernicus = st.checkbox("Copernicus Marine", value=True)
-    use_noaa = st.checkbox("NOAA WaveWatch III", value=True)
+    use_noaa = st.checkbox("NOAA GEFS-Wave ensemble (31 members)", value=True)
     use_openmeteo = st.checkbox("Open-Meteo Marine", value=True)
 
     forecast_days = st.slider(
         "Forecast horizon [days]",
         min_value=1,
         max_value=7,
-        value=5,
-        help="Number of days ahead to request from each source. Capped at 7 to stay within Open-Meteo's free tier.",
+        value=4,
+        help=(
+            "Number of days ahead to request from each source. Open-Meteo and Copernicus support up to 7 days; "
+            "the NOAA GEFS-Wave ensemble is capped at 4 days (every 6 hours) to keep the number of requests manageable."
+        ),
     )
 
     fetch_button = st.button(
@@ -58,7 +68,7 @@ if "multi_source_lon" not in st.session_state:
     st.session_state.multi_source_lon = 8.389593
 
 st.subheader("Forecast point coordinates")
-st.caption("These coordinates define the offshore point from which all three forecasts are extracted.")
+st.caption("These coordinates define the offshore point from which all forecasts are extracted.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -107,6 +117,8 @@ lon = st.session_state.multi_source_lon
 
 source_frames = {}
 source_notes = []
+noaa_detail_df = None
+noaa_metadata = None
 
 if use_copernicus:
     username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
@@ -129,16 +141,23 @@ if use_copernicus:
                 st.warning(f"Copernicus Marine fetch failed: {e}")
 
 if use_noaa:
-    with st.spinner("Downloading NOAA WaveWatch III forecast..."):
+    with st.spinner(
+        f"Downloading NOAA GEFS-Wave ensemble ({len(GEFS_WAVE_MEMBERS)} members x up to "
+        f"{len(GEFS_WAVE_FORECAST_HOURS)} forecast hours)... this can take 1-3 minutes."
+    ):
         try:
-            source_frames["NOAA WW3"] = fetch_noaa_ww3_forecast(
+            noaa_detail_df, noaa_summary_df, noaa_metadata = fetch_noaa_gefs_wave_ensemble(
                 longitude=lon,
                 latitude=lat,
                 forecast_days=forecast_days,
             )
-            source_notes.append(f"NOAA WaveWatch III accessed via PacIOOS ERDDAP: `{NOAA_ERDDAP_BASE}`")
+            source_frames["NOAA GEFS-Wave"] = noaa_summary_df[["time", "Hs [m]", "Tp [s]", "Dir [deg]"]]
+            source_notes.append(
+                f"NOAA GEFS-Wave ensemble, cycle {noaa_metadata['cycle_date']} {noaa_metadata['cycle_hour']:02d}Z "
+                f"({noaa_metadata['succeeded']}/{noaa_metadata['requested']} member-hour requests succeeded)"
+            )
         except Exception as e:
-            st.warning(f"NOAA WaveWatch III fetch failed: {e}")
+            st.warning(f"NOAA GEFS-Wave ensemble fetch failed: {e}")
 
 if use_openmeteo:
     with st.spinner("Downloading Open-Meteo Marine forecast..."):
@@ -163,7 +182,10 @@ for note in source_notes:
     st.caption(note)
 
 st.subheader("Hs comparison")
-st.caption("Significant wave height through the forecast period, one line per source.")
+st.caption(
+    "Significant wave height through the forecast period, one line per source. "
+    "For NOAA, this line is the GEFS-Wave ensemble mean."
+)
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
@@ -177,6 +199,30 @@ st.download_button(
     file_name="multi_source_hs_comparison.png",
     mime="image/png",
 )
+
+if noaa_detail_df is not None:
+    st.subheader("NOAA GEFS-Wave ensemble spread")
+    st.caption(
+        "Each light gray dotted line is one of the 31 ensemble members. The dark blue line is the ensemble mean, "
+        "and the shaded band is the mean +/- 1 standard deviation across members."
+    )
+
+    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+    with col2:
+        fig_ens = plot_forecast_model_timeseries(
+            detail_df=noaa_detail_df,
+            value_col="Hs [m]",
+            title="GEFS-Wave ensemble Hs spread",
+        )
+        ens_png = fig_to_png_bytes(fig_ens)
+        st.pyplot(fig_ens, clear_figure=False, use_container_width=False)
+
+    st.download_button(
+        "Download NOAA ensemble spread plot (PNG)",
+        data=ens_png,
+        file_name="noaa_gefs_wave_ensemble_spread.png",
+        mime="image/png",
+    )
 
 st.subheader("Combined forecast table")
 st.caption(
@@ -204,7 +250,8 @@ st.markdown(
   DOI: `10.48670/mds-00373`. Source: European Union, Copernicus Marine Service Information or Data, implemented by
   Mercator Ocean International. Use of Copernicus Marine information remains subject to the Copernicus Marine
   licence and terms of service.
-- **NOAA WaveWatch III** - global wave model operated by NOAA/NCEP, re-published through the PacIOOS ERDDAP server.
+- **NOAA GEFS-Wave ensemble** - global 31-member wave ensemble operated by NOAA/NCEP, accessed directly from NOAA's
+  NOMADS GRIB feed.
 - **Open-Meteo Marine** - free for non-commercial use, aggregates NOAA GFS-Wave, DWD ICON-Wave, and ECMWF WAM.
 """
 )
