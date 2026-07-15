@@ -1,6 +1,6 @@
 import math
 from dataclasses import dataclass
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
@@ -16,6 +16,7 @@ class RunupInputs:
     tp: float
     slope: float
     swl: float
+    r: Optional[float] = 0.001  # bed roughness [m], only used by Power et al. (2019)
 
 
 MODEL_ORDER = [
@@ -27,7 +28,59 @@ MODEL_ORDER = [
     "Atkinson et al. (2017)",
     "Senechal et al. (2011)",
     "Passarella et al. (2018)",
+    "Beuzen et al. (2019)",
+    "Power et al. (2019)",
 ]
+
+# Full citation text for each model, used to build a references section wherever
+# results are shown. Keyed by the same names used in MODEL_ORDER.
+MODEL_CITATIONS: Dict[str, str] = {
+    "Stockdon et al. (2006)": (
+        "Stockdon, H. F., Holman, R. A., Howd, P. A., & Sallenger, A. H. (2006). "
+        "Empirical parameterization of setup, swash, and runup. Coastal Engineering, 53(7), 573-588. "
+        "https://doi.org/10.1016/j.coastaleng.2005.12.005"
+    ),
+    "Vousdoukas et al. (2012)": (
+        "Vousdoukas, M. I., Wziatek, D., & Almeida, L. P. (2012). "
+        "Coastal vulnerability assessment based on video wave run-up observations at a mesotidal, steep-sloped beach. "
+        "Ocean Dynamics, 62, 123-137. https://doi.org/10.1007/s10236-011-0480-x"
+    ),
+    "Holman (1986)": (
+        "Holman, R. A. (1986). Extreme value statistics for wave run-up on a natural beach. "
+        "Coastal Engineering, 9, 527-544. https://doi.org/10.1016/0378-3839(86)90002-5"
+    ),
+    "Nielsen (2009)": "Nielsen, P. (2009). Coastal and Estuarine Processes. World Scientific.",
+    "Ruggiero et al. (2001)": (
+        "Ruggiero, P., Komar, P. D., McDougal, W. G., Marra, J. J., & Beach, R. A. (2001). "
+        "Wave runup, extreme water levels and the erosion of properties backing beaches. "
+        "Journal of Coastal Research, 17, 407-419."
+    ),
+    "Atkinson et al. (2017)": (
+        "Atkinson, A. L., Power, H. E., Moura, T., Hammond, T., Callaghan, D. P., & Baldock, T. E. (2017). "
+        "Assessment of runup predictions by empirical models on non-truncated beaches on the south-east Australian coast. "
+        "Coastal Engineering, 119, 15-31. https://doi.org/10.1016/j.coastaleng.2016.10.001"
+    ),
+    "Senechal et al. (2011)": (
+        "Senechal, N., Coco, G., Bryan, K. R., & Holman, R. A. (2011). "
+        "Wave runup during extreme storm conditions. Journal of Geophysical Research, 116. "
+        "https://doi.org/10.1029/2010JC006819"
+    ),
+    "Passarella et al. (2018)": (
+        "Passarella, M., Goldstein, E. B., De Muro, S., & Coco, G. (2018). "
+        "The use of genetic programming to develop a predictor of swash excursion on sandy beaches. "
+        "Natural Hazards and Earth System Sciences, 18, 599-611. https://doi.org/10.5194/nhess-18-599-2018"
+    ),
+    "Beuzen et al. (2019)": (
+        "Beuzen, T., Goldstein, E. B., & Splinter, K. D. (2019). "
+        "Ensemble models from machine learning: an example of wave runup and coastal dune erosion. "
+        "Natural Hazards and Earth System Sciences, 19, 2295-2309. https://doi.org/10.5194/nhess-19-2295-2019"
+    ),
+    "Power et al. (2019)": (
+        "Power, H. E., Gharabaghi, B., Bonakdari, H., Robertson, B., Atkinson, A. L., & Baldock, T. E. (2019). "
+        "Prediction of wave runup on beaches using Gene-Expression Programming and empirical relationships. "
+        "Coastal Engineering, 144, 47-61. https://doi.org/10.1016/j.coastaleng.2018.10.006"
+    ),
+}
 
 
 def validate_inputs(values: RunupInputs) -> None:
@@ -69,6 +122,7 @@ def compute_runup(values: RunupInputs) -> Dict[str, float]:
     hs = [values.hs]
     tp = [values.tp]
     beta = [values.slope]
+    roughness = [values.r if values.r is not None else 0.001]
 
     model_map: Dict[str, Callable[[], float]] = {
         "Stockdon et al. (2006)": lambda: _scalar_result(
@@ -94,6 +148,12 @@ def compute_runup(values: RunupInputs) -> Dict[str, float]:
         ),
         "Passarella et al. (2018)": lambda: _scalar_result(
             models.Passarella2018(Hs=hs, Tp=tp, beta=beta).swash
+        ),
+        "Beuzen et al. (2019)": lambda: _scalar_result(
+            models.Beuzen2019(Hs=hs, Tp=tp, beta=beta).R2
+        ),
+        "Power et al. (2019)": lambda: _scalar_result(
+            models.Power2018(Hs=hs, Tp=tp, beta=beta, r=roughness).R2
         ),
     }
 

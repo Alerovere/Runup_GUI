@@ -4,11 +4,12 @@ import streamlit as st
 
 from src.plotting import (
     fig_to_png_bytes,
+    plot_profile_and_runup_bars,
     plot_profile_with_runup,
     plot_runup_twl_comparison,
 )
 from src.profile_tools import read_profile
-from src.runup_models import MODEL_ORDER, RunupInputs, compute_runup
+from src.runup_models import MODEL_CITATIONS, MODEL_ORDER, RunupInputs, compute_runup
 
 
 def compute_risk_status(results_df: pd.DataFrame, include_swl: bool, threshold: float):
@@ -49,7 +50,8 @@ st.title("Manual calculator")
 st.info(
     "Use this page to estimate wave runup and, optionally, total water level for a single "
     "user-defined scenario. Enter representative values for significant wave height, peak wave period, "
-    "and beach slope. You can optionally include tide + storm surge, define a critical elevation threshold, "
+    f"and beach slope. All {len(MODEL_ORDER)} empirical runup models available in py-wave-runup are computed "
+    "and compared. You can optionally include tide + storm surge, define a critical elevation threshold, "
     "and upload a beach profile to visualize the modelled elevations on a cross-shore section."
 )
 
@@ -116,6 +118,20 @@ with st.sidebar:
             help="Critical elevation used for a qualitative traffic-light style risk interpretation.",
         )
 
+    with st.expander("Advanced: bed roughness"):
+        roughness = st.number_input(
+            "Bed roughness r [m]",
+            min_value=0.0,
+            value=0.001,
+            step=0.0005,
+            format="%.4f",
+            help=(
+                "Hydraulic roughness length, only used by the Power et al. (2019) model. "
+                "Can be approximated as r = 2.5 x D50 (median grain size). "
+                "The default of 0.001 m is representative of a fine-to-medium sand beach."
+            ),
+        )
+
     uploaded_profile = st.file_uploader(
         "Upload beach profile (.csv, .txt, .dat)",
         type=["csv", "txt", "dat"],
@@ -128,7 +144,7 @@ if not calculate:
     st.info("Set the inputs in the sidebar and click Calculate.")
     st.stop()
 
-values = RunupInputs(hs=hs, tp=tp, slope=slope, swl=swl)
+values = RunupInputs(hs=hs, tp=tp, slope=slope, swl=swl, r=roughness)
 runup_results = compute_runup(values)
 
 rows = []
@@ -149,7 +165,10 @@ if results_df.empty:
     st.warning("No model returned a valid result.")
     st.stop()
 
-st.subheader("Results table")
+# -----------------------------------------------------------------------
+# Results
+# -----------------------------------------------------------------------
+st.subheader("Results")
 
 if include_swl:
     st.caption(
@@ -158,6 +177,13 @@ if include_swl:
 else:
     st.caption(
         f"Scenario used: Hs = {hs:.3f} m, Tp = {tp:.3f} s, beta = {slope:.3f}, eta not included."
+    )
+
+n_missing = len(MODEL_ORDER) - len(results_df)
+if n_missing:
+    st.caption(
+        f"{len(results_df)} of {len(MODEL_ORDER)} models returned a valid result for this scenario "
+        f"({n_missing} did not, typically because the input falls outside that model's calibration range)."
     )
 
 if include_swl:
@@ -173,37 +199,66 @@ risk_text = None
 if include_threshold and threshold is not None:
     risk_color, risk_label, risk_text = compute_risk_status(results_df, include_swl, float(threshold))
 
-st.subheader("Model comparison")
-st.caption(
-    "This plot compares the empirical model results for the selected scenario. "
-    "If a water-level offset is included, the darker bar shows runup and the lighter extension shows the added water-level contribution."
-)
+profile_df = read_profile(uploaded_profile)
 
-col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
-with col2:
-    fig_compare = plot_runup_twl_comparison(
-        results_df,
-        threshold=threshold if include_threshold else None,
-        risk_color=risk_color,
-        risk_label=risk_label,
+# -----------------------------------------------------------------------
+# 2a/2b: model comparison, with or without a beach profile
+# -----------------------------------------------------------------------
+main_png = None
+main_png_name = "model_comparison.png"
+
+if profile_df is None:
+    st.subheader("Model comparison")
+    st.caption(
+        "This plot compares the empirical model results for the selected scenario. "
+        "If a water-level offset is included, the darker bar shows runup and the lighter extension shows the added water-level contribution."
     )
-    compare_png = fig_to_png_bytes(fig_compare)
-    st.pyplot(fig_compare, clear_figure=False, use_container_width=False)
 
-st.download_button(
-    "Download model comparison image (PNG)",
-    data=compare_png,
-    file_name="model_comparison.png",
-    mime="image/png",
-)
+    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+    with col2:
+        fig_compare = plot_runup_twl_comparison(
+            results_df,
+            threshold=threshold if include_threshold else None,
+            risk_color=risk_color,
+            risk_label=risk_label,
+        )
+        main_png = fig_to_png_bytes(fig_compare)
+        st.pyplot(fig_compare, clear_figure=False, use_container_width=False)
+else:
+    st.subheader("Model comparison and beach profile")
+    st.caption(
+        "Left: the same model-by-model comparison as above. Right: the uploaded beach profile with the "
+        "individual modelled elevations, their mean, and the ±1 standard deviation range. Both panels share "
+        "the same vertical (elevation) scale."
+    )
+
+    try:
+        fig_combined = plot_profile_and_runup_bars(
+            profile_df,
+            results_df,
+            threshold=threshold if include_threshold else None,
+        )
+        main_png = fig_to_png_bytes(fig_combined)
+        main_png_name = "model_comparison_and_profile.png"
+        st.pyplot(fig_combined, clear_figure=False, use_container_width=False)
+    except Exception as e:
+        st.warning(f"Could not plot the beach profile: {e}")
+        fig_compare = plot_runup_twl_comparison(
+            results_df,
+            threshold=threshold if include_threshold else None,
+            risk_color=risk_color,
+            risk_label=risk_label,
+        )
+        main_png = fig_to_png_bytes(fig_compare)
+        st.pyplot(fig_compare, clear_figure=False, use_container_width=False)
 
 if include_threshold and threshold is not None:
     st.markdown(
         f"""
-**Threshold interpretation.** The dashed red line marks the critical elevation threshold ({threshold:.2f} m).  
-Green = threshold above all model outputs.  
-Yellow = threshold exceeded by some individual models only.  
-Orange = threshold lies within the mean ± 1 SD model range.  
+**Threshold interpretation.** The dashed red line marks the critical elevation threshold ({threshold:.2f} m).
+Green = threshold above all model outputs.
+Yellow = threshold exceeded by some individual models only.
+Orange = threshold lies within the mean ± 1 SD model range.
 Red = threshold below mean - 1 SD, indicating robust exceedance.
 """
     )
@@ -212,33 +267,38 @@ Red = threshold below mean - 1 SD, indicating robust exceedance.
         unsafe_allow_html=True,
     )
 
-profile_df = read_profile(uploaded_profile)
-if profile_df is not None:
-    st.subheader("Beach profile")
-    if include_swl:
-        st.caption(
-            "This plot shows the uploaded beach profile together with individual modelled total water levels, "
-            "their mean, and the ±1 standard deviation range."
-        )
-    else:
-        st.caption(
-            "This plot shows the uploaded beach profile together with individual modelled runup elevations, "
-            "their mean, and the ±1 standard deviation range."
-        )
+# -----------------------------------------------------------------------
+# Downloads
+# -----------------------------------------------------------------------
+st.subheader("Downloads")
 
-    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
-    with col2:
-        fig_profile = plot_profile_with_runup(
-            profile_df,
-            results_df,
-            threshold=threshold if include_threshold else None,
-        )
-        profile_png = fig_to_png_bytes(fig_profile)
-        st.pyplot(fig_profile, clear_figure=False, use_container_width=False)
-
+csv_bytes = display_df.to_csv(index=False).encode("utf-8")
+dl_col1, dl_col2 = st.columns(2)
+with dl_col1:
     st.download_button(
-        "Download beach profile image (PNG)",
-        data=profile_png,
-        file_name="beach_profile.png",
-        mime="image/png",
+        "Download results table (CSV)",
+        data=csv_bytes,
+        file_name="manual_calculator_results.csv",
+        mime="text/csv",
+        use_container_width=True,
     )
+with dl_col2:
+    if main_png is not None:
+        st.download_button(
+            "Download figure (PNG)",
+            data=main_png,
+            file_name=main_png_name,
+            mime="image/png",
+            use_container_width=True,
+        )
+
+# -----------------------------------------------------------------------
+# Citations
+# -----------------------------------------------------------------------
+st.subheader("References")
+st.caption("Citations for the empirical models that returned a valid result for this scenario.")
+
+for model_name in results_df["Model"]:
+    citation = MODEL_CITATIONS.get(model_name)
+    if citation:
+        st.markdown(citation)

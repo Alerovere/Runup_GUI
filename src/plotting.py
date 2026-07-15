@@ -12,13 +12,18 @@ def fig_to_png_bytes(fig) -> bytes:
     return buf.getvalue()
 
 
-def plot_profile_with_runup(
+def _draw_profile_panel(
+    ax,
     profile_df: pd.DataFrame,
     results_df: pd.DataFrame,
     threshold: Optional[float] = None,
 ):
+    """Draw the beach profile + modelled water levels onto an existing ax.
+
+    Returns (ymin, ymax) so a companion panel (e.g. a bar chart) can be locked
+    to the same vertical scale.
+    """
     import numpy as np
-    import matplotlib.pyplot as plt
 
     profile = profile_df.copy().sort_values("x").reset_index(drop=True)
 
@@ -150,8 +155,6 @@ def plot_profile_with_runup(
     else:
         band_left = mean_left
 
-    fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
-
     # -------------------------------------------------
     # 5. Plot profile
     # -------------------------------------------------
@@ -242,8 +245,10 @@ def plot_profile_with_runup(
             label="Critical elevation threshold",
         )
 
+    ylim = (target_min - 0.5, target_max + 0.5)
+
     ax.set_xlim(x_min, x_max)
-    ax.set_ylim(target_min - 0.5, target_max + 0.5)
+    ax.set_ylim(*ylim)
     ax.set_xlabel("Cross-shore distance x [m]", fontsize=9)
     ax.set_ylabel("Elevation y [m]", fontsize=9)
     ax.set_title(title, fontsize=10, pad=8)
@@ -253,6 +258,18 @@ def plot_profile_with_runup(
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
+
+    return ylim
+
+
+def plot_profile_with_runup(
+    profile_df: pd.DataFrame,
+    results_df: pd.DataFrame,
+    threshold: Optional[float] = None,
+):
+    fig, ax = plt.subplots(figsize=(5.2, 3.8), dpi=160)
+
+    _draw_profile_panel(ax, profile_df, results_df, threshold)
 
     ax.legend(
         frameon=False,
@@ -267,6 +284,97 @@ def plot_profile_with_runup(
     fig.tight_layout()
     return fig
 
+
+def _draw_runup_bars_vertical(ax, results_df: pd.DataFrame, threshold: Optional[float] = None):
+    """Draw a vertical bar chart of runup / TWL per model onto an existing ax."""
+    plot_df = results_df.copy()
+
+    sort_col = "Total water level [m]" if "Total water level [m]" in plot_df.columns else "Runup [m]"
+    plot_df = plot_df.sort_values(sort_col, ascending=True).reset_index(drop=True)
+    plot_df["Short model"] = [name.replace(" et al.", "") for name in plot_df["Model"]]
+
+    x = list(range(len(plot_df)))
+
+    ax.bar(x, plot_df["Runup [m]"], width=0.55, edgecolor="none", label="Runup")
+
+    if "Total water level [m]" in plot_df.columns:
+        twl_extension = plot_df["Total water level [m]"] - plot_df["Runup [m]"]
+        ax.bar(
+            x,
+            twl_extension,
+            bottom=plot_df["Runup [m]"],
+            width=0.55,
+            edgecolor="none",
+            alpha=0.5,
+            color="lightblue",
+            label="TWL addition",
+        )
+        title = "Runup and total water level"
+    else:
+        title = "Runup"
+
+    if threshold is not None:
+        ax.axhline(
+            float(threshold),
+            color="crimson",
+            linestyle="--",
+            linewidth=1.4,
+            label="Critical elevation threshold",
+        )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(plot_df["Short model"], fontsize=7, rotation=60, ha="right")
+    ax.set_ylabel("Elevation [m]", fontsize=9)
+    ax.set_title(title, fontsize=10, pad=8)
+
+    ax.tick_params(axis="y", labelsize=8)
+    ax.grid(True, axis="y", alpha=0.2, linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+
+
+def plot_profile_and_runup_bars(
+    profile_df: pd.DataFrame,
+    results_df: pd.DataFrame,
+    threshold: Optional[float] = None,
+):
+    """Two-panel figure: vertical runup/TWL bars (left) and beach profile (right),
+    sharing the same vertical (elevation) scale so the two can be read side by side.
+    """
+    fig, (ax_bar, ax_profile) = plt.subplots(
+        1,
+        2,
+        figsize=(9.6, 4.2),
+        dpi=160,
+        sharey=True,
+        gridspec_kw={"width_ratios": [1.0, 1.6]},
+    )
+
+    ylim = _draw_profile_panel(ax_profile, profile_df, results_df, threshold)
+    _draw_runup_bars_vertical(ax_bar, results_df, threshold)
+
+    ax_bar.set_ylim(*ylim)
+    ax_profile.set_ylabel("")
+
+    handles_bar, labels_bar = ax_bar.get_legend_handles_labels()
+    handles_profile, labels_profile = ax_profile.get_legend_handles_labels()
+
+    combined = dict(zip(labels_bar + labels_profile, handles_bar + handles_profile))
+
+    fig.legend(
+        combined.values(),
+        combined.keys(),
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=3,
+        handlelength=1.6,
+        columnspacing=1.4,
+    )
+
+    fig.tight_layout(rect=(0, 0.1, 1, 1))
+    return fig
 
 
 def plot_runup_twl_comparison(

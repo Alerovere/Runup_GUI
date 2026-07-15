@@ -150,6 +150,16 @@ Senechal, N., Coco, G., Bryan, K. R., & Holman, R. A. (2011).
 *Wave runup during extreme storm conditions.*  
 **Journal of Geophysical Research, 116**.  
 https://doi.org/10.1029/2010JC006819
+
+Beuzen, T., Goldstein, E. B., & Splinter, K. D. (2019).  
+*Ensemble models from machine learning: an example of wave runup and coastal dune erosion.*  
+**Natural Hazards and Earth System Sciences, 19**, 2295-2309.  
+https://doi.org/10.5194/nhess-19-2295-2019
+
+Power, H. E., Gharabaghi, B., Bonakdari, H., Robertson, B., Atkinson, A. L., & Baldock, T. E. (2019).  
+*Prediction of wave runup on beaches using Gene-Expression Programming and empirical relationships.*  
+**Coastal Engineering, 144**, 47-61.  
+https://doi.org/10.1016/j.coastaleng.2018.10.006
 """
 )
 
