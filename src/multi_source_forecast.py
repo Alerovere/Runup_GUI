@@ -197,7 +197,7 @@ def _fetch_one_gefs_wave_member_hour(
 
         point = ds.sel(latitude=latitude, longitude=target_lon, method="nearest")
 
-        valid_time = pd.to_datetime(point["valid_time"].values)
+        valid_time = pd.to_datetime(point["valid_time"].values, utc=True)
         hs = float(point["swh"].values) if "swh" in point else np.nan
         tp = float(point["perpw"].values) if "perpw" in point else np.nan
         wave_dir = float(point["dirpw"].values) if "dirpw" in point else np.nan
@@ -345,7 +345,19 @@ def merge_multi_source(source_frames: dict) -> pd.DataFrame:
                 "Tp [s]": f"{source_name} Tp [s]",
                 "Dir [deg]": f"{source_name} Dir [deg]",
             }
-        )[["time", f"{source_name} Hs [m]", f"{source_name} Tp [s]", f"{source_name} Dir [deg]"]].set_index("time")
+        )[["time", f"{source_name} Hs [m]", f"{source_name} Tp [s]", f"{source_name} Dir [deg]"]].copy()
+
+        # Defensive: every source is expected to already return tz-aware UTC timestamps,
+        # but a mismatch here (tz-naive vs tz-aware) raises an unhelpful pandas TypeError
+        # on join, so normalize defensively rather than letting one source silently break
+        # the whole page.
+        time_col = pd.to_datetime(renamed["time"])
+        if time_col.dt.tz is None:
+            time_col = time_col.dt.tz_localize("UTC")
+        else:
+            time_col = time_col.dt.tz_convert("UTC")
+        renamed["time"] = time_col
+        renamed = renamed.set_index("time")
 
         combined = renamed if combined is None else combined.join(renamed, how="outer")
 
