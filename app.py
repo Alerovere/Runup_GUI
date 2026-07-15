@@ -43,6 +43,12 @@ This page is designed for single scenarios. You can enter significant wave heigh
 beach slope, and optionally a water-level contribution, a critical elevation threshold, and a beach profile.
 The app compares several empirical runup models, highlights threshold exceedance, and can project the results onto a shoreline profile.
 
+**Wave Explorer**  
+This page explores the long-term wave climate at a single offshore point, using either the Mediterranean or the
+global Copernicus Marine wave reanalysis. It computes a wave rose, Gumbel return-value estimates by directional sector,
+and a ranked list of historical storm peaks. If you are unsure what Hs/Tp to use on the Manual calculator page, this
+page can send a chosen return-period estimate there directly.
+
 **Mediterranean forecast**  
 This page is designed for short-term exploration of forecast conditions at a selected offshore point in the Mediterranean.
 The app extracts wave conditions from Copernicus Marine and computes a time-varying runup or total water level signal across the available empirical models.
@@ -70,6 +76,20 @@ This application builds on the Python package **py-wave-runup**, which provides 
 )
 
 st.caption("py-wave-runup repository: https://github.com/chrisleaman/py-wave-runup")
+
+st.markdown(
+    """
+The Wave Explorer page uses one of two Copernicus Marine wave reanalysis products, depending on the selected region:
+
+- **Mediterranean Sea Waves Reanalysis**
+  Product ID: `MEDSEA_MULTIYEAR_WAV_006_012`
+  DOI: `10.25423/CMCC/MEDSEA_MULTIYEAR_WAV_006_012`
+
+- **Global Ocean Waves Reanalysis (WAVERYS)**
+  Product ID: `GLOBAL_MULTIYEAR_WAV_001_032`
+  DOI: `10.48670/moi-00022`
+"""
+)
 
 st.markdown(
     """
@@ -163,4 +183,4 @@ https://doi.org/10.1016/j.coastaleng.2018.10.006
 """
 )
 
-st.info("Use the sidebar to open the Manual calculator, Mediterranean forecast, Wave Explorer, or Multi-source forecast page.")
+st.info("Use the sidebar to open the Manual calculator, Wave Explorer, Mediterranean forecast, or Multi-source forecast page.")

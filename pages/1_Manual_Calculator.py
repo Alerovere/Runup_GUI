@@ -55,13 +55,22 @@ st.info(
     "and upload a beach profile to visualize the modelled elevations on a cross-shore section."
 )
 
+# Hs/Tp prefill handoff from the Wave Explorer page's "Suggested scenario" feature.
+# Consumed (popped) immediately so it only applies once and doesn't fight later manual edits.
+prefill_note = st.session_state.pop("prefill_note", None)
+default_hs = st.session_state.pop("prefill_hs", 1.5)
+default_tp = st.session_state.pop("prefill_tp", 8.0)
+
+if prefill_note:
+    st.success(prefill_note)
+
 with st.sidebar:
     st.header("Manual inputs")
 
     hs = st.number_input(
         "Significant wave height Hs [m]",
         min_value=0.001,
-        value=1.5,
+        value=float(default_hs),
         step=0.1,
         format="%.3f",
         help="Representative offshore or nearshore significant wave height for the scenario being analysed.",
@@ -70,7 +79,7 @@ with st.sidebar:
     tp = st.number_input(
         "Wave period Tp [s]",
         min_value=0.001,
-        value=8.0,
+        value=float(default_tp),
         step=0.1,
         format="%.3f",
         help="Representative peak wave period associated with Hs.",

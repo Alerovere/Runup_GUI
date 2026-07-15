@@ -12,6 +12,31 @@ except ImportError:
 
 
 MED_WAVE_MULTIYEAR_DATASET_ID = "cmems_mod_med_wav_my_4.2km_PT1H-i"
+GLOBAL_WAVE_MULTIYEAR_DATASET_ID = "cmems_mod_glo_wav_my_0.2deg_PT3H-i"
+
+# Region choices exposed to the Wave Explorer page. Each entry carries the dataset id,
+# a human-readable product name/DOI for citation, and the known temporal coverage of the
+# reanalysis so the page can set sensible date-picker defaults/limits per region.
+REGIONS = {
+    "Mediterranean": {
+        "dataset_id": MED_WAVE_MULTIYEAR_DATASET_ID,
+        "product_name": "Mediterranean Sea Waves Reanalysis",
+        "product_id": "MEDSEA_MULTIYEAR_WAV_006_012",
+        "doi": "10.25423/CMCC/MEDSEA_MULTIYEAR_WAV_006_012",
+        "coverage_start": date(1985, 1, 1),
+        "coverage_end": date(2024, 12, 31),
+        "bbox": (30.0, 46.5, -6.5, 37.0),  # (min_lat, max_lat, min_lon, max_lon)
+    },
+    "Global": {
+        "dataset_id": GLOBAL_WAVE_MULTIYEAR_DATASET_ID,
+        "product_name": "Global Ocean Waves Reanalysis (WAVERYS)",
+        "product_id": "GLOBAL_MULTIYEAR_WAV_001_032",
+        "doi": "10.48670/moi-00022",
+        "coverage_start": date(1980, 1, 1),
+        "coverage_end": date(2026, 3, 31),
+        "bbox": (-89.8, 89.8, -180.0, 179.8),
+    },
+}
 
 PREFERRED_HS_VARS = [
     "VHM0",
@@ -46,12 +71,13 @@ def fetch_copernicus_wave_climate_timeseries(
     end_date: date,
     username: str,
     password: str,
+    dataset_id: str = MED_WAVE_MULTIYEAR_DATASET_ID,
 ) -> Tuple[pd.DataFrame, dict]:
     if copernicusmarine is None:
         raise ImportError("copernicusmarine is not installed.")
 
     ds = copernicusmarine.open_dataset(
-        dataset_id=MED_WAVE_MULTIYEAR_DATASET_ID,
+        dataset_id=dataset_id,
         minimum_longitude=longitude,
         maximum_longitude=longitude,
         minimum_latitude=latitude,
@@ -107,7 +133,7 @@ def fetch_copernicus_wave_climate_timeseries(
         raise ValueError("No wave-climate records were returned for this point.")
 
     metadata = {
-        "dataset_id": MED_WAVE_MULTIYEAR_DATASET_ID,
+        "dataset_id": dataset_id,
         "hs_var": hs_var,
         "tp_var": tp_var,
         "dir_var": dir_var,
