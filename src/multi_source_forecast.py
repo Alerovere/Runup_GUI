@@ -273,6 +273,14 @@ def fetch_noaa_gefs_wave_ensemble(
     if detail_df.empty:
         raise ValueError("GEFS-Wave ensemble requests succeeded but returned no usable values.")
 
+    summary_df = summarize_ensemble_detail(detail_df)
+
+    return detail_df, summary_df, metadata
+
+
+def summarize_ensemble_detail(detail_df: pd.DataFrame) -> pd.DataFrame:
+    """Per-timestep ensemble mean/min/max Hs, mean Tp, circular-mean Dir, and
+    member count, from a per-member detail table (time, Model, Hs [m], Tp [s], Dir [deg])."""
     summary_rows = []
     for time_val, group in detail_df.groupby("time"):
         summary_rows.append(
@@ -287,9 +295,61 @@ def fetch_noaa_gefs_wave_ensemble(
             }
         )
 
-    summary_df = pd.DataFrame(summary_rows).sort_values("time").reset_index(drop=True)
+    return pd.DataFrame(summary_rows).sort_values("time").reset_index(drop=True)
 
-    return detail_df, summary_df, metadata
+
+def interpolate_ensemble_to_hourly(detail_df: pd.DataFrame, freq: str = "1h") -> pd.DataFrame:
+    """Interpolate each ensemble member's Hs/Tp series onto a common hourly grid
+    with a cubic spline, per member.
+
+    The NOAA GEFS-Wave ensemble is only available every 6 hours, while Copernicus
+    and Open-Meteo are hourly. Combining them directly means the set of estimates
+    feeding the combined runup band changes abruptly every 6 hours (many more,
+    wider-spread NOAA-derived estimates suddenly appear), which shows up as
+    spikes in the combined mean/SD band. Interpolating each member onto the same
+    hourly grid first removes that composition jump; only interpolation within
+    each member's own known time range is used (no extrapolation).
+    """
+    if detail_df is None or detail_df.empty:
+        return detail_df
+
+    from scipy.interpolate import CubicSpline
+
+    step_seconds = pd.Timedelta(freq).total_seconds()
+    out_frames = []
+
+    for member, group in detail_df.groupby("Model"):
+        g = group.sort_values("time").reset_index(drop=True)
+        g["time"] = pd.to_datetime(g["time"])
+
+        if len(g) < 3:
+            # Not enough points for a cubic spline; keep this member as-is.
+            out_frames.append(g)
+            continue
+
+        t0 = g["time"].iloc[0]
+        x = (g["time"] - t0).dt.total_seconds().to_numpy()
+        new_x = np.arange(x[0], x[-1] + 1e-6, step_seconds)
+        new_time = t0 + pd.to_timedelta(new_x, unit="s")
+
+        interp = pd.DataFrame({"time": new_time, "Model": member})
+        for col in ["Hs [m]", "Tp [s]"]:
+            spline = CubicSpline(x, g[col].to_numpy())
+            interp[col] = spline(new_x)
+
+        if "Dir [deg]" in g.columns:
+            # Direction is circular, so hold the nearest observed value rather
+            # than splining an angle (which breaks down across the 0/360 wrap).
+            interp = pd.merge_asof(
+                interp.sort_values("time"),
+                g[["time", "Dir [deg]"]].sort_values("time"),
+                on="time",
+                direction="nearest",
+            )
+
+        out_frames.append(interp)
+
+    return pd.concat(out_frames, ignore_index=True).sort_values(["time", "Model"]).reset_index(drop=True)
 
 
 @st.cache_data(ttl=1800, show_spinner=False)

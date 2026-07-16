@@ -20,7 +20,9 @@ from src.multi_source_forecast import (
     fetch_copernicus_med_wave_forecast,
     fetch_noaa_gefs_wave_ensemble,
     fetch_openmeteo_wave_forecast,
+    interpolate_ensemble_to_hourly,
     merge_multi_source,
+    summarize_ensemble_detail,
 )
 from src.plotting import (
     fig_to_png_bytes,
@@ -219,10 +221,17 @@ if fetch_button:
                     latitude=lat,
                     forecast_days=forecast_days,
                 )
+                # NOAA is only available every 6 hours, while Copernicus/Open-Meteo are hourly.
+                # Interpolate each member onto an hourly grid (cubic spline) so the combined
+                # runup band doesn't jump every 6 hours just because NOAA's contribution
+                # suddenly appears/disappears at those timesteps.
+                noaa_detail_df = interpolate_ensemble_to_hourly(noaa_detail_df, freq="1h")
+                noaa_summary_df = summarize_ensemble_detail(noaa_detail_df)
                 source_frames_for_wide["NOAA GEFS-Wave"] = noaa_summary_df[["time", "Hs [m]", "Tp [s]", "Dir [deg]"]]
                 source_notes.append(
                     f"NOAA GEFS-Wave ensemble, cycle {noaa_metadata['cycle_date']} {noaa_metadata['cycle_hour']:02d}Z "
-                    f"({noaa_metadata['succeeded']}/{noaa_metadata['requested']} member-hour requests succeeded)"
+                    f"({noaa_metadata['succeeded']}/{noaa_metadata['requested']} member-hour requests succeeded, "
+                    "interpolated to hourly resolution per member via cubic spline)"
                 )
             except Exception as e:
                 st.warning(f"NOAA GEFS-Wave ensemble fetch failed: {e}")
