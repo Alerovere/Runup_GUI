@@ -4,14 +4,15 @@ import streamlit as st
 from src.copernicus_wave_climate import REGIONS, fetch_copernicus_wave_climate_timeseries
 from src.extremes import (
     build_return_value_table,
+    build_sector_max_table,
     extract_storm_maxima,
     filter_by_sector,
     summarize_wave_series,
 )
 from src.plotting import (
+    build_interactive_wave_timeseries_figure,
     fig_to_png_bytes,
     plot_return_values,
-    plot_wave_climate_timeseries,
     plot_wave_rose,
 )
 
@@ -241,8 +242,9 @@ c1.metric("Mean Hs (all data)", f"{stats['mean_hs']:.2f} m")
 c2.metric("Max Hs (all data)", f"{stats['max_hs']:.2f} m")
 c3.metric("95th percentile Hs", f"{stats['p95_hs']:.2f} m")
 
-st.subheader("Wave rose")
-st.caption("The wave rose summarizes the directional distribution of wave occurrence at the selected offshore point.")
+st.caption("Largest wave event on record for each directional sector (independent of the sector filter in the sidebar).")
+sector_max_df = build_sector_max_table(climate_df)
+st.dataframe(sector_max_df, use_container_width=True, hide_index=True)
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
@@ -258,20 +260,16 @@ st.download_button(
 )
 
 st.subheader("Extracted wave time series")
-st.caption("This figure shows the historical significant wave height and peak period extracted at the selected point.")
-
-col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
-with col2:
-    fig_ts = plot_wave_climate_timeseries(climate_df)
-    ts_png = fig_to_png_bytes(fig_ts)
-    st.pyplot(fig_ts, clear_figure=False, use_container_width=False)
-
-st.download_button(
-    label="Download wave time-series plot (PNG)",
-    data=ts_png,
-    file_name="wave_timeseries.png",
-    mime="image/png",
+st.caption(
+    "Interactive view of the historical Hs and Tp extracted at the selected point. Drag to zoom, "
+    "double-click to reset, or use the range slider below the chart. The thin strip above the chart "
+    "shows wave direction as small arrows; zoom in on a period of interest to read individual directions."
 )
+
+fig_ts, ts_downsampled = build_interactive_wave_timeseries_figure(climate_df)
+if ts_downsampled:
+    st.caption("The plotted series has been downsampled for display performance; the tables and statistics elsewhere on this page still use the full-resolution data.")
+st.plotly_chart(fig_ts, use_container_width=True)
 
 st.subheader("Return values by directional sector")
 st.caption(

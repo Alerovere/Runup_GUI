@@ -881,8 +881,6 @@ def plot_wave_rose(df: pd.DataFrame):
     ax.set_theta_zero_location("N")
     ax.set_theta_direction(-1)
 
-    ax.set_title("Wave rose", fontsize=10, pad=14)
-
     ax.tick_params(labelsize=8)
     ax.grid(color="0.7", linewidth=0.8)
 
@@ -978,6 +976,107 @@ def plot_wave_climate_timeseries(df: pd.DataFrame):
 
     fig.tight_layout()
     return fig
+
+
+def build_interactive_wave_timeseries_figure(df: pd.DataFrame, max_points: int = 20000):
+    """Interactive, zoomable Hs/Tp time series (Plotly) with a thin direction-arrow strip
+    on top. Zoomed out over a long record the arrows overlap into a dense band; dragging
+    to zoom in (or using the range slider) spaces them out enough to read individual wave
+    directions. Hs and Tp share the same x-axis but use independent y-axes.
+    """
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    plot_df = df.copy().sort_values("time").reset_index(drop=True)
+    plot_df["time"] = pd.to_datetime(plot_df["time"])
+
+    n = len(plot_df)
+    downsampled = False
+    if n > max_points:
+        step = max(1, n // max_points)
+        plot_df = plot_df.iloc[::step].reset_index(drop=True)
+        downsampled = True
+
+    time = plot_df["time"]
+    hs = plot_df["Hs [m]"]
+    tp = plot_df["Tp [s]"]
+    direction = plot_df["Dir [deg]"]
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        row_heights=[0.16, 0.84],
+        vertical_spacing=0.05,
+        specs=[[{"secondary_y": False}], [{"secondary_y": True}]],
+    )
+
+    fig.add_trace(
+        go.Scattergl(
+            x=time,
+            y=[0] * len(time),
+            mode="markers",
+            marker=dict(
+                symbol="arrow",
+                size=9,
+                angle=direction,
+                color="#4f9be6",
+                line=dict(width=0.5, color="#0b5cad"),
+            ),
+            name="Direction",
+            customdata=direction,
+            hovertemplate="%{x}<br>Dir: %{customdata:.0f} deg (from)<extra></extra>",
+        ),
+        row=1,
+        col=1,
+    )
+    fig.update_yaxes(visible=False, showgrid=False, row=1, col=1)
+
+    fig.add_trace(
+        go.Scattergl(
+            x=time,
+            y=hs,
+            mode="lines",
+            line=dict(color="#4f9be6", width=1.2),
+            name="Hs [m]",
+            hovertemplate="Hs: %{y:.2f} m<extra></extra>",
+        ),
+        row=2,
+        col=1,
+        secondary_y=False,
+    )
+    fig.add_trace(
+        go.Scattergl(
+            x=time,
+            y=tp,
+            mode="lines",
+            line=dict(color="goldenrod", width=1.2),
+            name="Tp [s]",
+            hovertemplate="Tp: %{y:.2f} s<extra></extra>",
+        ),
+        row=2,
+        col=1,
+        secondary_y=True,
+    )
+
+    fig.update_yaxes(title_text="Hs [m]", row=2, col=1, secondary_y=False)
+    fig.update_yaxes(title_text="Tp [s]", row=2, col=1, secondary_y=True, showgrid=False)
+    fig.update_xaxes(
+        title_text="Date",
+        rangeslider=dict(visible=True, thickness=0.07),
+        row=2,
+        col=1,
+    )
+
+    fig.update_layout(
+        height=520,
+        margin=dict(l=60, r=60, t=10, b=40),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="left", x=0),
+        plot_bgcolor="white",
+    )
+
+    return fig, downsampled
 
 
 

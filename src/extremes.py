@@ -138,6 +138,29 @@ def build_return_value_table(
     return pd.DataFrame(rows)
 
 
+def build_sector_max_table(df: pd.DataFrame) -> pd.DataFrame:
+    """For each directional sector, report the single largest wave event on record:
+    its Hs, associated Tp, direction, and the date/time it occurred."""
+    rows = []
+    for sector_name in SECTOR_BOUNDS.keys():
+        sector_df = filter_by_sector(df, sector_name)
+        if sector_df.empty:
+            continue
+
+        peak = sector_df.loc[sector_df["Hs [m]"].idxmax()]
+        rows.append(
+            {
+                "Sector": sector_name,
+                "Max Hs [m]": round(float(peak["Hs [m]"]), 3),
+                "Tp [s]": round(float(peak["Tp [s]"]), 3),
+                "Dir [deg]": round(float(peak["Dir [deg]"]), 1),
+                "Date": pd.to_datetime(peak["time"]).strftime("%Y-%m-%d %H:%M"),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
 def summarize_wave_series(df: pd.DataFrame) -> Dict[str, float]:
     return {
         "mean_hs": float(df["Hs [m]"].mean()),
