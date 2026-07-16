@@ -227,7 +227,7 @@ st.subheader("Wave climate summary")
 
 st.markdown(
     f"""
-**Selected period**
+**Selected period (UTC)**
 {pd.to_datetime(climate_df['time'].min()).strftime("%A, %B")} {pd.to_datetime(climate_df['time'].min()).day}, {pd.to_datetime(climate_df['time'].min()).year}
 to
 {pd.to_datetime(climate_df['time'].max()).strftime("%A, %B")} {pd.to_datetime(climate_df['time'].max()).day}, {pd.to_datetime(climate_df['time'].max()).year}
@@ -322,6 +322,7 @@ top10_display["time"] = pd.to_datetime(top10_display["time"]).dt.strftime("%Y-%m
 top10_display["Hs [m]"] = top10_display["Hs [m]"].round(3)
 top10_display["Tp [s]"] = top10_display["Tp [s]"].round(3)
 top10_display["Dir [deg]"] = top10_display["Dir [deg]"].round(1)
+top10_display = top10_display.rename(columns={"time": "time (UTC)"})
 
 st.dataframe(top10_display, use_container_width=True, hide_index=True)
 

@@ -695,6 +695,7 @@ def plot_daily_threshold_bar(daily_prob_df: pd.DataFrame, title: str = "Daily th
     labels = [pd.to_datetime(str(d)).strftime("%a\n%d %b") for d in daily_prob_df["date"]]
     ax.set_xticks(list(x))
     ax.set_xticklabels(labels, fontsize=8)
+    ax.set_xlabel("Date (UTC)", fontsize=8)
     ax.tick_params(axis="y", labelsize=8)
 
     ax.set_title(title, fontsize=10, pad=8)
@@ -738,7 +739,7 @@ def plot_exceedance_probability_timeseries(
 
     ax.set_ylim(0, 105)
     ax.set_ylabel("Exceedance probability [%]", fontsize=9)
-    ax.set_xlabel("Date", fontsize=9)
+    ax.set_xlabel("Date (UTC)", fontsize=9)
     ax.set_title(title, fontsize=10, pad=8)
 
     ax.tick_params(axis="y", labelsize=8)
@@ -826,7 +827,7 @@ def plot_forecast_model_timeseries(
 
     ax.set_title(title, fontsize=10, pad=8)
     ax.set_ylabel(value_col, fontsize=9)
-    ax.set_xlabel("Date", fontsize=9)
+    ax.set_xlabel("Date (UTC)", fontsize=9)
 
     ax.tick_params(axis="y", labelsize=8)
     ax.tick_params(axis="x", labelsize=8, rotation=0)
@@ -984,7 +985,7 @@ def plot_wave_timeseries(envelope_df: pd.DataFrame):
         axes[2].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
 
     axes[2].tick_params(axis="x", labelsize=8, rotation=0)
-    axes[2].set_xlabel("Date", fontsize=9)
+    axes[2].set_xlabel("Date (UTC)", fontsize=9)
 
     fig.tight_layout()
     return fig
@@ -1019,7 +1020,7 @@ def plot_wave_climate_timeseries(df: pd.DataFrame):
     axes[1].xaxis.set_major_locator(mdates.YearLocator(base=2))
     axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     axes[1].tick_params(axis="x", labelsize=8, rotation=0)
-    axes[1].set_xlabel("Date", fontsize=9)
+    axes[1].set_xlabel("Date (UTC)", fontsize=9)
 
     fig.tight_layout()
     return fig
@@ -1109,7 +1110,7 @@ def build_interactive_wave_timeseries_figure(df: pd.DataFrame, max_points: int =
     fig.update_yaxes(title_text="Hs [m]", row=2, col=1, secondary_y=False)
     fig.update_yaxes(title_text="Tp [s]", row=2, col=1, secondary_y=True, showgrid=False)
     fig.update_xaxes(
-        title_text="Date",
+        title_text="Date (UTC)",
         rangeslider=dict(visible=True, thickness=0.07),
         row=2,
         col=1,
@@ -1152,7 +1153,7 @@ def plot_multi_source_hs_comparison(combined_df: pd.DataFrame, source_names: lis
 
     ax.set_title("Significant wave height by source", fontsize=10, pad=8)
     ax.set_ylabel("Hs [m]", fontsize=9)
-    ax.set_xlabel("Date", fontsize=9)
+    ax.set_xlabel("Date (UTC)", fontsize=9)
 
     ax.tick_params(axis="y", labelsize=8)
     ax.tick_params(axis="x", labelsize=8, rotation=0)
@@ -1334,7 +1335,7 @@ def plot_wave_data_comparison(
         ax_sl.grid(False)
 
     axes[0].set_title("Wave data by source", fontsize=10, pad=8)
-    axes[-1].set_xlabel("Date", fontsize=9)
+    axes[-1].set_xlabel("Date (UTC)", fontsize=9)
     axes[-1].xaxis.set_major_locator(mdates.DayLocator())
     try:
         axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
@@ -1451,7 +1452,7 @@ def plot_forecast_band(
 
     ax.set_title(title, fontsize=10, pad=8)
     ax.set_ylabel(value_col, fontsize=9)
-    ax.set_xlabel("Date", fontsize=9)
+    ax.set_xlabel("Date (UTC)", fontsize=9)
     ax.tick_params(axis="y", labelsize=8)
     ax.tick_params(axis="x", labelsize=8, rotation=0)
     ax.spines["top"].set_visible(False)

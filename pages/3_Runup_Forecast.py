@@ -522,6 +522,7 @@ if threshold is not None:
         display_events_df = exceedance_events_df.copy()
         display_events_df["Start"] = pd.to_datetime(display_events_df["Start"]).dt.strftime("%Y-%m-%d %H:%M")
         display_events_df["End"] = pd.to_datetime(display_events_df["End"]).dt.strftime("%Y-%m-%d %H:%M")
+        display_events_df = display_events_df.rename(columns={"Start": "Start (UTC)", "End": "End (UTC)"})
         st.dataframe(display_events_df, use_container_width=True, hide_index=True)
     else:
         st.caption(f"The exceedance probability never reaches the {alert_probability:.0%} alert level in this forecast.")
@@ -535,6 +536,7 @@ st.caption(
 
 display_df = combined_wide_df.copy()
 display_df["time"] = pd.to_datetime(display_df["time"]).dt.strftime("%Y-%m-%d %H:%M")
+display_df = display_df.rename(columns={"time": "time (UTC)"})
 st.dataframe(display_df, use_container_width=True, hide_index=True)
 
 csv_bytes = combined_wide_df.to_csv(index=False).encode("utf-8")

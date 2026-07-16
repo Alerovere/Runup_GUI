@@ -34,33 +34,42 @@ with col2:
 st.markdown(
     """
 In this app, empirical runup models are used to estimate the shoreline elevation reached by waves,
-either for a **single user-defined scenario** or for a **short Mediterranean forecast period**.
+either for a **single user-defined scenario**, for **exploring the long-term historical wave climate** at a point,
+or for a **multi-source forecast** built for coastal managers who need an at-a-glance, probability-based read on
+upcoming threshold exceedance.
 
 ### Pages in this app
 
-**Manual calculator**  
+**Manual calculator**
 This page is designed for single scenarios. You can enter significant wave height, peak period,
 beach slope, and optionally a water-level contribution, a critical elevation threshold, and a beach profile.
 The app compares several empirical runup models, highlights threshold exceedance, and can project the results onto a shoreline profile.
 
-**Wave Explorer**  
+**Wave Explorer**
 This page explores the long-term wave climate at a single offshore point, using either the Mediterranean or the
-global Copernicus Marine wave reanalysis. It computes a wave rose, Gumbel return-value estimates by directional sector,
-and a ranked list of historical storm peaks, including a suggested Hs/Tp pair for a chosen return period that you
-can enter yourself on the Manual calculator page.
+global Copernicus Marine wave reanalysis. It reports, for each directional sector, the largest wave event on record
+(Hs, Tp, direction, and date), a wave rose, Gumbel return-value estimates by directional sector, and a ranked list of
+historical storm peaks. The extracted time series is shown as an interactive, zoomable Hs/Tp chart with a direction
+strip on top, so long historical records stay usable instead of turning into an unreadable static plot.
 
 **Runup Forecast**
-This page compares independent wave forecasts at a single offshore point from Copernicus Marine, the NOAA GEFS-Wave
-31-member ensemble, and Open-Meteo Marine, then runs every empirical runup model against every one of them (including
-each individual NOAA member) to build a single combined runup / total water level forecast band. Total water level can
-be estimated using either a constant user-defined offset or a **Copernicus mean-removed sea-level signal** derived from
-modelled sea surface height. The page also reports a daily traffic-light status against a user-defined threshold, and a
-combined table with per-source forcing plus the combined runup/TWL summary.
+This page is built for coastal managers who need a combined view across independent forecast sources. It pulls wave
+forecasts from Copernicus Marine, the NOAA GEFS-Wave 31-member ensemble, and Open-Meteo Marine, interpolates all of
+them onto one shared hourly time grid, and runs every empirical runup model against every one of them (including each
+individual NOAA member) to build a single combined runup / total water level forecast. Total water level can be
+estimated using either a constant user-defined offset or a **Copernicus mean-removed sea-level signal** derived from
+modelled sea surface height, shown as its own panel alongside the wave data when selected. Results are presented as:
+a wave-data comparison (deterministic sources as solid lines, NOAA as a percentile band), a combined runup/TWL
+forecast (mean, 25th-75th and 5th-95th percentile bands, and the min/max envelope), and a **probabilistic daily
+threshold status** - the fraction of forecast estimates exceeding a user-defined threshold, weighted equally across
+sources so no single source dominates, together with an hourly probability curve and a table of exactly when the
+alert level is reached. A combined table with per-source forcing and forecast summary statistics is available to
+download as CSV.
 
 ### Important note
 
-This app is intended for **scientific exploration, teaching, and preliminary screening only**.  
-It is **not** a substitute for site-specific engineering analysis, hazard assessment, or operational coastal-risk decisions.  
+This app is intended for **scientific exploration, teaching, and preliminary screening only**.
+It is **not** a substitute for site-specific engineering analysis, hazard assessment, or operational coastal-risk decisions.
 Use at your own risk.
 """
 )
@@ -91,14 +100,15 @@ The Wave Explorer page uses one of two Copernicus Marine wave reanalysis product
 
 st.markdown(
     """
-The Mediterranean forecast page uses two Copernicus Marine products:
+The Runup Forecast page uses the Copernicus Mediterranean wave forecast, and, when the sea-level water-level mode is
+selected, a second Copernicus product for the sea-level signal:
 
-- **Mediterranean Sea Waves Analysis and Forecast**  
-  Product ID: `MEDSEA_ANALYSISFORECAST_WAV_006_017`  
+- **Mediterranean Sea Waves Analysis and Forecast**
+  Product ID: `MEDSEA_ANALYSISFORECAST_WAV_006_017`
   DOI: `10.48670/mds-00373`
 
-- **Mediterranean Sea Physics Analysis and Forecast**  
-  Product ID: `MEDSEA_ANALYSISFORECAST_PHY_006_013`  
+- **Mediterranean Sea Physics Analysis and Forecast**
+  Product ID: `MEDSEA_ANALYSISFORECAST_PHY_006_013`
   DOI: `10.48670/mds-00359`
 """
 )
@@ -115,10 +125,12 @@ Generated using **E.U. Copernicus Marine Service Information**.
 
 st.markdown(
     """
-The Multi-source forecast page additionally cross-checks the Copernicus Mediterranean wave forecast against:
+The Runup Forecast page additionally cross-checks the Copernicus Mediterranean wave forecast against:
 
 - **NOAA GEFS-Wave ensemble**, 31-member global wave ensemble operated by NOAA/NCEP, accessed directly from NOAA's NOMADS GRIB feed
 - **Open-Meteo Marine API**, a free aggregator of several global wave models (NOAA GFS-Wave, DWD ICON-Wave, ECMWF WAM)
+
+All times shown across the app are **UTC**.
 """
 )
 
@@ -181,4 +193,4 @@ https://doi.org/10.1016/j.coastaleng.2018.10.006
 """
 )
 
-st.info("Use the sidebar to open the Manual calculator, Wave Explorer, Mediterranean forecast, or Multi-source forecast page.")
+st.info("Use the sidebar to open the Manual calculator, Wave Explorer, or Runup Forecast page.")

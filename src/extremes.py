@@ -154,7 +154,7 @@ def build_sector_max_table(df: pd.DataFrame) -> pd.DataFrame:
                 "Max Hs [m]": round(float(peak["Hs [m]"]), 3),
                 "Tp [s]": round(float(peak["Tp [s]"]), 3),
                 "Dir [deg]": round(float(peak["Dir [deg]"]), 1),
-                "Date": pd.to_datetime(peak["time"]).strftime("%Y-%m-%d %H:%M"),
+                "Date (UTC)": pd.to_datetime(peak["time"]).strftime("%Y-%m-%d %H:%M"),
             }
         )
 
