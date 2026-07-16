@@ -72,6 +72,19 @@ def _find_first_present_name(candidates: List[str], names: List[str]) -> Optiona
     return None
 
 
+def _normalize_utc(series: pd.Series) -> pd.Series:
+    """Coerce a time column to tz-aware UTC, regardless of whether the source
+    returned tz-naive or tz-aware timestamps. Every fetcher in this module is
+    supposed to return tz-aware UTC, but the Copernicus sea-level fetcher
+    (src.copernicus_sealevel) returns tz-naive timestamps, and mixing the two
+    raises "Cannot compare tz-naive and tz-aware timestamps" as soon as they're
+    compared or subtracted (e.g. building a shared time grid, or interpolating)."""
+    ts = pd.to_datetime(series)
+    if ts.dt.tz is None:
+        return ts.dt.tz_localize("UTC")
+    return ts.dt.tz_convert("UTC")
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_copernicus_med_wave_forecast(
     longitude: float,
@@ -307,13 +320,11 @@ def build_shared_hourly_grid(dfs: List[pd.DataFrame], freq: str = "1h") -> Optio
     if not valid:
         return None
 
-    starts = [pd.to_datetime(df["time"]).min() for df in valid]
-    ends = [pd.to_datetime(df["time"]).max() for df in valid]
+    normalized_times = [_normalize_utc(df["time"]) for df in valid]
+    start = min(t.min() for t in normalized_times)
+    end = max(t.max() for t in normalized_times)
 
-    start = min(starts)
-    end = max(ends)
-
-    return pd.date_range(start=start, end=end, freq=freq, tz="UTC" if start.tzinfo is not None else None)
+    return pd.date_range(start=start, end=end, freq=freq, tz="UTC")
 
 
 def interpolate_series_to_grid(
@@ -333,19 +344,21 @@ def interpolate_series_to_grid(
     from scipy.interpolate import CubicSpline
 
     g = df.sort_values("time").reset_index(drop=True)
-    g["time"] = pd.to_datetime(g["time"])
+    g["time"] = _normalize_utc(g["time"])
+
+    grid = _normalize_utc(pd.Series(time_grid))
 
     t0 = g["time"].iloc[0]
     x = (g["time"] - t0).dt.total_seconds().to_numpy()
-    grid_x = (time_grid - t0).total_seconds().to_numpy()
+    grid_x = (grid - t0).dt.total_seconds().to_numpy()
     in_range = (grid_x >= x[0]) & (grid_x <= x[-1])
 
-    out = pd.DataFrame({"time": time_grid})
+    out = pd.DataFrame({"time": grid})
 
     for col in value_cols:
         if col not in g.columns:
             continue
-        values = np.full(len(time_grid), np.nan)
+        values = np.full(len(grid), np.nan)
         if in_range.any():
             if len(x) >= 3:
                 spline = CubicSpline(x, g[col].to_numpy())
@@ -358,7 +371,7 @@ def interpolate_series_to_grid(
         if col not in g.columns:
             continue
         merged = pd.merge_asof(
-            pd.DataFrame({"time": time_grid}).sort_values("time"),
+            pd.DataFrame({"time": grid}).sort_values("time"),
             g[["time", col]].sort_values("time"),
             on="time",
             direction="nearest",
@@ -399,9 +412,11 @@ def interpolate_ensemble_to_hourly(
     step_seconds = pd.Timedelta(freq).total_seconds()
     out_frames = []
 
+    grid_normalized = _normalize_utc(pd.Series(time_grid)) if time_grid is not None else None
+
     for member, group in detail_df.groupby("Model"):
         g = group.sort_values("time").reset_index(drop=True)
-        g["time"] = pd.to_datetime(g["time"])
+        g["time"] = _normalize_utc(g["time"])
 
         if len(g) < 3:
             # Not enough points for a cubic spline; keep this member as-is.
@@ -411,11 +426,11 @@ def interpolate_ensemble_to_hourly(
         t0 = g["time"].iloc[0]
         x = (g["time"] - t0).dt.total_seconds().to_numpy()
 
-        if time_grid is not None:
-            grid_x = (time_grid - t0).total_seconds().to_numpy()
+        if grid_normalized is not None:
+            grid_x = (grid_normalized - t0).dt.total_seconds().to_numpy()
             in_range = (grid_x >= x[0]) & (grid_x <= x[-1])
             new_x = grid_x[in_range]
-            new_time = time_grid[in_range]
+            new_time = grid_normalized.to_numpy()[in_range]
         else:
             new_x = np.arange(x[0], x[-1] + 1e-6, step_seconds)
             new_time = t0 + pd.to_timedelta(new_x, unit="s")
