@@ -140,30 +140,62 @@ with st.sidebar:
 
     calculate = st.button("Calculate", type="primary", use_container_width=True)
 
-if not calculate:
+# Streamlit reruns this whole script on every widget interaction, including clicking a
+# download button further down the page. A plain st.button() only reads True on the exact
+# rerun where it was clicked, so gating everything on "calculate" directly would wipe the
+# page as soon as a download button (or any other widget) triggers the next rerun. Instead,
+# the results of clicking Calculate are cached in session_state, and the rest of the page
+# is gated on "do we have a cached result" rather than "was Calculate just clicked".
+if calculate:
+    profile_df = read_profile(uploaded_profile)
+
+    values = RunupInputs(hs=hs, tp=tp, slope=slope, swl=swl, r=roughness)
+    runup_results = compute_runup(values)
+
+    rows = []
+    for model in MODEL_ORDER:
+        runup = runup_results.get(model, np.nan)
+        if np.isfinite(runup):
+            row = {
+                "Model": model,
+                "Runup [m]": round(float(runup), 3),
+            }
+            if include_swl:
+                row["Total water level [m]"] = round(float(runup + swl), 3)
+            rows.append(row)
+
+    results_df = pd.DataFrame(rows)
+
+    if results_df.empty:
+        st.warning("No model returned a valid result.")
+        st.stop()
+
+    st.session_state["mc_results_df"] = results_df
+    st.session_state["mc_profile_df"] = profile_df
+    st.session_state["mc_inputs"] = {
+        "hs": hs,
+        "tp": tp,
+        "slope": slope,
+        "swl": swl,
+        "include_swl": include_swl,
+        "include_threshold": include_threshold,
+        "threshold": threshold,
+    }
+
+if "mc_results_df" not in st.session_state:
     st.info("Set the inputs in the sidebar and click Calculate.")
     st.stop()
 
-values = RunupInputs(hs=hs, tp=tp, slope=slope, swl=swl, r=roughness)
-runup_results = compute_runup(values)
-
-rows = []
-for model in MODEL_ORDER:
-    runup = runup_results.get(model, np.nan)
-    if np.isfinite(runup):
-        row = {
-            "Model": model,
-            "Runup [m]": round(float(runup), 3),
-        }
-        if include_swl:
-            row["Total water level [m]"] = round(float(runup + swl), 3)
-        rows.append(row)
-
-results_df = pd.DataFrame(rows)
-
-if results_df.empty:
-    st.warning("No model returned a valid result.")
-    st.stop()
+results_df = st.session_state["mc_results_df"]
+profile_df = st.session_state["mc_profile_df"]
+cached = st.session_state["mc_inputs"]
+hs = cached["hs"]
+tp = cached["tp"]
+slope = cached["slope"]
+swl = cached["swl"]
+include_swl = cached["include_swl"]
+include_threshold = cached["include_threshold"]
+threshold = cached["threshold"]
 
 # -----------------------------------------------------------------------
 # Results
@@ -198,8 +230,6 @@ risk_label = None
 risk_text = None
 if include_threshold and threshold is not None:
     risk_color, risk_label, risk_text = compute_risk_status(results_df, include_swl, float(threshold))
-
-profile_df = read_profile(uploaded_profile)
 
 # -----------------------------------------------------------------------
 # 2a/2b: model comparison, with or without a beach profile
