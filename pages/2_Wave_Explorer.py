@@ -155,35 +155,53 @@ map_df = pd.DataFrame(
 )
 st.map(map_df, zoom=6, use_container_width=True)
 
-if not fetch_button:
+if fetch_button:
+    if start_date >= end_date:
+        st.error("End date must be later than start date.")
+        st.stop()
+
+    if not return_periods:
+        st.error("Select at least one return period.")
+        st.stop()
+
+    username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
+    password = st.secrets.get("COPERNICUSMARINE_PASSWORD") or st.secrets.get("COPERNICUS_PASSWORD")
+
+    if not username or not password:
+        st.error("Copernicus credentials are missing in Streamlit secrets.")
+        st.stop()
+
+    with st.spinner(f"Downloading {region_name} historical wave time series..."):
+        climate_df, metadata = fetch_copernicus_wave_climate_timeseries(
+            longitude=st.session_state.wave_explorer_lon,
+            latitude=st.session_state.wave_explorer_lat,
+            start_date=start_date,
+            end_date=end_date,
+            username=username,
+            password=password,
+            dataset_id=region["dataset_id"],
+        )
+
+    # Persist the fetch result in session_state. Streamlit reruns this whole script on
+    # every widget interaction (e.g. changing the return-period selectbox further down,
+    # or clicking "Use these values"), and a plain st.button() only reads True on the
+    # single rerun where it was clicked. Without this, any later widget interaction would
+    # make fetch_button False again and wipe the page. Caching the fetch result means the
+    # rest of the page only depends on "has data been fetched", not "was the button just
+    # clicked this instant".
+    st.session_state["we_climate_df"] = climate_df
+    st.session_state["we_metadata"] = metadata
+    st.session_state["we_region_name"] = region_name
+    st.session_state["we_region"] = region
+
+if "we_climate_df" not in st.session_state:
     st.info("Enter an offshore point, choose a region and time range, and click Fetch wave climate.")
     st.stop()
 
-if start_date >= end_date:
-    st.error("End date must be later than start date.")
-    st.stop()
-
-if not return_periods:
-    st.error("Select at least one return period.")
-    st.stop()
-
-username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
-password = st.secrets.get("COPERNICUSMARINE_PASSWORD") or st.secrets.get("COPERNICUS_PASSWORD")
-
-if not username or not password:
-    st.error("Copernicus credentials are missing in Streamlit secrets.")
-    st.stop()
-
-with st.spinner(f"Downloading {region_name} historical wave time series..."):
-    climate_df, metadata = fetch_copernicus_wave_climate_timeseries(
-        longitude=st.session_state.wave_explorer_lon,
-        latitude=st.session_state.wave_explorer_lat,
-        start_date=start_date,
-        end_date=end_date,
-        username=username,
-        password=password,
-        dataset_id=region["dataset_id"],
-    )
+climate_df = st.session_state["we_climate_df"]
+metadata = st.session_state["we_metadata"]
+fetched_region_name = st.session_state["we_region_name"]
+fetched_region = st.session_state["we_region"]
 
 sector_df = filter_by_sector(climate_df, sector_name)
 
@@ -193,7 +211,12 @@ if sector_df.empty:
 
 stats = summarize_wave_series(climate_df)
 
-st.caption(f"Region: {region_name} ({region['product_name']})")
+st.caption(f"Region: {fetched_region_name} ({fetched_region['product_name']})")
+if fetched_region_name != region_name:
+    st.info(
+        f"Showing results for **{fetched_region_name}** (last fetched region). "
+        f"You have since selected **{region_name}** in the sidebar - click Fetch wave climate again to update."
+    )
 st.caption(f"Wave reanalysis dataset ID: {metadata['dataset_id']}")
 st.caption(
     f"Using variables: Hs = {metadata['hs_var']}, Tp = {metadata['tp_var']}, Direction = {metadata['dir_var']}"
@@ -333,7 +356,7 @@ if st.button("Use these values in the Manual calculator", type="primary"):
     st.session_state["prefill_hs"] = suggested_hs
     st.session_state["prefill_tp"] = suggested_tp
     st.session_state["prefill_note"] = (
-        f"Prefilled from Wave Explorer: {region_name} reanalysis, {sector_name} sector, "
+        f"Prefilled from Wave Explorer: {fetched_region_name} reanalysis, {sector_name} sector, "
         f"{suggested_rp}-year return period (Hs = {suggested_hs:.2f} m, Tp = {suggested_tp:.2f} s)."
     )
     st.switch_page("pages/1_Manual_Calculator.py")
@@ -341,7 +364,7 @@ if st.button("Use these values in the Manual calculator", type="primary"):
 st.subheader("Data source and licence")
 st.markdown(
     f"""
-- **{region['product_name']}**, product ID `{region['product_id']}`, DOI: `{region['doi']}`.
+- **{fetched_region['product_name']}**, product ID `{fetched_region['product_id']}`, DOI: `{fetched_region['doi']}`.
 """
 )
 st.caption(
