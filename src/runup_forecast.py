@@ -31,10 +31,21 @@ from src.runup_models import RunupInputs, compute_runup
 
 
 def _normalize_utc(series: pd.Series) -> pd.Series:
+    """Coerce a time column to tz-aware UTC at nanosecond resolution.
+
+    Two separate mismatches show up in practice: tz-naive vs tz-aware (the
+    Copernicus sea-level fetcher returns tz-naive timestamps, other sources
+    don't), and datetime64[ns] vs datetime64[us] (different sources/pandas
+    versions can resolve timestamps to different underlying resolutions, which
+    newer pandas raises a hard MergeError on during merge_asof). Casting to one
+    canonical dtype here avoids both.
+    """
     ts = pd.to_datetime(series)
     if ts.dt.tz is None:
-        return ts.dt.tz_localize("UTC")
-    return ts.dt.tz_convert("UTC")
+        ts = ts.dt.tz_localize("UTC")
+    else:
+        ts = ts.dt.tz_convert("UTC")
+    return ts.astype("datetime64[ns, UTC]")
 
 
 def compute_multi_source_runup_detail(

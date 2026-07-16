@@ -82,6 +82,19 @@ def fetch_copernicus_sealevel_timeseries(
     return df.reset_index(drop=True), ssh_var
 
 
+def _normalize_utc(series: pd.Series) -> pd.Series:
+    """Coerce a time column to tz-aware UTC at nanosecond resolution, so two
+    series built from different sources (or parsed by different pandas
+    versions) always compare/merge cleanly. Guards against both tz-naive vs
+    tz-aware mismatches and datetime64[ns] vs datetime64[us] MergeErrors."""
+    ts = pd.to_datetime(series)
+    if ts.dt.tz is None:
+        ts = ts.dt.tz_localize("UTC")
+    else:
+        ts = ts.dt.tz_convert("UTC")
+    return ts.astype("datetime64[ns, UTC]")
+
+
 def merge_wave_and_sealevel(
     wave_df: pd.DataFrame,
     sealevel_df: pd.DataFrame,
@@ -89,6 +102,9 @@ def merge_wave_and_sealevel(
 ) -> pd.DataFrame:
     left = wave_df.copy().sort_values("time").reset_index(drop=True)
     right = sealevel_df.copy().sort_values("time").reset_index(drop=True)
+
+    left["time"] = _normalize_utc(left["time"])
+    right["time"] = _normalize_utc(right["time"])
 
     merged = pd.merge_asof(
         left,

@@ -73,16 +73,29 @@ def _find_first_present_name(candidates: List[str], names: List[str]) -> Optiona
 
 
 def _normalize_utc(series: pd.Series) -> pd.Series:
-    """Coerce a time column to tz-aware UTC, regardless of whether the source
-    returned tz-naive or tz-aware timestamps. Every fetcher in this module is
-    supposed to return tz-aware UTC, but the Copernicus sea-level fetcher
-    (src.copernicus_sealevel) returns tz-naive timestamps, and mixing the two
-    raises "Cannot compare tz-naive and tz-aware timestamps" as soon as they're
-    compared or subtracted (e.g. building a shared time grid, or interpolating)."""
+    """Coerce a time column to tz-aware UTC at nanosecond resolution, regardless
+    of how the source returned it. Two separate mismatches show up here in
+    practice:
+
+    1. tz-naive vs tz-aware: the Copernicus sea-level fetcher (src.copernicus_sealevel)
+       returns tz-naive timestamps, while every wave fetcher in this module
+       returns tz-aware UTC. Comparing or subtracting the two raises "Cannot
+       compare tz-naive and tz-aware timestamps".
+    2. datetime64[ns] vs datetime64[us]: depending on the pandas/Python version,
+       parsing timestamps from different sources (e.g. a date_range vs JSON API
+       strings vs GRIB-derived arrays) can land on different underlying time
+       resolutions. Newer pandas versions raise a hard MergeError
+       ("incompatible merge keys ... must be the same type") on merge_asof if
+       the two sides don't match exactly, even if both are tz-aware UTC.
+
+    Explicitly casting to a single canonical dtype here avoids both.
+    """
     ts = pd.to_datetime(series)
     if ts.dt.tz is None:
-        return ts.dt.tz_localize("UTC")
-    return ts.dt.tz_convert("UTC")
+        ts = ts.dt.tz_localize("UTC")
+    else:
+        ts = ts.dt.tz_convert("UTC")
+    return ts.astype("datetime64[ns, UTC]")
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -516,16 +529,12 @@ def merge_multi_source(source_frames: dict) -> pd.DataFrame:
             }
         )[["time", f"{source_name} Hs [m]", f"{source_name} Tp [s]", f"{source_name} Dir [deg]"]].copy()
 
-        # Defensive: every source is expected to already return tz-aware UTC timestamps,
-        # but a mismatch here (tz-naive vs tz-aware) raises an unhelpful pandas TypeError
-        # on join, so normalize defensively rather than letting one source silently break
-        # the whole page.
-        time_col = pd.to_datetime(renamed["time"])
-        if time_col.dt.tz is None:
-            time_col = time_col.dt.tz_localize("UTC")
-        else:
-            time_col = time_col.dt.tz_convert("UTC")
-        renamed["time"] = time_col
+        # Defensive: every source is expected to already return tz-aware UTC timestamps
+        # at the same resolution, but a mismatch here (tz-naive vs tz-aware, or
+        # datetime64[ns] vs datetime64[us]) raises an unhelpful pandas error on join,
+        # so normalize defensively rather than letting one source silently break the
+        # whole page.
+        renamed["time"] = _normalize_utc(renamed["time"])
         renamed = renamed.set_index("time")
 
         combined = renamed if combined is None else combined.join(renamed, how="outer")
