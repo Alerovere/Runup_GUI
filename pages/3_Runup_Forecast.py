@@ -6,12 +6,12 @@ from src.copernicus_sealevel import (
     fetch_copernicus_sealevel_timeseries,
 )
 from src.forecast_thresholds import (
-    build_daily_threshold_status,
+    build_daily_exceedance_probability,
     build_exceedance_events,
-    build_threshold_timeseries,
-    describe_threshold_logic,
-    describe_worst_status,
-    summarize_threshold_status,
+    build_exceedance_probability_timeseries,
+    describe_exceedance_methodology,
+    describe_worst_probability,
+    summarize_exceedance_probability,
 )
 from src.multi_source_forecast import (
     GEFS_WAVE_FORECAST_HOURS,
@@ -29,6 +29,7 @@ from src.multi_source_forecast import (
 from src.plotting import (
     fig_to_png_bytes,
     plot_daily_threshold_bar,
+    plot_exceedance_probability_timeseries,
     plot_forecast_band,
     plot_wave_data_comparison,
 )
@@ -258,6 +259,7 @@ if fetch_button:
                         latitude=lat,
                         username=username,
                         password=password,
+                        forecast_days=forecast_days,
                     )
                 except Exception as e:
                     st.warning(f"Copernicus sea-level fetch failed: {e}. Falling back to eta = 0.")
@@ -327,7 +329,6 @@ if fetch_button:
     st.session_state["rf_sealevel_df"] = sealevel_df
     st.session_state["rf_water_level_mode"] = water_level_mode
     st.session_state["rf_constant_eta"] = float(constant_eta)
-    st.session_state["rf_threshold"] = float(threshold) if threshold is not None else None
     st.session_state["rf_ssh_var"] = ssh_var
 
 if "rf_combined_wide_df" not in st.session_state:
@@ -344,7 +345,11 @@ noaa_detail_df = st.session_state["rf_noaa_detail_df"]
 sealevel_df = st.session_state["rf_sealevel_df"]
 water_level_mode = st.session_state["rf_water_level_mode"]
 constant_eta = st.session_state["rf_constant_eta"]
-threshold = st.session_state["rf_threshold"]
+# threshold/threshold_enabled are intentionally NOT cached in session_state: unlike the
+# fetched forecast data, the threshold is just a comparison line applied at display time
+# (it's never baked into runup_detail_df), so reading it live from the sidebar lets a
+# manager adjust it and immediately see the updated exceedance probability without
+# re-running the (slow) fetch + runup-model computation.
 ssh_var = st.session_state["rf_ssh_var"]
 
 st.subheader("Sources used")
@@ -418,58 +423,6 @@ st.download_button(
     mime="image/png",
 )
 
-if threshold is not None:
-    compare_value_col = "Total water level [m]" if show_twl else "Runup [m]"
-    compare_label = "total water level" if show_twl else "runup"
-
-    threshold_ts_df = build_threshold_timeseries(
-        detail_df=runup_detail_df,
-        value_col=compare_value_col,
-        threshold=float(threshold),
-    )
-
-    daily_status_df = build_daily_threshold_status(threshold_ts_df)
-    threshold_summary = summarize_threshold_status(threshold_ts_df)
-
-    st.subheader("Daily threshold status")
-    st.caption(
-        "This chart summarizes the worst threshold class reached on each forecast day, combining every selected "
-        "source, runup model, and (for NOAA) ensemble member at each timestep."
-    )
-
-    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
-    with col2:
-        fig_daily = plot_daily_threshold_bar(
-            daily_status_df,
-            title=f"Daily threshold status for forecast {compare_label}",
-        )
-        daily_png = fig_to_png_bytes(fig_daily)
-        st.pyplot(fig_daily, clear_figure=False, use_container_width=False)
-
-    st.download_button(
-        "Download daily threshold status (PNG)",
-        data=daily_png,
-        file_name="daily_threshold_status.png",
-        mime="image/png",
-    )
-
-    st.markdown(describe_threshold_logic(compare_label, float(threshold)))
-
-    st.markdown(
-        f"<div style='padding:0.6rem 0.8rem;border-radius:0.5rem;background:{threshold_summary['worst_color']};color:white;font-weight:600;'>{describe_worst_status(threshold_summary['worst_status'], float(threshold), compare_label)}</div>",
-        unsafe_allow_html=True,
-    )
-
-    exceedance_events_df = build_exceedance_events(threshold_ts_df)
-    if not exceedance_events_df.empty:
-        st.caption("When the threshold gets surpassed (consecutive non-green periods, worst status reached in each):")
-        display_events_df = exceedance_events_df.copy()
-        display_events_df["Start"] = pd.to_datetime(display_events_df["Start"]).dt.strftime("%Y-%m-%d %H:%M")
-        display_events_df["End"] = pd.to_datetime(display_events_df["End"]).dt.strftime("%Y-%m-%d %H:%M")
-        st.dataframe(display_events_df, use_container_width=True, hide_index=True)
-    else:
-        st.caption("The threshold is not exceeded at any point in the forecast period.")
-
 plot_value_col = "Total water level [m]" if show_twl else "Runup [m]"
 plot_title = "Combined forecast total water level (all sources x all models)" if show_twl else "Combined forecast runup (all sources x all models)"
 
@@ -498,6 +451,80 @@ st.download_button(
     file_name="runup_forecast.png",
     mime="image/png",
 )
+
+if threshold is not None:
+    compare_value_col = "Total water level [m]" if show_twl else "Runup [m]"
+    compare_label = "total water level" if show_twl else "runup"
+    alert_probability = 0.5
+
+    prob_ts_df = build_exceedance_probability_timeseries(
+        detail_df=runup_detail_df,
+        value_col=compare_value_col,
+        threshold=float(threshold),
+    )
+
+    daily_prob_df = build_daily_exceedance_probability(prob_ts_df)
+    prob_summary = summarize_exceedance_probability(prob_ts_df, alert_probability=alert_probability)
+
+    st.subheader("Daily threshold status")
+    st.caption(
+        "Probability that forecast {label} exceeds the threshold, computed as the fraction of each source's own "
+        "estimates (runup models, and for NOAA, ensemble members) above the threshold at each timestep, averaged "
+        "with equal weight across the selected sources. Bar height/color show each day's peak probability.".format(
+            label=compare_label
+        )
+    )
+
+    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+    with col2:
+        fig_daily = plot_daily_threshold_bar(
+            daily_prob_df,
+            title=f"Daily threshold exceedance probability for forecast {compare_label}",
+        )
+        daily_png = fig_to_png_bytes(fig_daily)
+        st.pyplot(fig_daily, clear_figure=False, use_container_width=False)
+
+    st.download_button(
+        "Download daily threshold status (PNG)",
+        data=daily_png,
+        file_name="daily_threshold_status.png",
+        mime="image/png",
+    )
+
+    st.markdown(describe_exceedance_methodology(compare_label, float(threshold)))
+
+    st.markdown(
+        f"<div style='padding:0.6rem 0.8rem;border-radius:0.5rem;background:{prob_summary['worst_color']};color:white;font-weight:600;'>{describe_worst_probability(prob_summary['worst_probability'], prob_summary['worst_category'], float(threshold), compare_label)}</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.caption(f"Hourly detail - where within the forecast the probability actually peaks (alert level shown at {alert_probability:.0%}):")
+    col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
+    with col2:
+        fig_prob_ts = plot_exceedance_probability_timeseries(
+            prob_ts_df,
+            alert_probability=alert_probability,
+            title=f"Hourly exceedance probability for forecast {compare_label}",
+        )
+        prob_ts_png = fig_to_png_bytes(fig_prob_ts)
+        st.pyplot(fig_prob_ts, clear_figure=False, use_container_width=False)
+
+    st.download_button(
+        "Download hourly exceedance probability plot (PNG)",
+        data=prob_ts_png,
+        file_name="exceedance_probability_timeseries.png",
+        mime="image/png",
+    )
+
+    exceedance_events_df = build_exceedance_events(prob_ts_df, alert_probability=alert_probability)
+    if not exceedance_events_df.empty:
+        st.caption(f"When the exceedance probability is at or above the {alert_probability:.0%} alert level:")
+        display_events_df = exceedance_events_df.copy()
+        display_events_df["Start"] = pd.to_datetime(display_events_df["Start"]).dt.strftime("%Y-%m-%d %H:%M")
+        display_events_df["End"] = pd.to_datetime(display_events_df["End"]).dt.strftime("%Y-%m-%d %H:%M")
+        st.dataframe(display_events_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption(f"The exceedance probability never reaches the {alert_probability:.0%} alert level in this forecast.")
 
 st.subheader("Combined forecast table")
 st.caption(

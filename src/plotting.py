@@ -665,49 +665,96 @@ def plot_runup_twl_comparison(
     fig.tight_layout()
     return fig
 
-def plot_daily_threshold_bar(daily_status_df: pd.DataFrame, title: str = "Daily threshold status"):
+def plot_daily_threshold_bar(daily_prob_df: pd.DataFrame, title: str = "Daily threshold exceedance probability"):
+    """Daily bar chart of threshold exceedance probability: bar height and color
+    both encode the day's peak probability (0-100%), with the percentage and
+    category label annotated on each bar."""
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(6.0, 1.8), dpi=160)
+    fig, ax = plt.subplots(figsize=(6.4, 2.6), dpi=160)
 
-    for i, row in daily_status_df.iterrows():
-        ax.bar(
-            i,
-            1,
-            color=row["color"],
-            width=0.95,
-            edgecolor="white",
-            linewidth=1.0,
-        )
+    heights = daily_prob_df["probability"].to_numpy() * 100.0
+    x = range(len(daily_prob_df))
 
-    ax.set_xlim(-0.5, len(daily_status_df) - 0.5)
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])
+    ax.bar(
+        x,
+        heights,
+        color=daily_prob_df["color"],
+        width=0.7,
+        edgecolor="white",
+        linewidth=1.0,
+    )
 
-    labels = [
-        pd.to_datetime(str(d)).strftime("%a\n%d %b")
-        for d in daily_status_df["date"]
-    ]
-    ax.set_xticks(range(len(daily_status_df)))
+    for i, (h, cat) in enumerate(zip(heights, daily_prob_df["category"])):
+        ax.text(i, min(h + 4, 100), f"{h:.0f}%\n{cat}", ha="center", va="bottom", fontsize=7.5)
+
+    ax.set_xlim(-0.6, len(daily_prob_df) - 0.4)
+    ax.set_ylim(0, 112)
+    ax.set_ylabel("Exceedance probability [%]", fontsize=9)
+
+    labels = [pd.to_datetime(str(d)).strftime("%a\n%d %b") for d in daily_prob_df["date"]]
+    ax.set_xticks(list(x))
     ax.set_xticklabels(labels, fontsize=8)
+    ax.tick_params(axis="y", labelsize=8)
 
     ax.set_title(title, fontsize=10, pad=8)
 
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.spines["left"].set_visible(False)
+    ax.grid(axis="y", color="0.9", linewidth=0.6)
+    ax.set_axisbelow(True)
 
-    for i, row in daily_status_df.iterrows():
-        ax.text(
-            i,
-            0.5,
-            row["label"][0],
-            ha="center",
-            va="center",
-            fontsize=8,
-            color="white",
-            fontweight="bold",
-        )
+    fig.tight_layout()
+    return fig
+
+
+def plot_exceedance_probability_timeseries(
+    prob_ts_df: pd.DataFrame,
+    alert_probability: float = 0.5,
+    title: str = "Threshold exceedance probability",
+):
+    """Hourly exceedance-probability curve (0-100%), for zooming into *when*
+    within a day the risk actually peaks - a finer-grained complement to the
+    daily summary bar."""
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    df = prob_ts_df.sort_values("time").reset_index(drop=True)
+    time = pd.to_datetime(df["time"])
+    probability_pct = df["probability"].to_numpy() * 100.0
+
+    fig, ax = plt.subplots(figsize=(7.2, 3.2), dpi=160)
+
+    ax.fill_between(time, 0, probability_pct, color="#4f9be6", alpha=0.35, edgecolor="none")
+    ax.plot(time, probability_pct, color="#08306b", linewidth=1.6)
+
+    ax.axhline(
+        alert_probability * 100.0,
+        color="crimson",
+        linestyle="--",
+        linewidth=1.2,
+        label=f"Alert level ({alert_probability:.0%})",
+    )
+
+    ax.set_ylim(0, 105)
+    ax.set_ylabel("Exceedance probability [%]", fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+    ax.set_title(title, fontsize=10, pad=8)
+
+    ax.tick_params(axis="y", labelsize=8)
+    ax.tick_params(axis="x", labelsize=8, rotation=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(axis="y", color="0.9", linewidth=0.6)
+    ax.set_axisbelow(True)
+
+    ax.xaxis.set_major_locator(mdates.DayLocator())
+    try:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    except ValueError:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+
+    ax.legend(frameon=False, fontsize=8, loc="upper right")
 
     fig.tight_layout()
     return fig

@@ -34,12 +34,13 @@ def fetch_copernicus_sealevel_timeseries(
     latitude: float,
     username: str,
     password: str,
+    forecast_days: int = 7,
 ) -> Tuple[pd.DataFrame, str]:
     if copernicusmarine is None:
         raise ImportError("copernicusmarine is not installed.")
 
     start_dt = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-    end_dt = start_dt + timedelta(days=7)
+    end_dt = start_dt + timedelta(days=forecast_days)
 
     ds = copernicusmarine.open_dataset(
         dataset_id=MED_SEALEVEL_DATASET_ID,
