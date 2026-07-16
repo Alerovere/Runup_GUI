@@ -46,8 +46,8 @@ The app compares several empirical runup models, highlights threshold exceedance
 **Wave Explorer**  
 This page explores the long-term wave climate at a single offshore point, using either the Mediterranean or the
 global Copernicus Marine wave reanalysis. It computes a wave rose, Gumbel return-value estimates by directional sector,
-and a ranked list of historical storm peaks. If you are unsure what Hs/Tp to use on the Manual calculator page, this
-page can send a chosen return-period estimate there directly.
+and a ranked list of historical storm peaks, including a suggested Hs/Tp pair for a chosen return period that you
+can enter yourself on the Manual calculator page.
 
 **Mediterranean forecast**  
 This page is designed for short-term exploration of forecast conditions at a selected offshore point in the Mediterranean.

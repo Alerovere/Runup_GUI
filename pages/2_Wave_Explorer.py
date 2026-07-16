@@ -20,9 +20,9 @@ st.title("Wave Explorer")
 st.info(
     "Use this page to explore the long-term wave climate at a single offshore point, using either the "
     "Mediterranean or the global Copernicus Marine wave reanalysis. You can inspect the directional "
-    "distribution, filter by sector, and estimate return values of significant wave height. "
-    "If you are unsure what Hs/Tp scenario to use on the Manual calculator page, the \"Suggested scenario\" "
-    "section at the bottom of this page can send a return-period estimate straight there."
+    "distribution, filter by sector, and estimate return values of significant wave height. The \"Suggested "
+    "scenario\" section at the bottom shows a Hs/Tp pair for a chosen return period, which you can enter "
+    "yourself on the Manual calculator page if useful."
 )
 
 st.markdown(
@@ -328,13 +328,13 @@ top10_display["Dir [deg]"] = top10_display["Dir [deg]"].round(1)
 st.dataframe(top10_display, use_container_width=True, hide_index=True)
 
 # -----------------------------------------------------------------------
-# Suggested scenario for the Manual Calculator
+# Suggested scenario (informational - not linked to the Manual calculator page)
 # -----------------------------------------------------------------------
-st.subheader("Suggested scenario for the Manual calculator")
+st.subheader("Suggested scenario")
 st.caption(
     "Not sure what Hs/Tp to enter on the Manual calculator page? Pick a return period below to see the "
     "corresponding Hs (from the Gumbel fit above) and its associated Tp (from the Hs-Tp relationship of the "
-    "storm peaks), then send them straight to that page. You will still need to enter a beach slope there, "
+    "storm peaks), then enter these values there yourself. You will also need a beach slope, "
     "since that is a site property this wave climate analysis cannot estimate."
 )
 
@@ -351,15 +351,6 @@ suggested_tp = float(suggested_row["Associated Tp [s]"])
 s1, s2 = st.columns(2)
 s1.metric(f"Hs, {suggested_rp}-year return period", f"{suggested_hs:.2f} m")
 s2.metric("Associated Tp", f"{suggested_tp:.2f} s")
-
-if st.button("Use these values in the Manual calculator", type="primary"):
-    st.session_state["prefill_hs"] = suggested_hs
-    st.session_state["prefill_tp"] = suggested_tp
-    st.session_state["prefill_note"] = (
-        f"Prefilled from Wave Explorer: {fetched_region_name} reanalysis, {sector_name} sector, "
-        f"{suggested_rp}-year return period (Hs = {suggested_hs:.2f} m, Tp = {suggested_tp:.2f} s)."
-    )
-    st.switch_page("pages/1_Manual_Calculator.py")
 
 st.subheader("Data source and licence")
 st.markdown(
