@@ -49,15 +49,13 @@ global Copernicus Marine wave reanalysis. It computes a wave rose, Gumbel return
 and a ranked list of historical storm peaks, including a suggested Hs/Tp pair for a chosen return period that you
 can enter yourself on the Manual calculator page.
 
-**Mediterranean forecast**  
-This page is designed for short-term exploration of forecast conditions at a selected offshore point in the Mediterranean.
-The app extracts wave conditions from Copernicus Marine and computes a time-varying runup or total water level signal across the available empirical models.
-Depending on the selected option, total water level can be estimated using either a constant user-defined offset
-or a **Copernicus mean-removed sea-level signal** derived from modelled sea surface height.
-
-**Multi-source forecast**  
-This page compares independent wave forecasts at a single point from Copernicus Marine, the NOAA GEFS-Wave 31-member ensemble, and Open-Meteo Marine,
-merging them into one table so forecast agreement between sources can be checked before relying on any single model.
+**Runup Forecast**
+This page compares independent wave forecasts at a single offshore point from Copernicus Marine, the NOAA GEFS-Wave
+31-member ensemble, and Open-Meteo Marine, then runs every empirical runup model against every one of them (including
+each individual NOAA member) to build a single combined runup / total water level forecast band. Total water level can
+be estimated using either a constant user-defined offset or a **Copernicus mean-removed sea-level signal** derived from
+modelled sea surface height. The page also reports a daily traffic-light status against a user-defined threshold, and a
+combined table with per-source forcing plus the combined runup/TWL summary.
 
 ### Important note
 
