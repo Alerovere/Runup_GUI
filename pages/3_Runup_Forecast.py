@@ -17,10 +17,12 @@ from src.multi_source_forecast import (
     GEFS_WAVE_FORECAST_HOURS,
     GEFS_WAVE_MEMBERS,
     MED_WAVE_FORECAST_DATASET_ID,
+    build_shared_hourly_grid,
     fetch_copernicus_med_wave_forecast,
     fetch_noaa_gefs_wave_ensemble,
     fetch_openmeteo_wave_forecast,
     interpolate_ensemble_to_hourly,
+    interpolate_series_to_grid,
     merge_multi_source,
     summarize_ensemble_detail,
 )
@@ -183,9 +185,11 @@ if fetch_button:
     source_frames_for_wide = {}
     source_wave_frames_for_runup = {}
     source_notes = []
-    noaa_detail_df = None
+    cop_df_raw = None
+    om_df_raw = None
+    noaa_detail_df_raw = None
     noaa_metadata = None
-    sealevel_df = None
+    sealevel_df_raw = None
     ssh_var = None
 
     username = st.secrets.get("COPERNICUSMARINE_USERNAME") or st.secrets.get("COPERNICUS_USERNAME")
@@ -197,15 +201,13 @@ if fetch_button:
         else:
             with st.spinner("Downloading Copernicus Marine forecast..."):
                 try:
-                    cop_df = fetch_copernicus_med_wave_forecast(
+                    cop_df_raw = fetch_copernicus_med_wave_forecast(
                         longitude=lon,
                         latitude=lat,
                         username=username,
                         password=password,
                         forecast_days=forecast_days,
                     )
-                    source_frames_for_wide["Copernicus"] = cop_df
-                    source_wave_frames_for_runup["Copernicus"] = cop_df
                     source_notes.append(f"Copernicus Marine dataset ID: `{MED_WAVE_FORECAST_DATASET_ID}`")
                 except Exception as e:
                     st.warning(f"Copernicus Marine fetch failed: {e}")
@@ -216,18 +218,11 @@ if fetch_button:
             f"{len(GEFS_WAVE_FORECAST_HOURS)} forecast hours)... this can take 1-3 minutes."
         ):
             try:
-                noaa_detail_df, noaa_summary_df, noaa_metadata = fetch_noaa_gefs_wave_ensemble(
+                noaa_detail_df_raw, _noaa_summary_df_raw, noaa_metadata = fetch_noaa_gefs_wave_ensemble(
                     longitude=lon,
                     latitude=lat,
                     forecast_days=forecast_days,
                 )
-                # NOAA is only available every 6 hours, while Copernicus/Open-Meteo are hourly.
-                # Interpolate each member onto an hourly grid (cubic spline) so the combined
-                # runup band doesn't jump every 6 hours just because NOAA's contribution
-                # suddenly appears/disappears at those timesteps.
-                noaa_detail_df = interpolate_ensemble_to_hourly(noaa_detail_df, freq="1h")
-                noaa_summary_df = summarize_ensemble_detail(noaa_detail_df)
-                source_frames_for_wide["NOAA GEFS-Wave"] = noaa_summary_df[["time", "Hs [m]", "Tp [s]", "Dir [deg]"]]
                 source_notes.append(
                     f"NOAA GEFS-Wave ensemble, cycle {noaa_metadata['cycle_date']} {noaa_metadata['cycle_hour']:02d}Z "
                     f"({noaa_metadata['succeeded']}/{noaa_metadata['requested']} member-hour requests succeeded, "
@@ -239,18 +234,16 @@ if fetch_button:
     if use_openmeteo:
         with st.spinner("Downloading Open-Meteo Marine forecast..."):
             try:
-                om_df = fetch_openmeteo_wave_forecast(
+                om_df_raw = fetch_openmeteo_wave_forecast(
                     longitude=lon,
                     latitude=lat,
                     forecast_days=forecast_days,
                 )
-                source_frames_for_wide["Open-Meteo"] = om_df
-                source_wave_frames_for_runup["Open-Meteo"] = om_df
                 source_notes.append("Open-Meteo Marine API: `https://marine-api.open-meteo.com/v1/marine`")
             except Exception as e:
                 st.warning(f"Open-Meteo Marine fetch failed: {e}")
 
-    if not source_frames_for_wide:
+    if cop_df_raw is None and noaa_detail_df_raw is None and om_df_raw is None:
         st.error("None of the selected sources returned data for this point. Try a different location or fewer sources.")
         st.stop()
 
@@ -260,7 +253,7 @@ if fetch_button:
         else:
             with st.spinner("Downloading Copernicus sea-level signal..."):
                 try:
-                    sealevel_df, ssh_var = fetch_copernicus_sealevel_timeseries(
+                    sealevel_df_raw, ssh_var = fetch_copernicus_sealevel_timeseries(
                         longitude=lon,
                         latitude=lat,
                         username=username,
@@ -268,6 +261,42 @@ if fetch_button:
                     )
                 except Exception as e:
                     st.warning(f"Copernicus sea-level fetch failed: {e}. Falling back to eta = 0.")
+
+    # Copernicus and Open-Meteo are both hourly but not guaranteed to land on exactly
+    # the same timestamps, and NOAA is only every 6 hours. Spline-interpolate every
+    # source (and the sea-level signal, if used) onto one shared hourly grid so
+    # everything downstream - the combined table, the wave-data plot, and the runup
+    # band - lines up on identical timestamps.
+    shared_grid = build_shared_hourly_grid([cop_df_raw, om_df_raw, noaa_detail_df_raw, sealevel_df_raw])
+
+    cop_df = interpolate_series_to_grid(cop_df_raw, shared_grid) if cop_df_raw is not None else None
+    om_df = interpolate_series_to_grid(om_df_raw, shared_grid) if om_df_raw is not None else None
+    noaa_detail_df = (
+        interpolate_ensemble_to_hourly(noaa_detail_df_raw, freq="1h", time_grid=shared_grid)
+        if noaa_detail_df_raw is not None
+        else None
+    )
+    sealevel_df = (
+        interpolate_series_to_grid(
+            sealevel_df_raw, shared_grid, value_cols=("sea-level signal [m]",), circular_cols=()
+        )
+        if sealevel_df_raw is not None
+        else None
+    )
+
+    if cop_df is not None and not cop_df.empty:
+        source_frames_for_wide["Copernicus"] = cop_df
+        source_wave_frames_for_runup["Copernicus"] = cop_df
+    if om_df is not None and not om_df.empty:
+        source_frames_for_wide["Open-Meteo"] = om_df
+        source_wave_frames_for_runup["Open-Meteo"] = om_df
+    if noaa_detail_df is not None and not noaa_detail_df.empty:
+        noaa_summary_df = summarize_ensemble_detail(noaa_detail_df)
+        source_frames_for_wide["NOAA GEFS-Wave"] = noaa_summary_df[["time", "Hs [m]", "Tp [s]", "Dir [deg]"]]
+
+    if not source_frames_for_wide:
+        st.error("None of the selected sources returned data for this point. Try a different location or fewer sources.")
+        st.stop()
 
     with st.spinner("Running empirical runup models against every source..."):
         runup_detail_df = compute_multi_source_runup_detail(
@@ -295,6 +324,7 @@ if fetch_button:
     st.session_state["rf_source_wave_frames_for_runup"] = source_wave_frames_for_runup
     st.session_state["rf_source_notes"] = source_notes
     st.session_state["rf_noaa_detail_df"] = noaa_detail_df
+    st.session_state["rf_sealevel_df"] = sealevel_df
     st.session_state["rf_water_level_mode"] = water_level_mode
     st.session_state["rf_constant_eta"] = float(constant_eta)
     st.session_state["rf_threshold"] = float(threshold) if threshold is not None else None
@@ -311,6 +341,7 @@ source_frames_for_wide = st.session_state["rf_source_frames_for_wide"]
 source_wave_frames_for_runup = st.session_state["rf_source_wave_frames_for_runup"]
 source_notes = st.session_state["rf_source_notes"]
 noaa_detail_df = st.session_state["rf_noaa_detail_df"]
+sealevel_df = st.session_state["rf_sealevel_df"]
 water_level_mode = st.session_state["rf_water_level_mode"]
 constant_eta = st.session_state["rf_constant_eta"]
 threshold = st.session_state["rf_threshold"]
@@ -356,15 +387,27 @@ st.caption(
 )
 
 st.subheader("Wave data")
-st.caption(
-    "Significant wave height and peak period through the forecast period. Copernicus and Open-Meteo are drawn as "
-    "solid lines (single deterministic series). NOAA GEFS-Wave has 31 members, so it is instead drawn as its "
-    "ensemble mean with ±1SD and ±2SD shaded bands."
+wave_data_caption = (
+    "Significant wave height and peak period through the forecast period, all sources interpolated onto the same "
+    "hourly grid. Copernicus and Open-Meteo are drawn as solid lines (single deterministic series). NOAA GEFS-Wave "
+    "has 31 members, so it is instead drawn as its ensemble mean with 25th-75th and 5th-95th percentile shaded bands."
 )
+if water_level_mode == "Copernicus mean-removed sea-level signal" and sealevel_df is not None and not sealevel_df.empty:
+    wave_data_caption += " The bottom panel shows the Copernicus mean-removed sea-level signal used for total water level, on the same time axis."
+st.caption(wave_data_caption)
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
-    fig_wave = plot_wave_data_comparison(source_wave_frames_for_runup, noaa_detail_df)
+    show_sealevel_panel = (
+        water_level_mode == "Copernicus mean-removed sea-level signal"
+        and sealevel_df is not None
+        and not sealevel_df.empty
+    )
+    fig_wave = plot_wave_data_comparison(
+        source_wave_frames_for_runup,
+        noaa_detail_df,
+        sealevel_df=sealevel_df if show_sealevel_panel else None,
+    )
     wave_png = fig_to_png_bytes(fig_wave)
     st.pyplot(fig_wave, clear_figure=False, use_container_width=False)
 
@@ -433,8 +476,9 @@ plot_title = "Combined forecast total water level (all sources x all models)" if
 st.subheader("Runup forecast")
 st.caption(
     "The dark blue line is the combined mean across every selected source, runup model, and (for NOAA) ensemble "
-    "member. The shaded bands are the mean ± 1SD and ± 2SD, and the thin blue lines trace the overall min/max "
-    "envelope. The red dashed line marks the critical elevation threshold, if enabled."
+    "member. The shaded bands are the 25th-75th and 5th-95th percentiles (rather than mean ± SD, so the band can "
+    "never fall outside the actual min/max), and the thin blue lines trace the overall min/max envelope. The red "
+    "dashed line marks the critical elevation threshold, if enabled."
 )
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])

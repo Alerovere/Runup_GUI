@@ -298,17 +298,98 @@ def summarize_ensemble_detail(detail_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(summary_rows).sort_values("time").reset_index(drop=True)
 
 
-def interpolate_ensemble_to_hourly(detail_df: pd.DataFrame, freq: str = "1h") -> pd.DataFrame:
-    """Interpolate each ensemble member's Hs/Tp series onto a common hourly grid
-    with a cubic spline, per member.
+def build_shared_hourly_grid(dfs: List[pd.DataFrame], freq: str = "1h") -> Optional[pd.DatetimeIndex]:
+    """Union hourly time grid spanning every given source's own time range, so all
+    sources can be spline-interpolated onto exactly the same timestamps. Each
+    source keeps its own true coverage (interpolation elsewhere in this module
+    never extrapolates), so this just fixes the *timestamps* everyone lines up on."""
+    valid = [df for df in dfs if df is not None and not df.empty]
+    if not valid:
+        return None
+
+    starts = [pd.to_datetime(df["time"]).min() for df in valid]
+    ends = [pd.to_datetime(df["time"]).max() for df in valid]
+
+    start = min(starts)
+    end = max(ends)
+
+    return pd.date_range(start=start, end=end, freq=freq, tz="UTC" if start.tzinfo is not None else None)
+
+
+def interpolate_series_to_grid(
+    df: pd.DataFrame,
+    time_grid: pd.DatetimeIndex,
+    value_cols: tuple = ("Hs [m]", "Tp [s]"),
+    circular_cols: tuple = ("Dir [deg]",),
+) -> pd.DataFrame:
+    """Spline-interpolate a single deterministic series (e.g. Copernicus,
+    Open-Meteo, or a sea-level signal) onto a shared time grid, so every source
+    lines up on exactly the same timestamps. Values outside this series' own
+    time range are left as NaN (no extrapolation). Circular columns (e.g.
+    direction) are nearest-held instead of splined."""
+    if df is None or df.empty or time_grid is None or len(time_grid) == 0:
+        return pd.DataFrame({"time": time_grid}) if time_grid is not None else pd.DataFrame()
+
+    from scipy.interpolate import CubicSpline
+
+    g = df.sort_values("time").reset_index(drop=True)
+    g["time"] = pd.to_datetime(g["time"])
+
+    t0 = g["time"].iloc[0]
+    x = (g["time"] - t0).dt.total_seconds().to_numpy()
+    grid_x = (time_grid - t0).total_seconds().to_numpy()
+    in_range = (grid_x >= x[0]) & (grid_x <= x[-1])
+
+    out = pd.DataFrame({"time": time_grid})
+
+    for col in value_cols:
+        if col not in g.columns:
+            continue
+        values = np.full(len(time_grid), np.nan)
+        if in_range.any():
+            if len(x) >= 3:
+                spline = CubicSpline(x, g[col].to_numpy())
+                values[in_range] = spline(grid_x[in_range])
+            else:
+                values[in_range] = np.interp(grid_x[in_range], x, g[col].to_numpy())
+        out[col] = values
+
+    for col in circular_cols:
+        if col not in g.columns:
+            continue
+        merged = pd.merge_asof(
+            pd.DataFrame({"time": time_grid}).sort_values("time"),
+            g[["time", col]].sort_values("time"),
+            on="time",
+            direction="nearest",
+        )
+        values = merged[col].to_numpy()
+        values = np.where(in_range, values, np.nan)
+        out[col] = values
+
+    return out.dropna(subset=[c for c in value_cols if c in out.columns], how="all").reset_index(drop=True)
+
+
+def interpolate_ensemble_to_hourly(
+    detail_df: pd.DataFrame,
+    freq: str = "1h",
+    time_grid: Optional[pd.DatetimeIndex] = None,
+) -> pd.DataFrame:
+    """Interpolate each ensemble member's Hs/Tp series onto an hourly grid with a
+    cubic spline, per member.
 
     The NOAA GEFS-Wave ensemble is only available every 6 hours, while Copernicus
     and Open-Meteo are hourly. Combining them directly means the set of estimates
     feeding the combined runup band changes abruptly every 6 hours (many more,
     wider-spread NOAA-derived estimates suddenly appear), which shows up as
-    spikes in the combined mean/SD band. Interpolating each member onto the same
-    hourly grid first removes that composition jump; only interpolation within
-    each member's own known time range is used (no extrapolation).
+    spikes in the combined band. Interpolating each member first removes that
+    composition jump; only interpolation within each member's own known time
+    range is used (no extrapolation).
+
+    If time_grid is given, every member is interpolated onto that same shared
+    grid (so it lines up exactly with other sources interpolated the same way).
+    Otherwise each member gets its own hourly grid starting at its own first
+    timestamp.
     """
     if detail_df is None or detail_df.empty:
         return detail_df
@@ -329,8 +410,18 @@ def interpolate_ensemble_to_hourly(detail_df: pd.DataFrame, freq: str = "1h") ->
 
         t0 = g["time"].iloc[0]
         x = (g["time"] - t0).dt.total_seconds().to_numpy()
-        new_x = np.arange(x[0], x[-1] + 1e-6, step_seconds)
-        new_time = t0 + pd.to_timedelta(new_x, unit="s")
+
+        if time_grid is not None:
+            grid_x = (time_grid - t0).total_seconds().to_numpy()
+            in_range = (grid_x >= x[0]) & (grid_x <= x[-1])
+            new_x = grid_x[in_range]
+            new_time = time_grid[in_range]
+        else:
+            new_x = np.arange(x[0], x[-1] + 1e-6, step_seconds)
+            new_time = t0 + pd.to_timedelta(new_x, unit="s")
+
+        if len(new_x) == 0:
+            continue
 
         interp = pd.DataFrame({"time": new_time, "Model": member})
         for col in ["Hs [m]", "Tp [s]"]:
@@ -348,6 +439,9 @@ def interpolate_ensemble_to_hourly(detail_df: pd.DataFrame, freq: str = "1h") ->
             )
 
         out_frames.append(interp)
+
+    if not out_frames:
+        return detail_df.iloc[0:0]
 
     return pd.concat(out_frames, ignore_index=True).sort_values(["time", "Model"]).reset_index(drop=True)
 

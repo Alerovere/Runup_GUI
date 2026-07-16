@@ -1162,24 +1162,34 @@ def plot_return_values(return_df: pd.DataFrame):
     return fig
 
 
-def plot_wave_data_comparison(deterministic_sources: dict, noaa_detail_df: Optional[pd.DataFrame] = None):
-    """Two-panel (Hs top, Tp bottom) comparison of every wave-forecast source.
+def plot_wave_data_comparison(
+    deterministic_sources: dict,
+    noaa_detail_df: Optional[pd.DataFrame] = None,
+    sealevel_df: Optional[pd.DataFrame] = None,
+):
+    """Two- or three-panel comparison of every wave-forecast source, sharing a
+    common time axis: significant wave height, peak period, and (only if
+    sealevel_df is given) the Copernicus mean-removed sea-level signal.
 
     Deterministic single-series sources (e.g. Copernicus, Open-Meteo) are drawn as
     solid lines, one color per source. The NOAA GEFS-Wave ensemble, given as its
-    per-member detail table, is instead drawn as a mean line with +/-1SD and
-    +/-2SD shaded bands in different shades of blue, since it has 31 members
-    rather than a single deterministic series.
+    per-member detail table, is instead drawn as a mean line with 25th-75th and
+    5th-95th percentile shaded bands in different shades of blue, since it has 31
+    members rather than a single deterministic series. Percentile bands (rather
+    than mean +/- SD) are used because they are guaranteed to fall within the
+    ensemble's own min/max range, unlike a parametric SD-based band, which can
+    exceed it when the ensemble is small or non-Gaussian.
     """
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
 
-    fig, axes = plt.subplots(2, 1, figsize=(7.2, 5.4), dpi=160, sharex=True)
+    n_panels = 3 if sealevel_df is not None and not sealevel_df.empty else 2
+    fig, axes = plt.subplots(n_panels, 1, figsize=(7.2, 2.7 * n_panels), dpi=160, sharex=True)
 
     accent_colors = ["crimson", "seagreen", "goldenrod", "purple"]
     band_mean_color = "#08306b"
-    band_1sd_color = "#4f9be6"
-    band_2sd_color = "#c7ddf5"
+    band_25_75_color = "#4f9be6"
+    band_5_95_color = "#c7ddf5"
 
     noaa_stats = None
     if noaa_detail_df is not None and not noaa_detail_df.empty:
@@ -1189,19 +1199,26 @@ def plot_wave_data_comparison(deterministic_sources: dict, noaa_detail_df: Optio
             noaa_df.groupby("time")
             .agg(
                 hs_mean=("Hs [m]", "mean"),
-                hs_std=("Hs [m]", "std"),
+                hs_p05=("Hs [m]", lambda s: s.quantile(0.05)),
+                hs_p25=("Hs [m]", lambda s: s.quantile(0.25)),
+                hs_p75=("Hs [m]", lambda s: s.quantile(0.75)),
+                hs_p95=("Hs [m]", lambda s: s.quantile(0.95)),
                 tp_mean=("Tp [s]", "mean"),
-                tp_std=("Tp [s]", "std"),
+                tp_p05=("Tp [s]", lambda s: s.quantile(0.05)),
+                tp_p25=("Tp [s]", lambda s: s.quantile(0.25)),
+                tp_p75=("Tp [s]", lambda s: s.quantile(0.75)),
+                tp_p95=("Tp [s]", lambda s: s.quantile(0.95)),
             )
             .reset_index()
             .sort_values("time")
         )
-        noaa_stats["hs_std"] = noaa_stats["hs_std"].fillna(0.0)
-        noaa_stats["tp_std"] = noaa_stats["tp_std"].fillna(0.0)
 
-    panels = [("Hs [m]", "hs_mean", "hs_std"), ("Tp [s]", "tp_mean", "tp_std")]
+    panels = [
+        ("Hs [m]", "Significant wave height, Hs [m]", "hs_mean", "hs_p05", "hs_p25", "hs_p75", "hs_p95"),
+        ("Tp [s]", "Peak wave period, Tp [s]", "tp_mean", "tp_p05", "tp_p25", "tp_p75", "tp_p95"),
+    ]
 
-    for var_idx, (value_col, mean_col, std_col) in enumerate(panels):
+    for var_idx, (value_col, ylabel, mean_col, p05_col, p25_col, p75_col, p95_col) in enumerate(panels):
         ax = axes[var_idx]
 
         for i, (source_name, df) in enumerate(deterministic_sources.items()):
@@ -1219,49 +1236,64 @@ def plot_wave_data_comparison(deterministic_sources: dict, noaa_detail_df: Optio
 
         if noaa_stats is not None:
             time = noaa_stats["time"]
-            mean_series = noaa_stats[mean_col]
-            std_series = noaa_stats[std_col]
 
             ax.fill_between(
                 time,
-                mean_series - 2 * std_series,
-                mean_series + 2 * std_series,
-                color=band_2sd_color,
+                noaa_stats[p05_col],
+                noaa_stats[p95_col],
+                color=band_5_95_color,
                 alpha=0.8,
                 edgecolor="none",
-                label="NOAA mean ± 2SD" if var_idx == 0 else None,
+                label="NOAA 5th-95th percentile" if var_idx == 0 else None,
             )
             ax.fill_between(
                 time,
-                mean_series - std_series,
-                mean_series + std_series,
-                color=band_1sd_color,
+                noaa_stats[p25_col],
+                noaa_stats[p75_col],
+                color=band_25_75_color,
                 alpha=0.55,
                 edgecolor="none",
-                label="NOAA mean ± 1SD" if var_idx == 0 else None,
+                label="NOAA 25th-75th percentile" if var_idx == 0 else None,
             )
             ax.plot(
                 time,
-                mean_series,
+                noaa_stats[mean_col],
                 color=band_mean_color,
                 linewidth=1.8,
                 label="NOAA mean" if var_idx == 0 else None,
             )
 
-        ax.set_ylabel(value_col, fontsize=9)
+        ax.set_ylabel(ylabel, fontsize=9)
         ax.tick_params(axis="y", labelsize=8)
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         ax.grid(False)
 
+    if n_panels == 3:
+        ax_sl = axes[2]
+        sl_df = sealevel_df.copy()
+        sl_df["time"] = pd.to_datetime(sl_df["time"])
+        ax_sl.plot(
+            sl_df["time"],
+            sl_df["sea-level signal [m]"],
+            color="teal",
+            linewidth=1.6,
+        )
+        ax_sl.axhline(0.0, color="0.6", linewidth=0.8, linestyle="--")
+        ax_sl.set_ylabel("Sea-level signal [m]\n(mean-removed)", fontsize=9)
+        ax_sl.tick_params(axis="y", labelsize=8)
+        ax_sl.spines["top"].set_visible(False)
+        ax_sl.spines["right"].set_visible(False)
+        ax_sl.grid(False)
+
     axes[0].set_title("Wave data by source", fontsize=10, pad=8)
-    axes[1].set_xlabel("Date", fontsize=9)
-    axes[1].xaxis.set_major_locator(mdates.DayLocator())
+    axes[-1].set_xlabel("Date", fontsize=9)
+    axes[-1].xaxis.set_major_locator(mdates.DayLocator())
     try:
-        axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
     except ValueError:
-        axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
-    axes[1].tick_params(axis="x", labelsize=8, rotation=0)
+        axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    axes[-1].tick_params(axis="x", labelsize=8, rotation=0)
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(
@@ -1284,47 +1316,56 @@ def plot_forecast_band(
     threshold: Optional[float] = None,
     title: Optional[str] = None,
 ):
-    """Combined forecast band: a mean line, +/-1SD and +/-2SD shaded bands (in
-    different shades of blue), and thin min/max envelope lines, computed across
-    every row of detail_df (every source x runup model x, for NOAA, every
-    individual ensemble member)."""
+    """Combined forecast band: a mean line, 25th-75th and 5th-95th percentile
+    shaded bands (in different shades of blue), and thin min/max envelope lines,
+    computed across every row of detail_df (every source x runup model x, for
+    NOAA, every individual ensemble member).
+
+    Percentile bands are used instead of mean +/- SD: with a small, non-Gaussian,
+    mixed-model ensemble like this one, a parametric SD-based band can legitimately
+    extend beyond the empirical min/max range (a few outlying model/member
+    estimates inflate the standard deviation more than the true spread of the
+    bulk of the data), which looks like a contradiction on the plot. Percentiles
+    are always within [min, max] by construction, so that can't happen.
+    """
     import matplotlib.dates as mdates
     import matplotlib.pyplot as plt
 
     df = detail_df.copy()
     df["time"] = pd.to_datetime(df["time"])
 
-    stats = (
-        df.groupby("time")[value_col]
-        .agg(mean_val="mean", std_val="std", min_val="min", max_val="max")
-        .reset_index()
-        .sort_values("time")
-    )
-    stats["std_val"] = stats["std_val"].fillna(0.0)
+    grouped = df.groupby("time")[value_col]
+    stats = grouped.agg(mean_val="mean", min_val="min", max_val="max").reset_index()
+    for label, q in [("p05", 0.05), ("p25", 0.25), ("p75", 0.75), ("p95", 0.95)]:
+        stats = stats.merge(
+            grouped.quantile(q).rename(label).reset_index(),
+            on="time",
+            how="left",
+        )
+    stats = stats.sort_values("time").reset_index(drop=True)
 
     time = stats["time"]
     mean_series = stats["mean_val"]
-    std_series = stats["std_val"]
 
     fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
 
     ax.fill_between(
         time,
-        mean_series - 2 * std_series,
-        mean_series + 2 * std_series,
+        stats["p05"],
+        stats["p95"],
         color="#c7ddf5",
         alpha=0.8,
         edgecolor="none",
-        label="Mean ± 2SD",
+        label="5th-95th percentile",
     )
     ax.fill_between(
         time,
-        mean_series - std_series,
-        mean_series + std_series,
+        stats["p25"],
+        stats["p75"],
         color="#4f9be6",
         alpha=0.55,
         edgecolor="none",
-        label="Mean ± 1SD",
+        label="25th-75th percentile",
     )
     ax.plot(
         time,
@@ -1385,9 +1426,6 @@ def plot_forecast_band(
         handlelength=1.6,
         columnspacing=1.4,
     )
-
-    fig.tight_layout()
-    return fig
 
     fig.tight_layout()
     return fig
