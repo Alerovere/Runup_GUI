@@ -107,6 +107,33 @@ def summarize_threshold_status(status_df: pd.DataFrame) -> Dict[str, object]:
     }
 
 
+def build_exceedance_events(status_df: pd.DataFrame) -> pd.DataFrame:
+    """Group consecutive non-green timesteps into discrete exceedance events, each
+    reporting the start time, end time, and worst status reached during that run.
+    This answers "when" the threshold gets surpassed, rather than just whether it does."""
+    df = status_df.sort_values("time").reset_index(drop=True).copy()
+    df["time"] = pd.to_datetime(df["time"])
+
+    is_exceed = df["status"] != "green"
+    run_id = (is_exceed != is_exceed.shift(fill_value=False)).cumsum()
+
+    events = []
+    for rid, group in df.groupby(run_id):
+        if not (group["status"] != "green").iloc[0]:
+            continue
+        worst_severity = int(group["severity"].max())
+        worst_status = REVERSE_SEVERITY_MAP[worst_severity]
+        events.append(
+            {
+                "Start": group["time"].min(),
+                "End": group["time"].max(),
+                "Worst status": LABEL_MAP[worst_status],
+            }
+        )
+
+    return pd.DataFrame(events)
+
+
 def describe_threshold_logic(compare_label: str, threshold: float) -> str:
     return f"""
 **Threshold interpretation**  

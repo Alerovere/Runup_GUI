@@ -1160,3 +1160,234 @@ def plot_return_values(return_df: pd.DataFrame):
 
     fig.tight_layout()
     return fig
+
+
+def plot_wave_data_comparison(deterministic_sources: dict, noaa_detail_df: Optional[pd.DataFrame] = None):
+    """Two-panel (Hs top, Tp bottom) comparison of every wave-forecast source.
+
+    Deterministic single-series sources (e.g. Copernicus, Open-Meteo) are drawn as
+    solid lines, one color per source. The NOAA GEFS-Wave ensemble, given as its
+    per-member detail table, is instead drawn as a mean line with +/-1SD and
+    +/-2SD shaded bands in different shades of blue, since it has 31 members
+    rather than a single deterministic series.
+    """
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(2, 1, figsize=(7.2, 5.4), dpi=160, sharex=True)
+
+    accent_colors = ["crimson", "seagreen", "goldenrod", "purple"]
+    band_mean_color = "#08306b"
+    band_1sd_color = "#4f9be6"
+    band_2sd_color = "#c7ddf5"
+
+    noaa_stats = None
+    if noaa_detail_df is not None and not noaa_detail_df.empty:
+        noaa_df = noaa_detail_df.copy()
+        noaa_df["time"] = pd.to_datetime(noaa_df["time"])
+        noaa_stats = (
+            noaa_df.groupby("time")
+            .agg(
+                hs_mean=("Hs [m]", "mean"),
+                hs_std=("Hs [m]", "std"),
+                tp_mean=("Tp [s]", "mean"),
+                tp_std=("Tp [s]", "std"),
+            )
+            .reset_index()
+            .sort_values("time")
+        )
+        noaa_stats["hs_std"] = noaa_stats["hs_std"].fillna(0.0)
+        noaa_stats["tp_std"] = noaa_stats["tp_std"].fillna(0.0)
+
+    panels = [("Hs [m]", "hs_mean", "hs_std"), ("Tp [s]", "tp_mean", "tp_std")]
+
+    for var_idx, (value_col, mean_col, std_col) in enumerate(panels):
+        ax = axes[var_idx]
+
+        for i, (source_name, df) in enumerate(deterministic_sources.items()):
+            if df is None or df.empty or value_col not in df.columns:
+                continue
+            time = pd.to_datetime(df["time"])
+            ax.plot(
+                time,
+                df[value_col],
+                color=accent_colors[i % len(accent_colors)],
+                linewidth=1.6,
+                linestyle="-",
+                label=source_name,
+            )
+
+        if noaa_stats is not None:
+            time = noaa_stats["time"]
+            mean_series = noaa_stats[mean_col]
+            std_series = noaa_stats[std_col]
+
+            ax.fill_between(
+                time,
+                mean_series - 2 * std_series,
+                mean_series + 2 * std_series,
+                color=band_2sd_color,
+                alpha=0.8,
+                edgecolor="none",
+                label="NOAA mean ± 2SD" if var_idx == 0 else None,
+            )
+            ax.fill_between(
+                time,
+                mean_series - std_series,
+                mean_series + std_series,
+                color=band_1sd_color,
+                alpha=0.55,
+                edgecolor="none",
+                label="NOAA mean ± 1SD" if var_idx == 0 else None,
+            )
+            ax.plot(
+                time,
+                mean_series,
+                color=band_mean_color,
+                linewidth=1.8,
+                label="NOAA mean" if var_idx == 0 else None,
+            )
+
+        ax.set_ylabel(value_col, fontsize=9)
+        ax.tick_params(axis="y", labelsize=8)
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+        ax.grid(False)
+
+    axes[0].set_title("Wave data by source", fontsize=10, pad=8)
+    axes[1].set_xlabel("Date", fontsize=9)
+    axes[1].xaxis.set_major_locator(mdates.DayLocator())
+    try:
+        axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    except ValueError:
+        axes[1].xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+    axes[1].tick_params(axis="x", labelsize=8, rotation=0)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.02),
+        ncol=3,
+    )
+
+    fig.tight_layout(rect=[0, 0.08, 1, 1])
+    return fig
+
+
+def plot_forecast_band(
+    detail_df: pd.DataFrame,
+    value_col: str,
+    threshold: Optional[float] = None,
+    title: Optional[str] = None,
+):
+    """Combined forecast band: a mean line, +/-1SD and +/-2SD shaded bands (in
+    different shades of blue), and thin min/max envelope lines, computed across
+    every row of detail_df (every source x runup model x, for NOAA, every
+    individual ensemble member)."""
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    df = detail_df.copy()
+    df["time"] = pd.to_datetime(df["time"])
+
+    stats = (
+        df.groupby("time")[value_col]
+        .agg(mean_val="mean", std_val="std", min_val="min", max_val="max")
+        .reset_index()
+        .sort_values("time")
+    )
+    stats["std_val"] = stats["std_val"].fillna(0.0)
+
+    time = stats["time"]
+    mean_series = stats["mean_val"]
+    std_series = stats["std_val"]
+
+    fig, ax = plt.subplots(figsize=(7.2, 4.6), dpi=160)
+
+    ax.fill_between(
+        time,
+        mean_series - 2 * std_series,
+        mean_series + 2 * std_series,
+        color="#c7ddf5",
+        alpha=0.8,
+        edgecolor="none",
+        label="Mean ± 2SD",
+    )
+    ax.fill_between(
+        time,
+        mean_series - std_series,
+        mean_series + std_series,
+        color="#4f9be6",
+        alpha=0.55,
+        edgecolor="none",
+        label="Mean ± 1SD",
+    )
+    ax.plot(
+        time,
+        stats["min_val"],
+        color="#0b5cad",
+        linewidth=0.9,
+        alpha=0.75,
+        label="Min-max envelope",
+    )
+    ax.plot(
+        time,
+        stats["max_val"],
+        color="#0b5cad",
+        linewidth=0.9,
+        alpha=0.75,
+    )
+    ax.plot(
+        time,
+        mean_series,
+        color="#08306b",
+        linewidth=2.0,
+        label="Mean",
+    )
+
+    if threshold is not None:
+        ax.axhline(
+            float(threshold),
+            color="crimson",
+            linestyle="--",
+            linewidth=1.4,
+            label="Critical elevation threshold",
+        )
+
+    if title is None:
+        title = value_col
+
+    ax.set_title(title, fontsize=10, pad=8)
+    ax.set_ylabel(value_col, fontsize=9)
+    ax.set_xlabel("Date", fontsize=9)
+    ax.tick_params(axis="y", labelsize=8)
+    ax.tick_params(axis="x", labelsize=8, rotation=0)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.grid(False)
+
+    ax.xaxis.set_major_locator(mdates.DayLocator())
+    try:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %-d"))
+    except ValueError:
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %d"))
+
+    ax.legend(
+        frameon=False,
+        fontsize=8,
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.18),
+        ncol=2,
+        handlelength=1.6,
+        columnspacing=1.4,
+    )
+
+    fig.tight_layout()
+    return fig
+
+    fig.tight_layout()
+    return fig

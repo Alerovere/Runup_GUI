@@ -7,6 +7,7 @@ from src.copernicus_sealevel import (
 )
 from src.forecast_thresholds import (
     build_daily_threshold_status,
+    build_exceedance_events,
     build_threshold_timeseries,
     describe_threshold_logic,
     describe_worst_status,
@@ -24,8 +25,8 @@ from src.multi_source_forecast import (
 from src.plotting import (
     fig_to_png_bytes,
     plot_daily_threshold_bar,
-    plot_forecast_model_timeseries,
-    plot_multi_source_hs_comparison,
+    plot_forecast_band,
+    plot_wave_data_comparison,
 )
 from src.runup_forecast import build_runup_envelope, compute_multi_source_runup_detail
 
@@ -282,6 +283,7 @@ if fetch_button:
     st.session_state["rf_runup_detail_df"] = runup_detail_df
     st.session_state["rf_envelope_df"] = envelope_df
     st.session_state["rf_source_frames_for_wide"] = source_frames_for_wide
+    st.session_state["rf_source_wave_frames_for_runup"] = source_wave_frames_for_runup
     st.session_state["rf_source_notes"] = source_notes
     st.session_state["rf_noaa_detail_df"] = noaa_detail_df
     st.session_state["rf_water_level_mode"] = water_level_mode
@@ -297,6 +299,7 @@ combined_wide_df = st.session_state["rf_combined_wide_df"]
 runup_detail_df = st.session_state["rf_runup_detail_df"]
 envelope_df = st.session_state["rf_envelope_df"]
 source_frames_for_wide = st.session_state["rf_source_frames_for_wide"]
+source_wave_frames_for_runup = st.session_state["rf_source_wave_frames_for_runup"]
 source_notes = st.session_state["rf_source_notes"]
 noaa_detail_df = st.session_state["rf_noaa_detail_df"]
 water_level_mode = st.session_state["rf_water_level_mode"]
@@ -314,35 +317,8 @@ show_twl = water_level_mode == "Copernicus mean-removed sea-level signal" or abs
 
 st.subheader("Forecast summary")
 
-max_hs_records = []
-for name, df in source_frames_for_wide.items():
-    if df is None or df.empty:
-        continue
-    idx = df["Hs [m]"].idxmax()
-    row = df.loc[idx]
-    max_hs_records.append(
-        {
-            "Source": name,
-            "Hs [m]": float(row["Hs [m]"]),
-            "Tp [s]": float(row["Tp [s]"]),
-            "time": pd.to_datetime(row["time"]),
-        }
-    )
-max_hs_df = pd.DataFrame(max_hs_records)
-
 mean_runup = float(envelope_df["runup_mean"].mean())
 max_runup = float(envelope_df["runup_max"].max())
-
-if not max_hs_df.empty:
-    top_row = max_hs_df.loc[max_hs_df["Hs [m]"].idxmax()]
-    st.markdown(
-        f"""
-**Maximum forecast wave conditions (across selected sources)**
-Hs max = **{top_row["Hs [m]"]:.2f} m** ({top_row["Source"]})
-Associated peak period = **{top_row["Tp [s]"]:.2f} s**
-Expected on **{top_row["time"].strftime("%A, %B")} {top_row["time"].day}, {top_row["time"].year}**
-"""
-    )
 
 c1, c2 = st.columns(2)
 c1.metric("Mean runup (combined)", f"{mean_runup:.2f} m")
@@ -370,22 +346,23 @@ st.caption(
     "timestep (every selected source x every empirical runup model x, for NOAA, every ensemble member)."
 )
 
-st.subheader("Hs comparison")
+st.subheader("Wave data")
 st.caption(
-    "Significant wave height through the forecast period, one line per source. "
-    "For NOAA, this line is the GEFS-Wave ensemble mean."
+    "Significant wave height and peak period through the forecast period. Copernicus and Open-Meteo are drawn as "
+    "solid lines (single deterministic series). NOAA GEFS-Wave has 31 members, so it is instead drawn as its "
+    "ensemble mean with ±1SD and ±2SD shaded bands."
 )
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
-    fig_hs = plot_multi_source_hs_comparison(combined_wide_df, list(source_frames_for_wide.keys()))
-    hs_png = fig_to_png_bytes(fig_hs)
-    st.pyplot(fig_hs, clear_figure=False, use_container_width=False)
+    fig_wave = plot_wave_data_comparison(source_wave_frames_for_runup, noaa_detail_df)
+    wave_png = fig_to_png_bytes(fig_wave)
+    st.pyplot(fig_wave, clear_figure=False, use_container_width=False)
 
 st.download_button(
-    "Download Hs comparison plot (PNG)",
-    data=hs_png,
-    file_name="multi_source_hs_comparison.png",
+    "Download wave data plot (PNG)",
+    data=wave_png,
+    file_name="wave_data_comparison.png",
     mime="image/png",
 )
 
@@ -431,28 +408,29 @@ if threshold is not None:
         unsafe_allow_html=True,
     )
 
-    if threshold_summary["first_exceedance"] is not None:
-        first_ex = threshold_summary["first_exceedance"]
-        st.caption(
-            "First non-green exceedance: "
-            + first_ex.strftime("%A, %B ")
-            + str(first_ex.day)
-            + first_ex.strftime(", %Y %H:%M")
-        )
+    exceedance_events_df = build_exceedance_events(threshold_ts_df)
+    if not exceedance_events_df.empty:
+        st.caption("When the threshold gets surpassed (consecutive non-green periods, worst status reached in each):")
+        display_events_df = exceedance_events_df.copy()
+        display_events_df["Start"] = pd.to_datetime(display_events_df["Start"]).dt.strftime("%Y-%m-%d %H:%M")
+        display_events_df["End"] = pd.to_datetime(display_events_df["End"]).dt.strftime("%Y-%m-%d %H:%M")
+        st.dataframe(display_events_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption("The threshold is not exceeded at any point in the forecast period.")
 
 plot_value_col = "Total water level [m]" if show_twl else "Runup [m]"
 plot_title = "Combined forecast total water level (all sources x all models)" if show_twl else "Combined forecast runup (all sources x all models)"
 
-st.subheader("Runup forecast band")
+st.subheader("Runup forecast")
 st.caption(
-    "Each thin gray dotted line is one (source, runup model, ensemble member) combination. The dark blue line is the "
-    "combined mean, the shaded band is the mean ± 1 standard deviation, and the red dashed line marks the critical "
-    "elevation threshold, if enabled."
+    "The dark blue line is the combined mean across every selected source, runup model, and (for NOAA) ensemble "
+    "member. The shaded bands are the mean ± 1SD and ± 2SD, and the thin blue lines trace the overall min/max "
+    "envelope. The red dashed line marks the critical elevation threshold, if enabled."
 )
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
-    fig_band = plot_forecast_model_timeseries(
+    fig_band = plot_forecast_band(
         detail_df=runup_detail_df,
         value_col=plot_value_col,
         threshold=threshold,
@@ -462,35 +440,11 @@ with col2:
     st.pyplot(fig_band, clear_figure=False, use_container_width=False)
 
 st.download_button(
-    label="Download runup forecast band (PNG)",
+    label="Download runup forecast plot (PNG)",
     data=band_png,
-    file_name="runup_forecast_band.png",
+    file_name="runup_forecast.png",
     mime="image/png",
 )
-
-if noaa_detail_df is not None and not noaa_detail_df.empty:
-    with st.expander("NOAA GEFS-Wave ensemble Hs spread (optional detail)"):
-        st.caption(
-            "Each light gray dotted line is one of the 31 ensemble members' Hs. The dark blue line is the ensemble "
-            "mean, and the shaded band is the mean ± 1 standard deviation across members."
-        )
-
-        col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
-        with col2:
-            fig_ens = plot_forecast_model_timeseries(
-                detail_df=noaa_detail_df,
-                value_col="Hs [m]",
-                title="GEFS-Wave ensemble Hs spread",
-            )
-            ens_png = fig_to_png_bytes(fig_ens)
-            st.pyplot(fig_ens, clear_figure=False, use_container_width=False)
-
-        st.download_button(
-            "Download NOAA ensemble spread plot (PNG)",
-            data=ens_png,
-            file_name="noaa_gefs_wave_ensemble_spread.png",
-            mime="image/png",
-        )
 
 st.subheader("Combined forecast table")
 st.caption(
