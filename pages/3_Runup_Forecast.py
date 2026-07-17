@@ -79,14 +79,20 @@ with st.sidebar:
         ),
     )
 
-    sector_name = st.selectbox(
-        "Directional sector",
+    sector_names = st.multiselect(
+        "Directional sector(s)",
         ["All directions", "N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        default=["All directions"],
         help=(
             "Filter the forecast wave data by incoming direction before computing runup, so the risk estimate only "
-            "reflects wave energy actually relevant to a site facing this sector. Shown as a wedge on the map below."
+            "reflects wave energy actually relevant to a site facing these sectors. Selecting several sectors "
+            "combines them (wave energy from ANY selected sector counts) - handy for a site exposed to a broad "
+            "swell window, e.g. SW + W. \"All directions\" overrides any other selection. Shown as wedge(s) on the "
+            "map below."
         ),
     )
+    if not sector_names:
+        sector_names = ["All directions"]
 
     slope = st.number_input(
         "Beach slope beta [-]",
@@ -177,19 +183,24 @@ st.caption(
 )
 
 st.subheader("Map preview")
-if sector_name == "All directions":
+if "All directions" in sector_names:
     st.caption("The map is shown for confirmation only. Update the coordinate fields above to move the forecast point.")
 else:
+    sector_label = " + ".join(sector_names)
+    is_plural = len(sector_names) > 1
+    wedge_word = "wedges" if is_plural else "wedge"
+    wedge_verb = "show" if is_plural else "shows"
+    sector_word = "sectors" if is_plural else "sector"
     st.caption(
-        f"The shaded wedge shows the **{sector_name}** sector selected in the sidebar - only wave energy coming "
-        "from within this wedge is used in the runup calculation below. Update the coordinate fields above to move "
-        "the forecast point."
+        f"The shaded {wedge_word} {wedge_verb} the **{sector_label}** {sector_word} selected in the sidebar - only "
+        f"wave energy coming from within {'these wedges' if is_plural else 'this wedge'} is used in the runup "
+        "calculation below. Update the coordinate fields above to move the forecast point."
     )
 
 sector_map = build_sector_map(
     st.session_state.runup_forecast_lat,
     st.session_state.runup_forecast_lon,
-    sector_name=sector_name,
+    sector_name=sector_names,
 )
 st_folium(sector_map, use_container_width=True, height=400, returned_objects=[])
 
@@ -319,14 +330,15 @@ if fetch_button:
         st.stop()
 
     # The "Wave data" plot and combined table always show the full, unfiltered wave
-    # climate for context. If a directional sector is selected, only wave energy coming
-    # from that sector should count toward the runup/TWL risk, so build sector-filtered
-    # copies of the same source frames here and feed ONLY those into the runup calc.
+    # climate for context. If one or more directional sectors are selected, only wave
+    # energy from those sectors (OR-combined) should count toward the runup/TWL risk,
+    # so build sector-filtered copies of the same source frames here and feed ONLY
+    # those into the runup calc.
     source_wave_frames_for_runup_calc = {
-        name: filter_by_sector(df, sector_name) for name, df in source_wave_frames_for_runup.items()
+        name: filter_by_sector(df, sector_names) for name, df in source_wave_frames_for_runup.items()
     }
     noaa_detail_df_for_runup_calc = (
-        filter_by_sector(noaa_detail_df, sector_name) if noaa_detail_df is not None and not noaa_detail_df.empty else None
+        filter_by_sector(noaa_detail_df, sector_names) if noaa_detail_df is not None and not noaa_detail_df.empty else None
     )
 
     with st.spinner("Running empirical runup models against every source..."):
@@ -359,7 +371,7 @@ if fetch_button:
     st.session_state["rf_water_level_mode"] = water_level_mode
     st.session_state["rf_constant_eta"] = float(constant_eta)
     st.session_state["rf_ssh_var"] = ssh_var
-    st.session_state["rf_sector_name"] = sector_name
+    st.session_state["rf_sector_names"] = sector_names
 
 if "rf_combined_wide_df" not in st.session_state:
     st.info("Enter an offshore point, choose which sources to include, and click Fetch runup forecast.")
@@ -381,11 +393,11 @@ constant_eta = st.session_state["rf_constant_eta"]
 # manager adjust it and immediately see the updated exceedance probability without
 # re-running the (slow) fetch + runup-model computation.
 ssh_var = st.session_state["rf_ssh_var"]
-# sector_name IS cached (unlike threshold): it's baked into runup_detail_df at fetch
+# sector_names IS cached (unlike threshold): it's baked into runup_detail_df at fetch
 # time (the sector filter is applied before the runup models run), so the sidebar
-# dropdown value must not be read live here - that would mislabel the caption below
-# with a sector that wasn't actually used for the displayed results.
-sector_name = st.session_state["rf_sector_name"]
+# multiselect value must not be read live here - that would mislabel the caption below
+# with sector(s) that weren't actually used for the displayed results.
+sector_names = st.session_state["rf_sector_names"]
 
 st.subheader("Sources used")
 for note in source_notes:
@@ -468,11 +480,13 @@ runup_caption = (
     "never fall outside the actual min/max), and the thin blue lines trace the overall min/max envelope. The red "
     "dashed line marks the critical elevation threshold, if enabled."
 )
-if sector_name != "All directions":
+if "All directions" not in sector_names:
+    sector_label = " + ".join(sector_names)
+    sector_word = "sectors" if len(sector_names) > 1 else "sector"
     runup_caption += (
-        f" Only wave energy from the **{sector_name}** sector (selected in the sidebar at fetch time) feeds into "
-        "this calculation, so hours where waves were coming from outside that sector may be missing here even "
-        "though they still appear in the Wave data plot above."
+        f" Only wave energy from the **{sector_label}** {sector_word} (selected in the sidebar at fetch time) feeds "
+        f"into this calculation, so hours where waves were coming from outside {'those sectors' if len(sector_names) > 1 else 'that sector'} "
+        "may be missing here even though they still appear in the Wave data plot above."
     )
 st.caption(runup_caption)
 

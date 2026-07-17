@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -19,7 +19,24 @@ SECTOR_BOUNDS = {
 }
 
 
-def filter_by_sector(df: pd.DataFrame, sector_name: str) -> pd.DataFrame:
+def filter_by_sector(df: pd.DataFrame, sector_name) -> pd.DataFrame:
+    """Filter rows to the given compass sector(s).
+
+    sector_name can be a single sector name (str, e.g. "NE"), "All directions"
+    (no filtering), or a list/tuple/set of several sector names - in which case
+    rows matching ANY of the given sectors are kept (union), so a manager can
+    combine e.g. ["SW", "W"] for a site exposed to a broad swell window.
+    """
+    if isinstance(sector_name, (list, tuple, set)):
+        names = [n for n in sector_name if n != "All directions"]
+        if not names:
+            return df.copy()
+        mask = pd.Series(False, index=df.index)
+        for name in names:
+            for lo, hi in SECTOR_BOUNDS[name]:
+                mask = mask | ((df["Dir [deg]"] >= lo) & (df["Dir [deg]"] < hi))
+        return df.loc[mask].copy()
+
     if sector_name == "All directions":
         return df.copy()
 

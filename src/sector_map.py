@@ -11,7 +11,7 @@ originates, not where it is heading.
 """
 
 import math
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import folium
 
@@ -49,14 +49,17 @@ def _sector_arc_bounds(sector_name: str) -> Tuple[float, float]:
 def build_sector_map(
     lat: float,
     lon: float,
-    sector_name: str = "All directions",
+    sector_name: Union[str, List[str]] = "All directions",
     radius_km: float = 60.0,
     zoom_start: int = 7,
 ) -> folium.Map:
     """Map centered on (lat, lon) with a marker at the point, and either a full
-    circle (sector_name == "All directions") or a wedge covering the selected
-    compass sector, so the directional filter applied to the wave/runup data is
-    visible on the map itself."""
+    circle ("All directions") or one wedge per selected compass sector, so the
+    directional filter applied to the wave/runup data is visible on the map
+    itself. sector_name accepts either a single sector name or a list of several
+    - each selected sector gets its own wedge, so a combined selection like
+    ["SW", "W"] is drawn as two adjoining wedges rather than one merged shape."""
+    sector_names = [sector_name] if isinstance(sector_name, str) else list(sector_name)
     fmap = folium.Map(location=[lat, lon], zoom_start=zoom_start, tiles="CartoDB positron")
 
     folium.Marker(
@@ -64,7 +67,7 @@ def build_sector_map(
         tooltip=f"lat = {lat:.5f}, lon = {lon:.5f}",
     ).add_to(fmap)
 
-    if sector_name == "All directions":
+    if not sector_names or "All directions" in sector_names:
         folium.Circle(
             location=[lat, lon],
             radius=radius_km * 1000.0,
@@ -77,20 +80,21 @@ def build_sector_map(
         ).add_to(fmap)
         return fmap
 
-    lo, hi = _sector_arc_bounds(sector_name)
-    bearings: List[float] = [lo + (hi - lo) * i / 24 for i in range(25)]
-    arc_points = [_destination_point(lat, lon, b, radius_km) for b in bearings]
+    for name in sector_names:
+        lo, hi = _sector_arc_bounds(name)
+        bearings: List[float] = [lo + (hi - lo) * i / 24 for i in range(25)]
+        arc_points = [_destination_point(lat, lon, b, radius_km) for b in bearings]
 
-    polygon_points = [(lat, lon)] + arc_points + [(lat, lon)]
+        polygon_points = [(lat, lon)] + arc_points + [(lat, lon)]
 
-    folium.Polygon(
-        locations=polygon_points,
-        color="#0b5cad",
-        weight=1.5,
-        fill=True,
-        fill_color="#4f9be6",
-        fill_opacity=0.35,
-        tooltip=f"{sector_name} sector (waves coming from this direction)",
-    ).add_to(fmap)
+        folium.Polygon(
+            locations=polygon_points,
+            color="#0b5cad",
+            weight=1.5,
+            fill=True,
+            fill_color="#4f9be6",
+            fill_opacity=0.35,
+            tooltip=f"{name} sector (waves coming from this direction)",
+        ).add_to(fmap)
 
     return fmap
