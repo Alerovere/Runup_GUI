@@ -1,10 +1,13 @@
 import pandas as pd
 import streamlit as st
+from streamlit_folium import st_folium
 
 from src.copernicus_sealevel import (
     MED_SEALEVEL_DATASET_ID,
     fetch_copernicus_sealevel_timeseries,
 )
+from src.extremes import filter_by_sector
+from src.sector_map import build_sector_map
 from src.forecast_thresholds import (
     build_daily_exceedance_probability,
     build_exceedance_events,
@@ -73,6 +76,15 @@ with st.sidebar:
         help=(
             "Number of days ahead to request from each source. Open-Meteo and Copernicus support up to 7 days; "
             "the NOAA GEFS-Wave ensemble is capped at 4 days (every 6 hours) to keep the number of requests manageable."
+        ),
+    )
+
+    sector_name = st.selectbox(
+        "Directional sector",
+        ["All directions", "N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+        help=(
+            "Filter the forecast wave data by incoming direction before computing runup, so the risk estimate only "
+            "reflects wave energy actually relevant to a site facing this sector. Shown as a wedge on the map below."
         ),
     )
 
@@ -165,15 +177,21 @@ st.caption(
 )
 
 st.subheader("Map preview")
-st.caption("The map is shown for confirmation only. Update the coordinate fields above to move the forecast point.")
+if sector_name == "All directions":
+    st.caption("The map is shown for confirmation only. Update the coordinate fields above to move the forecast point.")
+else:
+    st.caption(
+        f"The shaded wedge shows the **{sector_name}** sector selected in the sidebar - only wave energy coming "
+        "from within this wedge is used in the runup calculation below. Update the coordinate fields above to move "
+        "the forecast point."
+    )
 
-map_df = pd.DataFrame(
-    {
-        "lat": [st.session_state.runup_forecast_lat],
-        "lon": [st.session_state.runup_forecast_lon],
-    }
+sector_map = build_sector_map(
+    st.session_state.runup_forecast_lat,
+    st.session_state.runup_forecast_lon,
+    sector_name=sector_name,
 )
-st.map(map_df, zoom=6, use_container_width=True)
+st_folium(sector_map, use_container_width=True, height=400, returned_objects=[])
 
 if fetch_button:
     if not (use_copernicus or use_noaa or use_openmeteo):
@@ -300,14 +318,25 @@ if fetch_button:
         st.error("None of the selected sources returned data for this point. Try a different location or fewer sources.")
         st.stop()
 
+    # The "Wave data" plot and combined table always show the full, unfiltered wave
+    # climate for context. If a directional sector is selected, only wave energy coming
+    # from that sector should count toward the runup/TWL risk, so build sector-filtered
+    # copies of the same source frames here and feed ONLY those into the runup calc.
+    source_wave_frames_for_runup_calc = {
+        name: filter_by_sector(df, sector_name) for name, df in source_wave_frames_for_runup.items()
+    }
+    noaa_detail_df_for_runup_calc = (
+        filter_by_sector(noaa_detail_df, sector_name) if noaa_detail_df is not None and not noaa_detail_df.empty else None
+    )
+
     with st.spinner("Running empirical runup models against every source..."):
         runup_detail_df = compute_multi_source_runup_detail(
-            source_wave_frames=source_wave_frames_for_runup,
+            source_wave_frames=source_wave_frames_for_runup_calc,
             slope=float(slope),
             water_level_mode=water_level_mode,
             constant_eta=float(constant_eta),
             sealevel_df=sealevel_df,
-            noaa_detail_df=noaa_detail_df,
+            noaa_detail_df=noaa_detail_df_for_runup_calc,
         )
 
     if runup_detail_df.empty:
@@ -330,6 +359,7 @@ if fetch_button:
     st.session_state["rf_water_level_mode"] = water_level_mode
     st.session_state["rf_constant_eta"] = float(constant_eta)
     st.session_state["rf_ssh_var"] = ssh_var
+    st.session_state["rf_sector_name"] = sector_name
 
 if "rf_combined_wide_df" not in st.session_state:
     st.info("Enter an offshore point, choose which sources to include, and click Fetch runup forecast.")
@@ -351,6 +381,11 @@ constant_eta = st.session_state["rf_constant_eta"]
 # manager adjust it and immediately see the updated exceedance probability without
 # re-running the (slow) fetch + runup-model computation.
 ssh_var = st.session_state["rf_ssh_var"]
+# sector_name IS cached (unlike threshold): it's baked into runup_detail_df at fetch
+# time (the sector filter is applied before the runup models run), so the sidebar
+# dropdown value must not be read live here - that would mislabel the caption below
+# with a sector that wasn't actually used for the displayed results.
+sector_name = st.session_state["rf_sector_name"]
 
 st.subheader("Sources used")
 for note in source_notes:
@@ -427,12 +462,19 @@ plot_value_col = "Total water level [m]" if show_twl else "Runup [m]"
 plot_title = "Combined forecast total water level (all sources x all models)" if show_twl else "Combined forecast runup (all sources x all models)"
 
 st.subheader("Runup forecast")
-st.caption(
+runup_caption = (
     "The dark blue line is the combined mean across every selected source, runup model, and (for NOAA) ensemble "
     "member. The shaded bands are the 25th-75th and 5th-95th percentiles (rather than mean ± SD, so the band can "
     "never fall outside the actual min/max), and the thin blue lines trace the overall min/max envelope. The red "
     "dashed line marks the critical elevation threshold, if enabled."
 )
+if sector_name != "All directions":
+    runup_caption += (
+        f" Only wave energy from the **{sector_name}** sector (selected in the sidebar at fetch time) feeds into "
+        "this calculation, so hours where waves were coming from outside that sector may be missing here even "
+        "though they still appear in the Wave data plot above."
+    )
+st.caption(runup_caption)
 
 col1, col2, col3 = st.columns([0.2, 4.6, 0.2])
 with col2:
