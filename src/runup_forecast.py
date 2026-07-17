@@ -56,7 +56,7 @@ def compute_multi_source_runup_detail(
     sealevel_df: Optional[pd.DataFrame] = None,
     noaa_detail_df: Optional[pd.DataFrame] = None,
     sealevel_tolerance: str = "30min",
-) -> pd.DataFrame:
+) -> tuple[pd.DataFrame, int]:
     """Run every runup model against every source's Hs/Tp series.
 
     source_wave_frames: deterministic single-series sources, each a DataFrame
@@ -69,6 +69,12 @@ def compute_multi_source_runup_detail(
     water_level_mode == "Copernicus mean-removed sea-level signal" applies
     sealevel_df (columns time / sea-level signal [m]) via a nearest-time merge;
     any other value uses a constant eta for every row.
+
+    Returns (detail_df, skipped_row_count). Rows with a non-physical Hs/Tp (<= 0 -
+    a genuinely flat/calm sea reported by a source, or an occasional cubic-spline
+    interpolation overshoot near zero) are skipped rather than allowed to crash the
+    whole page, since validate_inputs() rejects them; skipped_row_count lets the
+    caller surface how many timesteps/models were dropped this way.
     """
     use_sealevel = (
         water_level_mode == "Copernicus mean-removed sea-level signal"
@@ -82,8 +88,10 @@ def compute_multi_source_runup_detail(
         sealevel_norm["time"] = _normalize_utc(sealevel_norm["time"])
 
     rows = []
+    skipped_count = 0
 
     def _process(source_name: str, df: pd.DataFrame, member_col: Optional[str] = None) -> None:
+        nonlocal skipped_count
         if df is None or df.empty:
             return
 
@@ -111,7 +119,14 @@ def compute_multi_source_runup_detail(
                 slope=float(slope),
                 swl=eta_value,
             )
-            runup_results = compute_runup(values)
+            try:
+                runup_results = compute_runup(values)
+            except ValueError:
+                # hs/tp <= 0 for this timestep (flat calm sea, or a rare spline
+                # overshoot near zero) - skip just this one row/member rather than
+                # aborting the entire forecast.
+                skipped_count += 1
+                continue
 
             for model_name, runup in runup_results.items():
                 if not np.isfinite(runup):
@@ -145,7 +160,7 @@ def compute_multi_source_runup_detail(
         noaa_df = noaa_detail_df.rename(columns={"Model": "Member"})
         _process("NOAA GEFS-Wave", noaa_df, member_col="Member")
 
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows), skipped_count
 
 
 def build_runup_envelope(detail_df: pd.DataFrame) -> pd.DataFrame:

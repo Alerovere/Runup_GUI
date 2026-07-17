@@ -63,6 +63,15 @@ GEFS_WAVE_FORECAST_HOURS = list(range(0, 97, 6))  # every 6h out to 4 days = 17 
 GEFS_WAVE_CYCLE_LAG_HOURS = 5  # processing/publication delay after each 00/06/12/18Z cycle
 GEFS_WAVE_MAX_WORKERS = 8
 
+# Physical floors applied after cubic-spline interpolation. A cubic spline is not
+# constrained to stay positive, so a source reporting a near-flat sea (Hs close to
+# 0) can overshoot to a slightly negative value between two real observations -
+# which the runup models then reject outright (they require Hs, Tp > 0). Clamping
+# to a tiny positive floor keeps a near-calm sea state as "near calm" instead of
+# turning it into a crash, without materially changing genuinely energetic values.
+MIN_HS_M = 0.05
+MIN_TP_S = 1.0
+
 
 def _find_first_present_name(candidates: List[str], names: List[str]) -> Optional[str]:
     lower_map = {name.lower(): name for name in names}
@@ -378,6 +387,10 @@ def interpolate_series_to_grid(
                 values[in_range] = spline(grid_x[in_range])
             else:
                 values[in_range] = np.interp(grid_x[in_range], x, g[col].to_numpy())
+        if col == "Hs [m]":
+            values = np.where(np.isnan(values), values, np.maximum(values, MIN_HS_M))
+        elif col == "Tp [s]":
+            values = np.where(np.isnan(values), values, np.maximum(values, MIN_TP_S))
         out[col] = values
 
     for col in circular_cols:
@@ -454,7 +467,8 @@ def interpolate_ensemble_to_hourly(
         interp = pd.DataFrame({"time": new_time, "Model": member})
         for col in ["Hs [m]", "Tp [s]"]:
             spline = CubicSpline(x, g[col].to_numpy())
-            interp[col] = spline(new_x)
+            floor = MIN_HS_M if col == "Hs [m]" else MIN_TP_S
+            interp[col] = np.maximum(spline(new_x), floor)
 
         if "Dir [deg]" in g.columns:
             # Direction is circular, so hold the nearest observed value rather

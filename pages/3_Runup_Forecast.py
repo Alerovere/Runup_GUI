@@ -342,7 +342,7 @@ if fetch_button:
     )
 
     with st.spinner("Running empirical runup models against every source..."):
-        runup_detail_df = compute_multi_source_runup_detail(
+        runup_detail_df, skipped_row_count = compute_multi_source_runup_detail(
             source_wave_frames=source_wave_frames_for_runup_calc,
             slope=float(slope),
             water_level_mode=water_level_mode,
@@ -354,6 +354,13 @@ if fetch_button:
     if runup_detail_df.empty:
         st.warning("No runup results were computed from the fetched forecast data.")
         st.stop()
+
+    if skipped_row_count:
+        st.caption(
+            f"{skipped_row_count} source/model/timestep combination(s) were skipped because they reported a "
+            "non-physical wave height or period (Hs or Tp <= 0, e.g. a flat calm sea) - excluded from the runup "
+            "calculation below rather than causing an error."
+        )
 
     envelope_df = build_runup_envelope(runup_detail_df)
 
