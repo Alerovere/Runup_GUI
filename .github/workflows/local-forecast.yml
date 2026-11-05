@@ -1,0 +1,80 @@
+name: Previsioni locali
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Origine dei dati (demo = onde sintetiche)
+        type: choice
+        options: [copernicus, demo]
+        default: copernicus
+  schedule:
+    # UTC, after the nominal 06:00 / 20:00 publication windows. Best effort.
+    - cron: '37 6,20 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-forecast-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name == 'workflow_dispatch' || vars.FORECAST_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: forecast_service/requirements.txt
+      - name: Installa il motore di calcolo
+        run: python -m pip install -r forecast_service/requirements.txt
+      - name: Verifica calcoli e configurazione
+        run: python -B -m unittest discover -s tests/forecast -v
+      - name: Prepara il sito
+        run: |
+          mkdir -p _site
+          cp forecast_site/index.html forecast_site/styles.css forecast_site/app.js forecast_site/icon.svg _site/
+          touch _site/.nojekyll
+      - name: Genera il bollettino dimostrativo
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'demo'
+        run: python -B scripts/update_forecasts.py --demo --output _site/data
+      - name: Scarica Copernicus e calcola le previsioni
+        if: github.event_name != 'workflow_dispatch' || inputs.mode != 'demo'
+        env:
+          COPERNICUSMARINE_USERNAME: ${{ secrets.COPERNICUSMARINE_USERNAME }}
+          COPERNICUSMARINE_PASSWORD: ${{ secrets.COPERNICUSMARINE_PASSWORD }}
+        run: |
+          for attempt in 1 2 3; do
+            if python -B scripts/update_forecasts.py --output _site/data; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 60; fi
+          done
+          echo 'Aggiornamento fallito: il sito già pubblicato rimane invariato.'
+          exit 1
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pubblica il portale
+        id: deployment
+        uses: actions/deploy-pages@v4

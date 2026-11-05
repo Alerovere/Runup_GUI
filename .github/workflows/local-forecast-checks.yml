@@ -1,0 +1,25 @@
+name: Verifiche portale locale
+
+on:
+  pull_request:
+    paths: ['forecast_service/**', 'forecast_site/**', 'config/**', 'scripts/**', 'notebooks/**', 'src/runup_models.py', 'tests/forecast/**', '.github/workflows/local-forecast*.yml']
+  push:
+    paths: ['forecast_service/**', 'forecast_site/**', 'config/**', 'scripts/**', 'notebooks/**', 'src/runup_models.py', 'tests/forecast/**', '.github/workflows/local-forecast*.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: forecast_service/requirements.txt
+      - run: python -m pip install -r forecast_service/requirements.txt
+      - run: python -B -m unittest discover -s tests/forecast -v
+      - run: node --check forecast_site/app.js
+      - run: node --test tests/forecast/test_frontend.cjs
