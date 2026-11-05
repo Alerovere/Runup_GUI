@@ -8,7 +8,7 @@ import math
 
 
 def build_climate(csv_path, source, *, time_column='time', hs_column='hs_m'):
-    from forecast_service.pipeline import iso, parse_time, quantile
+    from forecast_service.time_utils import iso, parse_time, quantile
     rows = []
     with Path(csv_path).open(encoding='utf-8-sig', newline='') as handle:
         for row in csv.DictReader(handle):

@@ -2,9 +2,9 @@ name: Verifiche portale locale
 
 on:
   pull_request:
-    paths: ['forecast_service/**', 'forecast_site/**', 'config/**', 'scripts/**', 'src/runup_models.py', 'tests/forecast/**', '.github/workflows/local-forecast*.yml']
+    paths: ['forecast_service/**', 'forecast_site/**', 'config/**', 'scripts/**', 'notebooks/**', 'src/runup_models.py', 'tests/forecast/**', '.github/workflows/local-forecast*.yml']
   push:
-    paths: ['forecast_service/**', 'forecast_site/**', 'config/**', 'scripts/**', 'src/runup_models.py', 'tests/forecast/**', '.github/workflows/local-forecast*.yml']
+    paths: ['forecast_service/**', 'forecast_site/**', 'config/**', 'scripts/**', 'notebooks/**', 'src/runup_models.py', 'tests/forecast/**', '.github/workflows/local-forecast*.yml']
 
 permissions:
   contents: read

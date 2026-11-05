@@ -54,7 +54,7 @@ def main():
         parser.add_argument('--'+name)
     for name in ['latitude','longitude','wave-lat','wave-lon','z-min','z-max']:
         parser.add_argument('--'+name,type=float)
-    parser.add_argument('--profile',type=Path,help='CSV con transect_id,x_m,z_m.')
+    parser.add_argument('--profile',type=Path,help='CSV QGIS TR_ID,distance,SAMPLE_1,X,Y oppure profilo 1-D transect_id,x_m,z_m.')
     parser.add_argument('--from-draft',type=Path,help='Installa una bozza già rivista, senza ripetere le domande.')
     parser.add_argument('--install',action='store_true',help='Aggiunge la nuova località ai due file di configurazione dopo validazione.')
     args=parser.parse_args()

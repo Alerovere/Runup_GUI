@@ -2,6 +2,18 @@
 
 La configurazione di una località è distinta dall’aggiornamento delle previsioni. Si preparano una volta profili, soglie, stagione, punto offshore e serie storica; il processo giornaliero riusa questi dati per le successive 96 ore.
 
+## Notebook Colab consigliato
+
+Aprire `notebooks/Definisci_siti_studio.ipynb` in Colab con **File → Carica notebook**. Il notebook contiene le funzioni del progetto e non dipende da un clone della repository. La guida `notebooks/README.md` descrive modalità demo, profili QGIS, mappe, ERA5 ed esportazione ZIP. Questa è la procedura consigliata per definire e aggiornare i siti; i comandi seguenti rimangono disponibili per il setup locale.
+
+Il pacchetto di studio si importa nella repository con:
+
+```sh
+python scripts/import_site_package.py /percorso/borghetto-santo-spirito_studio.zip --replace
+```
+
+`--replace` è necessario per Borghetto o Venezia già presenti; per località nuove si omette. I pacchetti demo sono rifiutati salvo `--allow-demo` per prove locali esplicite.
+
 ## Ambiente dedicato
 
 Dalla radice della repository, nell’ambiente Python del portale:
@@ -30,7 +42,7 @@ Il comando aggiunge la nuova località a entrambi i file di configurazione e rif
 
 ## Pendenze da transetti
 
-Il wizard accetta un CSV con ascissa lungo il profilo e quota, entrambe in metri:
+Il wizard accetta il CSV QGIS `TR_ID,distance,SAMPLE_1,X,Y` del notebook di riferimento oppure un profilo monodimensionale con ascissa e quota in metri:
 
 ```csv
 transect_id,x_m,z_m
@@ -46,7 +58,7 @@ T2,20,1.4
 python scripts/setup_location.py --profile /percorso/transetti.csv --z-min 0 --z-max 1.5
 ```
 
-Selezionare l’intervallo di quote che descrive il tratto di spiaggia appropriato ai modelli. Il programma non lo individua automaticamente: stima `abs(dz/dx)` con regressione lineare soltanto nei punti di quell’intervallo, per ogni transetto, e salva numerosità e R² come diagnostica. Servono almeno tre ascisse distinte per transetto. La pendenza non è un angolo in gradi; profili complessi e selezioni che mescolano spiaggia e duna richiedono revisione. Il codice non scarica un DEM né costruisce transetti da una linea di costa.
+Selezionare l’intervallo di quote della battigia. Il metodo segue `Stockdon_runup_soluzione.ipynb`, celle 24–25: ordina per distanza, orienta mare→terra confrontando prime e ultime 10 quote, calcola la distanza euclidea X/Y dal primo punto a mare e seleziona i punti con quota almeno Z_MIN prima del primo punto sopra Z_MAX. La regressione mantiene il segno e rifiuta pendenze non positive o maggiori/uguali a 1. Servono almeno due distanze distinte. Per i CSV 1-D la distanza è ricavata dalla colonna x_m, ed è dichiarata come tale nella diagnostica. Il notebook Colab consente di modificare i nomi delle colonne, verificare graficamente la selezione e correggere esplicitamente l’orientamento. Il codice non scarica un DEM né costruisce transetti da una linea di costa.
 
 ## Account e accesso ERA5
 
