@@ -121,6 +121,17 @@ class PackageTests(unittest.TestCase):
             result=json.loads((root/'config/locations.json').read_text())
             self.assertEqual(result['locations'][payload['slug']]['slopes'],[.045])
 
+    def test_exposure_sectors_survive_export_and_import(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=self.copy_config(directory)
+            payload=self.payload()
+            exposure={'sectors_deg':[[20,120],[250,300]],'note':'Settori scelti dall’utente per il sito.'}
+            payload['location']['wave_exposure']=exposure
+            archive=write_site_package(Path(directory)/'site.zip',payload)
+            import_site_package(archive,root,replace=True)
+            result=json.loads((root/'config/locations.json').read_text())
+            self.assertEqual(result['locations'][payload['slug']]['wave_exposure'],exposure)
+
     def test_demo_package_is_rejected_by_default(self):
         with tempfile.TemporaryDirectory() as directory:
             root=self.copy_config(directory)

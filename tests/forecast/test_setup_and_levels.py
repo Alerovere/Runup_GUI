@@ -31,6 +31,15 @@ class SeaLevelTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             align_sealevel(waves,[{'time':'2020-01-01T00:00Z','ssh_m':.6},{'time':'2020-01-01T02:00Z','ssh_m':.8}],.2)
 
+    def test_negative_level_is_kept_below_the_fixed_reference(self):
+        waves=[{'time':'2020-01-01T01:00Z'}]
+        records=[{'time':'2020-01-01T00:30Z','ssh_m':-.1}, {'time':'2020-01-01T01:30Z','ssh_m':.1}]
+        result=align_sealevel(waves,records,.2)
+        self.assertAlmostEqual(result[0]['water_level_m'],-.2)
+        # A longer forecast containing higher water must not shift this value.
+        records.append({'time':'2020-01-01T02:30Z','ssh_m':1.5})
+        self.assertEqual(result,align_sealevel(waves,records,.2))
+
     def test_copernicus_uses_zos_and_mdt_in_the_same_cell(self):
         import numpy as np
         import xarray as xr

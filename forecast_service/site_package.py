@@ -16,6 +16,8 @@ def validate_payload(payload):
     if payload.get('data_mode')!='demo' and any(payload.get('provenance',{}).get(key)=='demo' for key in ('profile_data_mode','climate_data_mode')):
         raise ValueError('Dati dimostrativi dichiarati come dati di studio.')
     location=payload['location']
+    from forecast_service.exposure import validate_exposure
+    validate_exposure(location.get('wave_exposure'))
     if not location.get('slopes') or any(not isinstance(s,(int,float)) or not 0<s<1 for s in location['slopes']):
         raise ValueError('Pendenze non valide.')
     if not payload.get('thresholds'):

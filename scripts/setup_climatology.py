@@ -9,6 +9,7 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 from forecast_service.climate import build_climate
+from forecast_service.extremes import build_directional_extremes
 from forecast_service.era5_download import download_series
 
 
@@ -18,6 +19,9 @@ def main():
     parser.add_argument('--csv',type=Path,help='Importa un CSV già scaricato; nessuna richiesta CDS.')
     parser.add_argument('--hs-column',default='hs_m',help='Usare hs per il CSV dell’app wave_climate originale.')
     parser.add_argument('--time-column',default='time')
+    parser.add_argument('--direction-column',default='direction_deg')
+    parser.add_argument('--extremes',action='store_true',help='Prepara anche Gumbel dei massimi annuali per settore.')
+    parser.add_argument('--sector-width',type=int,choices=[30,45,60,90,120,180,360],default=45)
     parser.add_argument('--start',default='1991-01-01')
     parser.add_argument('--end',default='2020-12-31')
     parser.add_argument('--cache',type=Path,default=Path('/tmp/onde-a-riva-era5-cache'))
@@ -55,6 +59,9 @@ def main():
         frame.loc[valid].to_csv(clean_path,index=False)
         csv_path=clean_path
     result=build_climate(csv_path,'ERA5',time_column=args.time_column,hs_column=args.hs_column)
+    if args.extremes:
+        result['directional_extremes']=build_directional_extremes(csv_path,time_column=args.time_column,
+            hs_column=args.hs_column,direction_column=args.direction_column,sector_width_deg=args.sector_width)
     result.update(download=metadata,doi='10.24381/1cf1ad76')
     target.parent.mkdir(parents=True,exist_ok=True)
     temporary=target.with_suffix('.json.tmp')

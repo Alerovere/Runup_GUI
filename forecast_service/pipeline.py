@@ -57,6 +57,8 @@ def load_configuration(root=ROOT):
             raise ValueError(f'Correzione delle quote non valida: {slug}')
         if loc.get('mean_reference_m') is not None and not math.isfinite(loc['mean_reference_m']):
             raise ValueError(f'Riferimento medio non valido: {slug}')
+        from forecast_service.exposure import validate_exposure
+        validate_exposure(loc.get('wave_exposure'))
         point = loc['wave_point']
         if not 30 <= point['latitude'] <= 46.5 or not -18.2 <= point['longitude'] <= 37:
             raise ValueError(f'Punto fuori dal Mediterraneo: {slug}')

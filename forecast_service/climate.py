@@ -49,6 +49,8 @@ def load_climate(root, relative):
         raise ValueError('Riferimento climatologico non valido.')
     if len(values) != data['n_records']:
         raise ValueError('Conteggio della serie storica non coerente.')
+    from forecast_service.extremes import validate_directional_extremes
+    validate_directional_extremes(data.get('directional_extremes'))
     return data
 
 
@@ -60,4 +62,6 @@ def compare_waves(waves, climate):
     summary = {key:value for key,value in climate.items() if key != 'hs_sorted_m'}
     summary['status'] = 'available'
     summary['comparison_note'] = 'Confronto indicativo fra previsione Copernicus e serie storica; eventuali bias fra prodotti non sono corretti. Il percentile non è un periodo di ritorno.'
+    from forecast_service.extremes import compare_directional_extremes
+    rows = compare_directional_extremes(rows, climate.get('directional_extremes'))
     return rows, summary

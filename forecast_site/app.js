@@ -21,6 +21,53 @@ function windowRows(location, now=Date.now()) {
   return location.hourly.filter(row => new Date(row.time).getTime() >= start && new Date(row.time).getTime() < start + bulletin.display_hours*hourMs);
 }
 
+
+function dateInWords(value) {
+  return new Date(value).toLocaleDateString('it-IT',{timeZone:'Europe/Rome',day:'numeric',month:'long'});
+}
+
+function wavePeak(rows) {
+  return rows.filter(row=>Number.isFinite(row.hs_m)).reduce((best,row)=>!best || row.hs_m>best.hs_m ? row : best,null);
+}
+
+function directionLabel(degrees) {
+  if (!Number.isFinite(degrees)) return 'direzione non disponibile';
+  const angle=((degrees%360)+360)%360;
+  const names=['Nord','Nord-est','Est','Sud-est','Sud','Sud-ovest','Ovest','Nord-ovest'];
+  return `${names[Math.round(angle/45)%8]} (${num(angle,0)}°)`;
+}
+
+function isExposed(degrees, exposure) {
+  const sectors=exposure?.sectors_deg;
+  if (!Number.isFinite(degrees) || !Array.isArray(sectors) || !sectors.length) return null;
+  const angle=((degrees%360)+360)%360;
+  return sectors.some(([start,end])=>end-start===360 || ((angle-start+360)%360)<=(end-start+360)%360);
+}
+
+function exposureAtPeak(location, rows) {
+  const peak=wavePeak(rows);
+  if (!peak || peak.hs_m<=0) return {peak,status:null,text:'Direzione non valutabile nelle ore con altezza delle onde nulla o mancante.'};
+  const status=isExposed(peak.direction_deg,location.wave_exposure);
+  const prefix=`Al picco delle onde al largo: ${directionLabel(peak.direction_deg)}.`;
+  return {peak,status,text:prefix+' '+(status===false?'Provenienza fuori dai settori di esposizione configurati: il risultato a riva richiede cautela.':status===true?'Provenienza compresa nei settori di esposizione configurati.':'Esposizione della spiaggia o direzione non ancora definita.')};
+}
+
+function renderExposure(location, rows) {
+  const result=exposureAtPeak(location,rows);
+  const available=rows.filter(row=>row.hs_m>0 && Number.isFinite(row.direction_deg));
+  const outside=available.filter(row=>isExposed(row.direction_deg,location.wave_exposure)===false).length;
+  const configured=!!location.wave_exposure?.sectors_deg?.length;
+  $('direction-summary').innerHTML=`<h3>Le onde al largo raggiungono questa spiaggia?</h3><p>${esc(result.text)}</p>${!configured?'<p>Per questa località i settori di esposizione della spiaggia non sono ancora definiti. Onde alte al largo possono avere effetti diversi su una spiaggia esposta o riparata.</p>':''}${outside?`<p>La provenienza è fuori settore in <strong>${outside} ${outside===1?'ora':'ore'} su ${available.length}</strong> con altezza e direzione disponibili.</p>`:''}${location.wave_exposure?.note?`<p>${esc(location.wave_exposure.note)}</p>`:''}<p class="small muted">Runup e TWL sono calcolati senza correzioni per la direzione. I settori sono un’indicazione di esposizione: non simulano rifrazione, diffrazione o riparo e non garantiscono l’assenza di onde sulla spiaggia.</p>`;
+}
+
+function climateFrequency(percentile, stepHours) {
+  const tail=Math.max(0,Math.min(100,100-percentile));
+  const unit=stepHours===1?'ore':'campioni';
+  if (tail===0) return 'Nella serie storica non compaiono onde più alte di questa.';
+  if (tail<1) return `Nella serie storica, meno di ${stepHours===1?'un’ora':'un campione'} su 100 presenta onde più alte di questa.`;
+  return `Nella serie storica, circa ${num(tail,tail<10?1:0)} ${unit} su 100 presentano onde più alte di questa.`;
+}
+
 function setNotice(extra='') {
   const demo = bulletin.mode === 'demo';
   const age = (Date.now()-new Date(bulletin.generated_at))/hourMs;
@@ -126,10 +173,10 @@ function renderDaily(location, rows) {
     const valid=group.filter(r=>Number.isFinite(r.twl_max_m));
     const maximum=valid.length?Math.max(...valid.map(r=>r.twl_max_m)):NaN;
     const peak=valid.length?valid.reduce((best,r)=>r.twl_max_m>best.twl_max_m?r:best):null;
-    const date=new Date(group[0].time).toLocaleDateString('it-IT',{timeZone:'Europe/Rome',weekday:'long',day:'numeric',month:'short'});
+    const date=new Date(group[0].time).toLocaleDateString('it-IT',{timeZone:'Europe/Rome',weekday:'long',day:'numeric',month:'long'});
     const intervals=result.focus?exceedanceEvents(result.focus.samples):[];
     const window=intervals.length?intervals.map(event=>`${local(event.start,{day:undefined,month:undefined})}–${local(event.end,{day:undefined,month:undefined})}`).join(' · '):'Nessuna fascia di superamento delle soglie attive';
-    return `<article class="day-card impact-day"><h3>${esc(date)}</h3><div class="day-impact">${esc(result.title)}</div><p>${esc(result.explanation)}</p><div class="day-time">${esc(window)}</div><p class="day-range">Livello massimo degli scenari: <strong>${num(maximum)} m</strong>${peak?` · picco alle ${local(peak.time,{day:undefined,month:undefined})}`:''}</p>${result.upperNote?`<p>${esc(result.upperNote)}</p>`:''}${result.seasonal.length?'<p class="season-note">Ombrelloni / strutture stagionali: calendario da definire.</p>':''}<p>${group.length} ore disponibili${group.length<24?' · giornata parziale':''}${valid.length<group.length?' · alcuni risultati mancanti':''}</p></article>`;
+    return `<article class="day-card impact-day"><h3>${esc(date)}</h3><div class="day-impact">${esc(result.title)}</div><p>${esc(result.explanation)}</p><div class="day-time">${esc(window)}</div><p class="day-range">Livello massimo degli scenari: <strong>${num(maximum)} m</strong>${peak?` · picco alle ${local(peak.time,{day:undefined,month:undefined})}`:''}</p>${result.upperNote?`<p>${esc(result.upperNote)}</p>`:''}<p class="direction-day">${esc(exposureAtPeak(location,group).text)}</p>${result.seasonal.length?'<p class="season-note">Ombrelloni / strutture stagionali: calendario da definire.</p>':''}<p>${group.length} ore disponibili${group.length<24?' · giornata parziale':''}${valid.length<group.length?' · alcuni risultati mancanti':''}</p></article>`;
   }).join('');
   const outlook=assessImpact(location,rows);
   $('outlook').innerHTML=`<h3>${esc(outlook.title)}</h3><p>${esc(outlook.explanation)}</p>${outlook.upperNote?`<p>${esc(outlook.upperNote)}</p>`:''}<p class="small muted">Le associazioni fra quote e strutture sono esempi da verificare sul posto. ${outlook.seasonal.length?'Le soglie estive sono mostrate a titolo indicativo perché il calendario non è ancora definito.':''}</p>`;
@@ -161,9 +208,9 @@ function renderThresholds(location, rows) {
     const peak=crossed.length?crossed.reduce((best,s)=>s.fraction>best.fraction?s:best):null;
     const n=peak?rows.find(r=>r.time===peak.time).n_estimates:0;
     const message=state.max===null?'Confronto non applicabile o dati non disponibili':!crossed.length?'Quota non raggiunta negli scenari disponibili':`L’acqua potrebbe raggiungere questa quota in ${crossed.length} ore del periodo.`;
-    return `<article class="threshold-explained"><div class="threshold-level">${num(threshold.elevation_m)}<span class="small"> m</span></div><div><h3>${esc(assetName(threshold))}</h3><p>${esc(message)}</p><p class="threshold-season">${esc(state.season)}</p>${peak?`<p class="small">Massima concordanza: <strong>${Math.round(peak.fraction*n)} scenari su ${n}</strong> alle ${esc(local(peak.time))}. ${state.samples.some(s=>s.active===null)?'Confronto stagionale indicativo.':''}</p>`:''}<details><summary>Come leggere questa soglia</summary><p>Se il livello totale dell’acqua supera ${num(threshold.elevation_m)} m rispetto al riferimento usato, può essere raggiunta la quota associata a ${esc(assetName(threshold).toLowerCase())}. La posizione reale e l’estensione degli allagamenti richiedono quote e profili locali verificati.</p>${state.max!==null?`<p>Frazione massima degli scenari sopra soglia: ${num(state.max*100,0)}%. È un confronto fra calcoli, non una probabilità di allagamento.</p>`:''}</details></div></article>`;
+    return `<article class="threshold-explained"><div class="threshold-level">${num(threshold.elevation_m)}<span class="small"> m</span></div><div><h3>${esc(assetName(threshold))}</h3><p>${esc(message)}</p><p class="threshold-season">${esc(state.season)}</p>${peak?`<p class="small">Il ${esc(dateInWords(peak.time))}, alle ${esc(local(peak.time,{day:undefined,month:undefined}))}, <strong>${Math.round(peak.fraction*n)} ${Math.round(peak.fraction*n)===1?'scenario':'scenari'} su ${n}</strong> ${Math.round(peak.fraction*n)===1?'supera':'superano'} questa quota. ${state.samples.some(s=>s.active===null)?'Confronto stagionale indicativo.':''}</p>`:''}<details><summary>Come leggere questa soglia</summary><p>Se il livello totale dell’acqua supera ${num(threshold.elevation_m)} m rispetto al riferimento usato, può essere raggiunta la quota associata a ${esc(assetName(threshold).toLowerCase())}. La posizione reale e l’estensione degli allagamenti richiedono quote e profili locali verificati.</p>${state.max!==null?`<p>Ogni scenario combina un modello e una pendenza della spiaggia. Nel momento con più superamenti, il ${num(state.max*100,0)}% dei calcoli supera la quota. Questa percentuale non è una probabilità di allagamento.</p>`:''}</details></div></article>`;
   }).join('');
-  $('events').innerHTML = events.length ? `<h3 class="event-title">Finestre di possibile interessamento</h3><p class="small muted">Prima e ultima ora con almeno uno scenario sopra quota. Le righe estive con calendario da definire sono confronti indicativi.</p><div class="events-wrap"><table class="events-table"><thead><tr><th>Struttura e quota</th><th>Inizio (Italia)</th><th>Ultima ora (Italia)</th><th>Concordanza massima</th></tr></thead><tbody>${events.sort((a,b)=>new Date(a.start)-new Date(b.start)).map(event=>`<tr><td>${esc(assetName(event.threshold))} · ${num(event.threshold.elevation_m)} m${event.threshold.season==='summer'?' · estiva':''}</td><td>${esc(local(event.start))}</td><td>${esc(local(event.end))}</td><td>${num(event.peak*100,0)}% degli scenari</td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">Nessun superamento nelle soglie applicabili e nei campioni orari disponibili.</p>';
+  $('events').innerHTML = events.length ? `<h3 class="event-title">Finestre di possibile interessamento</h3><p class="small muted">Prima e ultima ora con almeno uno scenario sopra quota. Le righe estive con calendario da definire sono confronti indicativi.</p><div class="events-wrap"><table class="events-table"><thead><tr><th>Struttura e quota</th><th>Inizio (Italia)</th><th>Ultima ora (Italia)</th><th>Scenari sopra la quota (massimo)</th></tr></thead><tbody>${events.sort((a,b)=>new Date(a.start)-new Date(b.start)).map(event=>`<tr><td>${esc(assetName(event.threshold))} · ${num(event.threshold.elevation_m)} m${event.threshold.season==='summer'?' · estiva':''}</td><td>${esc(local(event.start))}</td><td>${esc(local(event.end))}</td><td>${num(event.peak*100,0)}% degli scenari</td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">Nessun superamento nelle soglie applicabili e nei campioni orari disponibili.</p>';
 }
 
 function chartLayout(yTitle, x, height=350) {
@@ -214,12 +261,60 @@ function renderCharts(location, rows) {
 function renderClimate(location,rows) {
   const climate=location.climatology;
   if (!climate || climate.status!=='available') {
-    $('climate-summary').innerHTML='<h3>Quanto sono insolite queste onde?</h3><p>Il confronto con la climatologia ERA5 non è ancora disponibile per questa località. Le onde previste sono già consultabili; il riferimento storico verrà aggiunto dopo la preparazione della serie locale.</p>';
+    $('climate-summary').innerHTML='<h3>Le onde previste rispetto al passato</h3><p>Per capire se l’altezza al largo è comune o poco frequente serve una serie storica locale. Il riferimento ERA5 non è ancora disponibile per questa località.</p>';
     return;
   }
-  const valid=rows.filter(r=>Number.isFinite(r.hs_percentile));
-  const peak=valid.length?valid.reduce((best,r)=>r.hs_percentile>best.hs_percentile?r:best):null;
-  $('climate-summary').innerHTML=`<h3>Quanto sono insolite queste onde?</h3>${peak?`<p>Al picco, l’altezza prevista di <strong>${num(peak.hs_m)} m</strong> è pari o superiore al <strong>${num(peak.hs_percentile,1)}%</strong> delle altezze nella serie ${esc(climate.source)}.</p>`:'<p>Confronto non disponibile nelle ore selezionate.</p>'}<p class="small">Riferimento ${new Date(climate.start).getUTCFullYear()}–${new Date(climate.end).getUTCFullYear()}, tutte le stagioni e direzioni. Il 95° percentile è ${num(climate.p95_m)} m; il 99° è ${num(climate.p99_m)} m. Massimo storico osservato: ${num(climate.max_hs_m)} m. Copertura dei campioni nel periodo: ${num(climate.coverage_fraction*100,1)}%.</p><p class="small muted">${esc(climate.comparison_note)}</p>`;
+  const peak=wavePeak(rows.filter(r=>Number.isFinite(r.hs_percentile)));
+  const step=climate.time_step_hours;
+  $('climate-summary').innerHTML=`<h3>Le onde previste rispetto al passato</h3>${peak?`<div class="climate-comparison"><strong>${num(peak.hs_m)} m</strong><span>Altezza significativa massima al largo<br>Il ${esc(dateInWords(peak.time))}, alle ${esc(local(peak.time,{day:undefined,month:undefined}))}</span></div><p><strong>${esc(climateFrequency(peak.hs_percentile,step))}</strong></p>`:'<p>Il confronto non è disponibile nelle ore selezionate.</p>'}<p>Questo confronto descrive l’altezza al largo in tutte le stagioni e da tutte le direzioni. Non indica quante mareggiate raggiungono la spiaggia, né quanto è probabile un allagamento.</p><details><summary>Dati e metodo del confronto storico</summary><p>Serie ${esc(climate.source)}, ${new Date(climate.start).getUTCFullYear()}–${new Date(climate.end).getUTCFullYear()}, ${num(climate.n_records,0)} campioni${Number.isFinite(step)?`, uno ogni ${num(step,step%1?1:0)} ${step===1?'ora':'ore'}`:''}. Copertura del periodo: ${num(climate.coverage_fraction*100,1)}%.</p><p>Il 95° percentile è ${num(climate.p95_m)} m; il 99° percentile è ${num(climate.p99_m)} m. Sono riferimenti delle altezze superate rispettivamente in circa il 5% e l’1% dei campioni. Massimo storico della serie: ${num(climate.max_hs_m)} m.${peak?` L’altezza prevista corrisponde al percentile ${num(peak.hs_percentile,1)}.`:''}</p><p>${esc(climate.comparison_note)}</p><p>La frequenza delle singole ore non è la frequenza delle mareggiate: ore consecutive possono appartenere allo stesso evento. Non viene stimato un periodo di ritorno.</p></details>`;
+}
+
+
+function extremeComparison(location,rows,sectorId=null) {
+  const extremes=location.climatology?.directional_extremes;
+  if (!extremes || extremes.status!=='available') return {reason:'Il riferimento storico degli estremi per settore non è ancora disponibile per questa località. Il tempo di ritorno non può essere stimato.'};
+  const valid=rows.filter(row=>row.hs_m>0 && row.wave_sector_id);
+  const peak=wavePeak(sectorId?valid.filter(row=>row.wave_sector_id===sectorId):valid);
+  if (!peak) return {reason:'Nessuna altezza e direzione delle onde utilizzabile nelle ore selezionate.'};
+  const sector=extremes.sectors.find(s=>s.id===peak.wave_sector_id);
+  if (!sector) return {reason:'Il settore della previsione non è presente nel riferimento storico.'};
+  return {extremes,sector,peak,fit:sector.fit};
+}
+
+function sectorLabel(sector) {
+  if (sector.width_deg===360) return 'Tutte le direzioni (360°)';
+  return `${num(sector.start_deg,1)}° → ${num(sector.end_deg,1)}° (centro: ${directionLabel(sector.center_deg)})`;
+}
+
+function renderExtremes(location,rows,sectorId=null) {
+  const result=extremeComparison(location,rows,sectorId);
+  if (result.reason) {
+    $('extremes-summary').innerHTML=`<p class="chart-caption">${esc(result.reason)}</p>`;
+    return;
+  }
+  const {extremes,sector,peak,fit}=result;
+  const represented=extremes.sectors.filter(s=>rows.some(row=>row.hs_m>0 && row.wave_sector_id===s.id));
+  const period=peak.hs_return_period_years;
+  const upper=fit.return_period_years?.at(-1)||100;
+  const periodText=fit.status!=='available'?'Stima non disponibile per questo settore.':!Number.isFinite(period)||period>upper?`Oltre ${num(upper,0)} anni secondo il fit, fuori dall’intervallo mostrato.`:period<2?'Altezza inferiore al livello con tempo di ritorno di 2 anni in questo settore.':`Tempo di ritorno stimato: circa ${num(period,period<10?1:0)} anni per questo settore.`;
+  $('extremes-summary').innerHTML=`<p class="chart-caption">Confronto con i massimi annuali delle onde provenienti dallo stesso settore. La selezione iniziale usa il settore dell’altezza massima nei quattro giorni; scegliendo un altro settore si mostra il suo picco nel periodo.</p><label class="sector-selector" for="extreme-sector">Settore presente nelle onde previste<select id="extreme-sector">${represented.map(s=>`<option value="${esc(s.id)}"${s.id===sector.id?' selected':''}>${esc(sectorLabel(s))}</option>`).join('')}</select></label><p class="extreme-peak"><strong>${num(peak.hs_m)} m al largo</strong> da ${esc(directionLabel(peak.direction_deg))}, il ${esc(dateInWords(peak.time))} alle ${esc(local(peak.time,{day:undefined,month:undefined}))}.</p><p><strong>${esc(periodText)}</strong></p>${fit.status==='available'?'<p class="chart-caption">Asse orizzontale: tempo di ritorno in anni, in scala logaritmica. Punti verdi: massimi annuali storici. Linea: Gumbel stimata. Fascia: incertezza del fit al 95%. Punto arancione: altezza massima prevista nel settore.</p><div id="extreme-chart" class="chart extreme-chart" aria-label="Curva Gumbel dei tempi di ritorno e altezza massima prevista nello stesso settore"></div>':`<p class="chart-caption">${esc(fit.reason||'Serie insufficiente per il fit.')}</p>`}<p class="chart-caption"><strong>Il tempo di ritorno riguarda le onde al largo, non gli allagamenti.</strong> Non significa che un evento si ripeta a intervalli regolari. La spiaggia può essere esposta o riparata: ${esc(exposureAtPeak(location,[peak]).text)}</p>${fit.status==='available'?`<details class="extremes-method"><summary>Metodo, dati e limiti della stima</summary><p>Fit Gumbel per massima verosimiglianza su ${fit.n_years} massimi annuali, ${fit.first_year}–${fit.last_year}. Un massimo per settore e per anno UTC con copertura oraria completa. Gli anni senza onde del settore non vengono rimossi silenziosamente. Settori statistici di ${num(extremes.sector_width_deg,0)}°, separati dai settori di esposizione della spiaggia; inizio incluso e fine esclusa.</p><p>T = 1 / P(massimo annuale del settore &gt; Hs). I punti storici usano le posizioni empiriche (n + 1) / rango. La fascia al 95% deriva da ${fit.bootstrap_replicates} ricampionamenti bootstrap degli anni. Non comprende l’incertezza della previsione, la differenza fra ERA5 e Copernicus o la trasformazione delle onde verso riva.</p><p>Gumbel è un’ipotesi da verificare, con massimi annuali assunti indipendenti e stazionari. Oltre la durata della serie, la curva è un’estrapolazione; il tratto è tratteggiato. Il confronto non applica una correzione dei bias fra prodotti e non costituisce una stima operativa del rischio.</p></details>`:''}`;
+  $('extreme-sector').onchange=event=>renderExtremes(location,rows,event.target.value);
+  if (fit.status!=='available') return;
+  if (!window.Plotly) {
+    $('extreme-chart').innerHTML='<p>Grafico non disponibile. La stima e i suoi limiti restano descritti nel testo.</p>';
+    return;
+  }
+  const x=fit.return_period_years;
+  const traces=[
+    {x,y:fit.ci95_low_m,type:'scatter',mode:'lines',line:{width:0},showlegend:false,hoverinfo:'skip'},
+    {x,y:fit.ci95_high_m,type:'scatter',mode:'lines',line:{width:0},fill:'tonexty',fillcolor:'#dce8dd',name:'Incertezza del fit (95%)',hoverinfo:'skip'},
+    {x,y:fit.return_level_m.map((y,i)=>x[i]<=fit.n_years?y:null),type:'scatter',mode:'lines',name:'Gumbel',line:{color:'#194e4c',width:2},hovertemplate:'Ritorno: %{x:.1f} anni<br>Hs: %{y:.2f} m<extra>Gumbel</extra>'},
+    {x,y:fit.return_level_m.map((y,i)=>x[i]>=fit.n_years?y:null),type:'scatter',mode:'lines',name:'Estrapolazione',line:{color:'#194e4c',width:2,dash:'dash'},hovertemplate:'Ritorno: %{x:.1f} anni<br>Hs: %{y:.2f} m<extra>Estrapolazione</extra>'},
+    {x:fit.empirical.map(r=>r.return_period_years),y:fit.empirical.map(r=>r.hs_m),customdata:fit.empirical.map(r=>r.year),type:'scatter',mode:'markers',name:'Massimi annuali storici',marker:{color:'#678973',size:6},hovertemplate:'Anno: %{customdata}<br>Hs: %{y:.2f} m<br>Ritorno empirico: %{x:.1f} anni<extra></extra>'},
+    {x:[Number.isFinite(period)?Math.min(period,upper):upper],y:[peak.hs_m],type:'scatter',mode:'markers',name:period>upper||!Number.isFinite(period)?'Picco previsto (oltre il grafico)':'Picco previsto nel settore',marker:{color:'#b86b30',size:12,symbol:period>upper||!Number.isFinite(period)?'triangle-right':'diamond'},hovertemplate:'Hs prevista: %{y:.2f} m<extra>Picco del settore nei quattro giorni</extra>'}
+  ];
+  const layout={height:390,margin:{l:58,r:22,t:20,b:100},paper_bgcolor:'transparent',plot_bgcolor:'transparent',separators:',.',font:{family:'DM Sans, Arial',size:11,color:'#294b42'},xaxis:{title:'Tempo di ritorno [anni]',type:'log',range:[0,Math.log10(upper)],tickvals:[1,2,5,10,20,50,100],gridcolor:'#e5ebe2'},yaxis:{title:'Altezza significativa Hs [m]',rangemode:'nonnegative',gridcolor:'#e5ebe2'},legend:{orientation:'h',y:-.26,font:{size:9}},hovermode:'closest'};
+  Plotly.react('extreme-chart',traces,layout,plotOptions);
 }
 
 function renderDetail(slug) {
@@ -243,12 +338,14 @@ function renderDetail(slug) {
   $('metrics').innerHTML=[
     ['Massimo livello totale stimato',`${num(peak?.twl_max_m)} <small>m</small>`,peak ? `Scenario superiore · ${local(peak.time)} · quote provvisorie` : 'Dati non disponibili'],
     ['Massima altezza delle onde',`${num(hs)} <small>m</small>`,'Hs nel punto offshore'],
-    ['Modelli con risultati validi',`${location.valid_models.length} <small>/ ${bulletin.model_order.length}</small>`,`${location.slopes.length} pendenze illustrative · numero di scenari variabile`]
+    ['Modelli con risultati validi',`${location.valid_models.length} <small>/ ${bulletin.model_order.length}</small>`,`${location.slopes.length} pendenze configurate · numero di scenari variabile`]
   ].map(([label,value,note])=>`<div class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value}</div><div class="metric-note">${esc(note)}</div></div>`).join('');
+  renderExposure(location,rows);
   renderDaily(location,rows);
   renderClimate(location,rows);
+  renderExtremes(location,rows);
   renderThresholds(location,rows);
-  $('parameters').innerHTML=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori illustrativi)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Riferimento verticale</dt><dd>SSH meno superficie media fissa del modello, più correzione locale. Raccordo con il livello medio mare locale da validare.</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti gli scenari sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
+  $('parameters').innerHTML=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>SSH meno superficie media fissa del modello, più correzione locale. Raccordo con il livello medio mare locale da validare.</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti gli scenari sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
   renderCharts(location,rows);
 }
 

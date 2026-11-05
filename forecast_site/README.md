@@ -68,3 +68,7 @@ I controlli coprono confronto con il wrapper scientifico esistente, TWL con offs
 ## Preparazione delle località e climatologia ERA5
 
 La [guida al setup delle località](SETUP_LOCALITA.md) descrive il wizard, i transetti, il download storico ERA5 con cache e il riuso dei CSV della precedente app. Il download ERA5 è separato dai workflow giornalieri e non richiede un secret CDS nel sito pubblico.
+
+## Esposizione e tempi di ritorno settoriali
+
+Il notebook consente di definire i settori di provenienza ai quali la spiaggia è esposta: il portale usa queste informazioni per avvertenze, senza correggere o azzerare i calcoli. Separatamente, il setup ERA5 può preparare una Gumbel dei massimi annuali per ogni settore statistico di provenienza, con banda bootstrap al 95%. Il sito confronta il picco Hs delle 96 ore con il settore della direzione in quell’ora e consente di scegliere i picchi degli altri settori presenti. Il tempo di ritorno riguarda le onde al largo, non gli allagamenti. Un riferimento senza direzioni continua a supportare i percentili ma lascia il confronto degli estremi esplicitamente non disponibile. Vedere `SETUP_LOCALITA.md` e `notebooks/README.md` per preparazione, requisiti e limiti scientifici.

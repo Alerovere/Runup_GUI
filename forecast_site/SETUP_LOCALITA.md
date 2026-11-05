@@ -40,6 +40,12 @@ python scripts/setup_location.py --from-draft config/site_drafts/IDENTIFICATIVO.
 
 Il comando aggiunge la nuova località a entrambi i file di configurazione e rifiuta di sovrascrivere località esistenti. Se l’area non è ancora validata, mantenerla come bozza finché non si vuole includerla nei bollettini.
 
+## Esposizione alle onde
+
+Nel notebook, dopo la scelta dei punti, indicare le direzioni **da cui provengono** le onde che espongono il sito. Angoli dal Nord geografico in senso orario: 0° Nord, 90° Est, 180° Sud, 270° Ovest. Il campo accetta più coppie `da,a` separate da `;`. Gli esempi `20,120;250,300` e `315,45` mostrano solo il formato; non descrivono Venezia o Borghetto. Il secondo attraversa il Nord. Lasciare il campo vuoto quando l’esposizione non è ancora nota.
+
+Il pacchetto esporta `wave_exposure` con `sectors_deg` e una `note` facoltativa; configurazioni precedenti senza il campo rimangono valide. Il sito segnala la provenienza al picco delle onde al largo e le ore fuori settore, con un richiamo anche nei riepiloghi giornalieri. È un caveat, non una trasformazione verso riva: i risultati dei modelli e la climatologia su tutte le direzioni sono conservati. I settori sono da definire in base al sito e al punto offshore, non all’altezza delle onde.
+
 ## Pendenze da transetti
 
 Il wizard accetta il CSV QGIS `TR_ID,distance,SAMPLE_1,X,Y` del notebook di riferimento oppure un profilo monodimensionale con ascissa e quota in metri:
@@ -98,7 +104,7 @@ Un CSV normalizzato con colonne `time,hs_m` usa i nomi predefiniti. Le date sono
 
 Il portale confronta ogni Hs prevista con la distribuzione empirica della serie storica completa, considerando tutte le stagioni e direzioni. Mostra percentili 95 e 99, massimo storico osservato e posizione del picco previsto nella distribuzione. I valori vengono calcolati al setup; il processo giornaliero legge il riferimento locale e non richiama CDS.
 
-Un percentile 99 indica che il 99% dei campioni storici ha altezza minore o uguale a quella considerata. Non significa un periodo di ritorno di 100 anni. I massimi annuali salvati sono eventi osservati nella rianalisi; non si adatta qui una distribuzione degli estremi. ERA5 e Copernicus hanno risoluzioni e bias diversi: il confronto diretto è indicativo e non applica una correzione dei bias.
+Un percentile 99 indica che il 99% dei campioni storici ha altezza minore o uguale a quella considerata. Non significa un periodo di ritorno di 100 anni. I massimi annuali salvati sono eventi osservati nella rianalisi; restano distinti dalle curve Gumbel settoriali preparabili nel notebook. ERA5 e Copernicus hanno risoluzioni e bias diversi: il confronto diretto è indicativo e non applica una correzione dei bias.
 
 ## Livello marino e riferimento delle quote
 
@@ -123,3 +129,21 @@ python scripts/update_forecasts.py --demo
 ```
 
 La modalità demo mantiene onde e livello sintetici, chiaramente segnalati. Un riferimento ERA5 reale, se configurato, può essere usato anche per verificare il confronto nella demo. Pubblicare i file climatologici e le configurazioni insieme al codice, mantenendo la cache e i NetCDF locali. Il primo workflow `copernicus` verifica l’accesso reale alle onde, al livello marino e al riferimento statico.
+
+Un livello marino negativo rispetto al riferimento medio fisso è ammesso e non viene azzerato: −0,20 m significa 20 cm sotto quel riferimento. La media del periodo di previsione non è un riferimento stabile per confrontare le quote delle strutture fra aggiornamenti. Un’eventuale calibrazione locale deve usare un riferimento fisso documentato, non la media mobile dei giorni scaricati.
+
+## Estremi Gumbel e confronto direzionale
+
+La sezione del notebook **Tempi di ritorno delle onde per settore** prepara il fit durante il setup, usando il CSV con tempo, Hs e direzione. I settori statistici sono separati dai settori di esposizione della spiaggia. Configurare l’ampiezza desiderata, verificare copertura e grafici, esportare lo ZIP e importarlo con `--replace`. Non è richiesto un nuovo download storico nei workflow delle previsioni.
+
+In alternativa, per una serie completa già disponibile localmente:
+
+```sh
+python scripts/setup_climatology.py borghetto-santo-spirito \
+  --csv /percorso/ERA5_hourly.csv --hs-column hs_m \
+  --direction-column direction_deg --extremes --sector-width 45 --replace
+```
+
+Il confronto iniziale del sito usa il picco Hs delle 96 ore e il settore della sua direzione nell’ora del picco. Cambiando settore, cambia anche il picco considerato: è il massimo previsto di quel settore. Non si usa una direzione media sui quattro giorni. Solo anni orari completi sono ammessi; servono 30 anni per il fit predefinito. Si mostrano massimi annuali empirici, curva Gumbel e banda bootstrap 95%. La curva oltre il numero di anni utilizzabili è tratteggiata. Per altezze oltre il limite di ritorno del grafico non si espone una cifra estrapolata arbitrariamente precisa.
+
+Il periodo di ritorno è `T = 1 / P(massimo annuale del settore > Hs)`. La frequenza delle ore usata dal confronto dei percentili rimane distinta. Le curve assumono massimi annuali indipendenti e stazionari e adeguatezza di Gumbel. La banda del fit non copre il bias fra ERA5 e Copernicus né gli effetti alla spiaggia. Il riferimento precedente con sole altezze ordinate continua a funzionare per i percentili, ma non produce tempi di ritorno settoriali. Mancanza di dati o di un fit valido viene segnalata, senza ripiegare su un altro settore o sulla distribuzione generale.

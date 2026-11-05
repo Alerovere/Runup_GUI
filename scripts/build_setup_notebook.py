@@ -28,9 +28,9 @@ code('''#@title Installa le librerie
 INSTALLA_DIPENDENZE = True #@param {type:"boolean"}
 if INSTALLA_DIPENDENZE:
     import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2"])
 print("Ambiente pronto.")''',form=True,tags=('install-dependencies',))
-modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','site_package.py','LICENSE-wave-climate.txt']
+modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','site_package.py','LICENSE-wave-climate.txt']
 sources={'forecast_service/'+name:(ROOT/'forecast_service'/name).read_text() for name in modules}
 code('''#@title Carica le funzioni del progetto (cella tecnica)
 # Codice condiviso con la repository, incluso per funzionare anche prima del push.
@@ -52,6 +52,8 @@ from pyproj import CRS, Transformer
 from forecast_service.site_setup import analyze_transects, BEACHFACE_METHOD_VERSION
 from forecast_service.era5_download import download_series
 from forecast_service.climate import build_climate
+from forecast_service.exposure import parse_exposure
+from forecast_service.extremes import build_directional_extremes
 from forecast_service.site_package import write_site_package
 print("Metodo pendenze:", BEACHFACE_METHOD_VERSION)''',form=True,tags=('bundled-library',))
 code('''#@title Modalità e salvataggio
@@ -100,6 +102,32 @@ folium.CircleMarker([LAT_ONDE,LON_ONDE],radius=7,color="#006d77",tooltip="Punto 
 folium.LatLngPopup().add_to(MAPPA)
 display(MAPPA)
 print("Clicca sulla mappa per leggere coordinate, poi riportale nei campi e riesegui questa cella.")''',form=True)
+
+md('''### Esposizione della spiaggia alle onde
+Indica le **direzioni da cui provengono le onde**, non quelle verso cui si muovono: 0° = Nord, 90° = Est, 180° = Sud, 270° = Ovest, in senso orario rispetto al Nord geografico. I settori devono riferirsi al punto offshore scelto e alla spiaggia rappresentata, tenendo conto di costa, promontori e opere.
+
+Scrivi coppie `da,a`, separate da `;` per più settori. Esempi solo di formato: `90,180` comprende Est→Sud; `315,45` attraversa il Nord; `0,360` include tutte le direzioni. Gli estremi sono inclusi. **Lascia vuoto finché non hai definito l’esposizione del sito**: nessun settore di esempio viene applicato automaticamente.
+
+Il portale avverte quando la direzione al largo è fuori dai settori indicati. Questa verifica non simula rifrazione, diffrazione o riparo e non azzera né corregge automaticamente onde, runup o TWL. Anche il confronto storico ERA5 resta riferito a tutte le direzioni.''')
+code('''#@title Settori di provenienza delle onde che espongono la spiaggia
+SETTORI_PROVENIENZA = "" #@param {type:"string"}
+NOTE_ESPOSIZIONE = "" #@param {type:"string"}
+ESPOSIZIONE = parse_exposure(SETTORI_PROVENIENZA, NOTE_ESPOSIZIONE)
+if ESPOSIZIONE is None:
+    print("Esposizione non definita: il portale mostrerà un’avvertenza.")
+else:
+    display(pd.DataFrame(ESPOSIZIONE["sectors_deg"], columns=["Da (gradi)", "A (gradi, senso orario)"]))
+    fig, ax = plt.subplots(figsize=(5, 5), subplot_kw={"projection": "polar"})
+    ax.set_theta_zero_location("N"); ax.set_theta_direction(-1)
+    ax.set_xticks(np.deg2rad(np.arange(0, 360, 45)), ["N", "NE", "E", "SE", "S", "SO", "O", "NO"])
+    ax.set_yticks([])
+    for start, end in ESPOSIZIONE["sectors_deg"]:
+        span = 360 if end-start == 360 else (end-start) % 360
+        angles = np.deg2rad(np.linspace(start, start+span, 181))
+        ax.fill_between(angles, 0, 1, color="#527d78", alpha=.35)
+    ax.set_title("Direzioni di provenienza che espongono la spiaggia")
+    plt.show()
+    print("Schema orientativo: non è una simulazione della propagazione verso riva.")''',form=True,tags=('wave-exposure',))
 md('''## 3. Carica i profili esportati da QGIS
 Usa il CSV del tuo notebook, con colonne predefinite `TR_ID`, `distance`, `SAMPLE_1`, `X`, `Y`. Puoi modificare i nomi sotto. **X e Y devono appartenere a un CRS proiettato con unità in metri**, non essere longitudine e latitudine. `distance` serve a ordinare i punti; la distanza della regressione viene ricalcolata da X/Y come nel notebook fornito.
 
@@ -254,7 +282,23 @@ Per dati reali servono un account Climate Data Store e l’accettazione personal
 
 Puoi salvare il token nei **Secrets di Colab**, con nome `CDS_KEY` e accesso a questo notebook, oppure inserirlo nel campo protetto quando richiesto. Non scriverlo nei campi del notebook. La cache contiene soltanto richieste e dati: sarà riutilizzata se la sessione riparte dalla stessa cartella.
 
-Il servizio ERA5 restituisce **periodo medio**, non Tp: lo salviamo come `tm_s`; non lo usiamo come periodo di picco per il runup. Il confronto storico usa Hs. I massimi annuali osservati non sono periodi di ritorno.''')
+Il servizio ERA5 restituisce **periodo medio**, non Tp: lo salviamo come `tm_s`; non lo usiamo come periodo di picco per il runup. Il confronto storico usa Hs. Il confronto con tutte le ore storiche è distinto dal fit Gumbel dei massimi annuali per settore descritto sotto.''')
+
+md('''### Tempi di ritorno delle onde per settore
+La suddivisione statistica in settori di provenienza è distinta dall’esposizione fisica della spiaggia. Puoi scegliere l’ampiezza dei settori: nessuna direzione è privilegiata. I settori sono centrati su multipli dell’ampiezza scelta; per esempio, con 45°, quello centrato a 90° va da 67,5° incluso a 112,5° escluso. Le direzioni indicano **da dove arrivano** le onde.
+
+Per ogni anno di calendario UTC completo si seleziona il massimo Hs **fra tutte le ore di ciascun settore**, non si suddivide il solo massimo annuale generale. Si usano soltanto anni con copertura oraria completa e direzione valida (la direzione può mancare nelle ore di calma con Hs=0). Se un settore non ha onde positive in qualche anno completo, il fit non viene mostrato: rimuovere quegli anni condizionerebbe la frequenza.
+
+Il fit è una **Gumbel sui massimi annuali** (massima verosimiglianza), con banda bootstrap al 95% ricampionando gli anni. Questa prima versione richiede 30 anni completi; una serie lunga non dimostra da sola che Gumbel sia adeguata. Si assumono stazionarietà e indipendenza dei massimi annuali. Sul sito il picco Hs dei quattro giorni viene confrontato con il settore della sua direzione in quell’ora; si possono esaminare anche i picchi negli altri settori presenti.
+
+Il tempo di ritorno riguarda Hs al largo per quel settore, non runup o allagamenti. La differenza fra ERA5 e Copernicus non è corretta e non rientra nella banda del fit. Non usare queste elaborazioni sperimentali per previsioni o scelte gestionali.''')
+code('''#@title Impostazioni dei massimi annuali per settore
+CALCOLA_ESTREMI_SETTORIALI = True #@param {type:"boolean"}
+AMPIEZZA_SETTORI_ESTREMI = 45 #@param [30,45,60,90,120,180,360]
+COL_DIREZIONE_ERA5 = "direction_deg" #@param {type:"string"}
+MIN_ANNI_ESTREMI = 30
+REPLICHE_BOOTSTRAP = 400
+print("Settori statistici:",AMPIEZZA_SETTORI_ESTREMI,"gradi; minimo",MIN_ANNI_ESTREMI,"anni completi.")''',form=True,tags=('directional-extremes-settings',))
 code('''#@title Sorgente e periodo storico
 MODALITA_ERA5 = "Scarica ERA5" #@param ["Scarica ERA5", "Importa CSV", "Salta per ora"]
 ERA5_INIZIO = "1991-01-01" #@param {type:"date"}
@@ -277,7 +321,7 @@ if DEMO:
     time=pd.date_range("2019-01-01", "2020-12-31 23:00",freq="h",tz="UTC")
     index=np.arange(len(time))
     hs=.25+1.1*(.5+.5*np.sin(index/179))**3+.3*(.5+.5*np.sin(index/37))
-    era5_frame=pd.DataFrame({"time":time,"hs_m":hs})
+    era5_frame=pd.DataFrame({"time":time,"hs_m":hs,"direction_deg":(index*13)%360})
     history=WORK/"clima_dimostrativo.csv"; era5_frame.to_csv(history,index=False)
     CLIMATE=build_climate(history,"Esempio sintetico; non ERA5")
     climate_metadata={"mode":"demo","description":"Distribuzione sintetica per verificare il notebook."}
@@ -326,6 +370,20 @@ elif MODALITA_ERA5=="Importa CSV":
 else:
     print("Climatologia saltata: la località potrà essere esportata senza riferimento storico.")
 if CLIMATE is not None:
+    if CALCOLA_ESTREMI_SETTORIALI:
+        imported=not DEMO and MODALITA_ERA5=="Importa CSV"
+        CLIMATE["directional_extremes"]=build_directional_extremes(history,
+            time_column=COL_TEMPO_ERA5 if imported else "time",
+            hs_column=COL_HS_ERA5 if imported else "hs_m",
+            direction_column=COL_DIREZIONE_ERA5 if imported else "direction_deg",
+            sector_width_deg=int(AMPIEZZA_SETTORI_ESTREMI),min_years=MIN_ANNI_ESTREMI,
+            bootstrap_replicates=REPLICHE_BOOTSTRAP)
+        ext=CLIMATE["directional_extremes"]
+        if ext["status"]=="available":
+            display(pd.DataFrame([{"settore":f'{s["start_deg"]:g}° → {s["end_deg"]:g}°',
+                "anni":s["fit"]["n_years"],"fit":s["fit"]["status"],"nota":s["fit"].get("reason","")}
+                for s in ext["sectors"]]))
+        else: print(ext["reason"])
     CLIMATE["download"]=climate_metadata
     if not DEMO: CLIMATE["doi"]="10.24381/1cf1ad76"
     (WORK/"climatology.json").write_text(json.dumps(CLIMATE,ensure_ascii=False,allow_nan=False,separators=(",",":")))
@@ -353,6 +411,24 @@ if CLIMATE is not None:
         display(m)
 else:
     print("Nessuna climatologia selezionata.")''',form=True)
+
+code('''#@title Verifica le curve Gumbel dei settori
+ext=CLIMATE.get("directional_extremes") if CLIMATE else None
+if ext and ext["status"]=="available":
+    valid=[s for s in ext["sectors"] if s["fit"]["status"]=="available"]
+    if valid:
+        fig,axes=plt.subplots((len(valid)+1)//2,2,figsize=(12,4*((len(valid)+1)//2)),squeeze=False)
+        for ax,sector in zip(axes.flat,valid):
+            fit=sector["fit"]; periods=fit["return_period_years"]
+            ax.fill_between(periods,fit["ci95_low_m"],fit["ci95_high_m"],alpha=.2,color="#527d78",label="Bootstrap 95%")
+            ax.plot(periods,fit["return_level_m"],color="#194e4c",label="Gumbel")
+            ax.scatter([r["return_period_years"] for r in fit["empirical"]],[r["hs_m"] for r in fit["empirical"]],s=12,label="Massimi annuali")
+            ax.set(xscale="log",xlabel="Tempo di ritorno [anni]",ylabel="Hs al largo [m]",title=f'{sector["start_deg"]:g}° → {sector["end_deg"]:g}° · {fit["n_years"]} anni')
+            ax.set_ylim(bottom=0); ax.legend(fontsize=8)
+        for ax in list(axes.flat)[len(valid):]: ax.set_visible(False)
+        fig.tight_layout(); fig.savefig(WORK/"estremi_settoriali.png",dpi=150); plt.show()
+    else: print("Nessun settore soddisfa i requisiti per il fit. Esamina le note nella tabella.")
+else: print("Estremi settoriali non configurati.")''',form=True,tags=('directional-extremes-plot',))
 md('''## 7. Rivedi ed esporta il sito
 Il pacchetto contiene configurazione, soglie, pendenze e relativa diagnostica, profili normalizzati e climatologia quando disponibile. **Conserva la cache o il CSV storico in Drive**: il pacchetto riporta il riferimento statistico, non tutti i NetCDF delle richieste.
 
@@ -369,6 +445,7 @@ if current_signature!=ANALYSIS_SIGNATURE or SELECTION_ANALYSIS_SIGNATURE!=ANALYS
 normalized=profili.rename(columns={COL_ID:"TR_ID",COL_DIST:"distance",COL_Z:"SAMPLE_1",COL_X:"X",COL_Y:"Y"})[["TR_ID","distance","SAMPLE_1","X","Y"]]
 normalized.to_csv(WORK/"profili_normalizzati.csv",index=False)
 location=dict(SITE_INPUT,slopes=PENDENZE,roughness_m=float(RUGOSITA_M),parameters_status="provisional",
+    wave_exposure=parse_exposure(SETTORI_PROVENIENZA,NOTE_ESPOSIZIONE),
     datum_offset_m=float(OFFSET_LIVELLO_M),vertical_reference_status="provisional",
     climatology_file=f"config/climatology/{ID_SITO}.json" if CLIMATE is not None else None,
     summer_season=dict(start_month_day=INIZIO_ESTATE or None,end_month_day=FINE_ESTATE or None,status="configured" if INIZIO_ESTATE else "to_be_defined"),
@@ -382,13 +459,13 @@ payload=dict(schema_version=1,slug=ID_SITO,data_mode="demo" if DEMO else "study"
         profile_data_mode=PROFILE_DATA_MODE,climate_data_mode=CLIMATE_DATA_MODE if CLIMATE else None,
         profile_crs=crs.to_string(),vertical_reference=RIFERIMENTO_QUOTE,z_correction_m=CORREZIONE_QUOTE_DEM_M,
         excluded_transects=sorted(excluded),slope_sampling=MODALITA_PENDENZE,z_min_m=Z_MIN,z_max_m=Z_MAX))
-display(pd.DataFrame([{"località":NOME_SITO,"modalità":payload["data_mode"],"transetti inclusi":len(scelti),"pendenze":PENDENZE,"ERA5 o riferimento":CLIMATE["source"] if CLIMATE else "Non configurato","stagione estiva":f"{INIZIO_ESTATE} / {FINE_ESTATE}" if INIZIO_ESTATE else "Da definire"}]))
+display(pd.DataFrame([{"località":NOME_SITO,"modalità":payload["data_mode"],"transetti inclusi":len(scelti),"pendenze":PENDENZE,"ERA5 o riferimento":CLIMATE["source"] if CLIMATE else "Non configurato","esposizione":location["wave_exposure"]["sectors_deg"] if location["wave_exposure"] else "Da definire","stagione estiva":f"{INIZIO_ESTATE} / {FINE_ESTATE}" if INIZIO_ESTATE else "Da definire"}]))
 print("Le soglie e il raccordo delle quote restano da validare, anche con profili misurati.")''',form=True)
 code('''#@title Crea e scarica il pacchetto
 ESPORTA_PACCHETTO = True #@param {type:"boolean"}
 if ESPORTA_PACCHETTO:
     attachments={name:WORK/name for name in ["pendenze_transetti.csv","profili_normalizzati.csv","profilo_selezionato.png"]}
-    for name in ["climatologia.png","massimi_annuali.csv"]:
+    for name in ["climatologia.png","massimi_annuali.csv","estremi_settoriali.png"]:
         if CLIMATE is not None and (WORK/name).exists(): attachments[name]=WORK/name
     output=WORK/f"{ID_SITO}_{'DEMO' if DEMO else 'studio'}.zip"
     write_site_package(output,payload,climatology=CLIMATE,attachments=attachments)
