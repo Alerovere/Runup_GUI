@@ -28,10 +28,12 @@ code('''#@title Installa le librerie
 INSTALLA_DIPENDENZE = True #@param {type:"boolean"}
 if INSTALLA_DIPENDENZE:
     import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1"])
 print("Ambiente pronto.")''',form=True,tags=('install-dependencies',))
-modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','site_package.py','LICENSE-wave-climate.txt']
+modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','LICENSE-wave-climate.txt']
 sources={'forecast_service/'+name:(ROOT/'forecast_service'/name).read_text() for name in modules}
+for reference_path in sorted(ROOT.glob('config/study_sites/*/sea_level_reference_*.json')):
+    sources[str(reference_path.relative_to(ROOT))]=reference_path.read_text()
 code('''#@title Carica le funzioni del progetto (cella tecnica)
 # Codice condiviso con la repository, incluso per funzionare anche prima del push.
 from pathlib import Path
@@ -42,6 +44,9 @@ for relative, source in BUNDLED_SOURCES.items():
     target = RUNTIME / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(source, encoding="utf-8")
+for module_name in list(sys.modules):
+    if module_name=="forecast_service" or module_name.startswith("forecast_service."):
+        del sys.modules[module_name]
 sys.path.insert(0, str(RUNTIME))
 import numpy as np
 import pandas as pd
@@ -54,6 +59,7 @@ from forecast_service.era5_download import download_series
 from forecast_service.climate import build_climate
 from forecast_service.exposure import parse_exposure
 from forecast_service.extremes import build_directional_extremes
+from forecast_service.sealevel_reference import download_reference, validate_reference, apply_reference
 from forecast_service.site_package import write_site_package
 print("Metodo pendenze:", BEACHFACE_METHOD_VERSION)''',form=True,tags=('bundled-library',))
 code('''#@title Modalità e salvataggio
@@ -429,6 +435,64 @@ if ext and ext["status"]=="available":
         fig.tight_layout(); fig.savefig(WORK/"estremi_settoriali.png",dpi=150); plt.show()
     else: print("Nessun settore soddisfa i requisiti per il fit. Esamina le note nella tabella.")
 else: print("Estremi settoriali non configurati.")''',form=True,tags=('directional-extremes-plot',))
+
+md('''### Zero del livello marino: riferimento storico fisso Copernicus
+Questa sezione è separata da ERA5: usa la **SSH del modello fisico Copernicus**, che comprende la marea e le variazioni atmosferiche e oceanografiche. Si calcola una volta la media di un anno UTC completo nella stessa cella usata per le previsioni, e la si conserva per gli aggiornamenti futuri. Non si sottrae la media dei giorni di previsione.
+
+Per Borghetto è incluso il riferimento già verificato del **2025**: 8.760 ore, media SSH circa −0,4032 m. Puoi usarlo senza scaricare nuovamente dati o rifare ERA5. Il controllo rifiuta di applicarlo se cambi il punto del livello marino. Per un altro sito scegli **Calcola da Copernicus** e un anno completo disponibile nell’archivio: il download richiede l’account Copernicus Marine, distinto da quello CDS/ERA5. Le credenziali si leggono dai Secrets Colab o da input protetto e non sono esportate.
+
+Lo zero così ottenuto è la **media del modello nell’anno dichiarato**, non una calibrazione del livello medio mare misurato sulla spiaggia. Il raccordo con le quote delle strutture rimane provvisorio. Eventuali correzioni locali devono restare esplicite nel campo `OFFSET_LIVELLO_M`.''')
+code('''#@title Riferimento storico del livello marino
+MODALITA_RIFERIMENTO_SSH = "Usa riferimento incluso" #@param ["Usa riferimento incluso", "Calcola da Copernicus", "Importa JSON"]
+ANNO_RIFERIMENTO_SSH = 2025 #@param {type:"integer"}
+CONSENSO_DOWNLOAD_SSH = False #@param {type:"boolean"}
+FILE_RIFERIMENTO_SSH = "" #@param {type:"string"}
+SEA_LEVEL_REFERENCE=None
+reference_location=dict(SITE_INPUT)
+if not LIVELLO_STESSO_PUNTO:
+    reference_location["sealevel_point"]=dict(latitude=LAT_LIVELLO,longitude=LON_LIVELLO)
+if DEMO:
+    print("Modalità demo: il livello marino resta sintetico; nessun riferimento reale viene usato.")
+elif MODALITA_RIFERIMENTO_SSH=="Usa riferimento incluso":
+    reference_file=RUNTIME/"config"/"study_sites"/ID_SITO/f"sea_level_reference_{ANNO_RIFERIMENTO_SSH}.json"
+    if not reference_file.exists():
+        raise ValueError("Nessun riferimento incluso per questo sito/anno: scegli Calcola da Copernicus o Importa JSON.")
+    SEA_LEVEL_REFERENCE=json.loads(reference_file.read_text())
+elif MODALITA_RIFERIMENTO_SSH=="Importa JSON":
+    if FILE_RIFERIMENTO_SSH:
+        SEA_LEVEL_REFERENCE=json.loads(Path(FILE_RIFERIMENTO_SSH).read_text())
+    else:
+        from google.colab import files
+        uploaded=files.upload()
+        if len(uploaded)!=1: raise ValueError("Carica un solo riferimento JSON.")
+        SEA_LEVEL_REFERENCE=json.loads(next(iter(uploaded.values())))
+else:
+    if not CONSENSO_DOWNLOAD_SSH:
+        raise ValueError("Per scaricare la SSH storica imposta CONSENSO_DOWNLOAD_SSH=True.")
+    from getpass import getpass
+    def account_secret(name,prompt):
+        import os
+        value=os.environ.get(name)
+        if not value:
+            try:
+                from google.colab import userdata
+                value=userdata.get(name)
+            except Exception:
+                pass
+        return value or getpass(prompt)
+    username=account_secret("COPERNICUSMARINE_USERNAME","Username Copernicus Marine: ")
+    password=account_secret("COPERNICUSMARINE_PASSWORD","Password Copernicus Marine: ")
+    try:
+        SEA_LEVEL_REFERENCE=download_reference(reference_location,int(ANNO_RIFERIMENTO_SSH),username,password,cache=BASE/"_cache_ssh")
+    finally:
+        del username,password
+if SEA_LEVEL_REFERENCE is not None:
+    validate_reference(SEA_LEVEL_REFERENCE,location=reference_location)
+    if SEA_LEVEL_REFERENCE["year"]!=ANNO_RIFERIMENTO_SSH:
+        raise ValueError("L’anno del riferimento JSON non corrisponde a quello selezionato.")
+    (WORK/f"sea_level_reference_{ANNO_RIFERIMENTO_SSH}.json").write_text(json.dumps(SEA_LEVEL_REFERENCE,ensure_ascii=False,allow_nan=False,indent=2))
+    display(pd.DataFrame([{"riferimento":f'Media SSH Copernicus {SEA_LEVEL_REFERENCE["year"]}',"media SSH (m)":SEA_LEVEL_REFERENCE["mean_ssh_m"],"ore":SEA_LEVEL_REFERENCE["n_records"],"cella":SEA_LEVEL_REFERENCE["selected_point"],"versione dataset":SEA_LEVEL_REFERENCE["dataset_version"]}]))
+    print("Questo valore resterà fisso nei futuri bollettini. Il raccordo con le quote locali è ancora da verificare.")''',form=True,tags=('historical-sealevel-reference',))
 md('''## 7. Rivedi ed esporta il sito
 Il pacchetto contiene configurazione, soglie, pendenze e relativa diagnostica, profili normalizzati e climatologia quando disponibile. **Conserva la cache o il CSV storico in Drive**: il pacchetto riporta il riferimento statistico, non tutti i NetCDF delle richieste.
 
@@ -452,11 +516,16 @@ location=dict(SITE_INPUT,slopes=PENDENZE,roughness_m=float(RUGOSITA_M),parameter
     transects=json.loads(scelti.to_json(orient="records")),notes=NOTE_SITO)
 if not LIVELLO_STESSO_PUNTO:
     location["sealevel_point"]=dict(latitude=LAT_LIVELLO,longitude=LON_LIVELLO)
+if SEA_LEVEL_REFERENCE is not None:
+    if SEA_LEVEL_REFERENCE["year"]!=ANNO_RIFERIMENTO_SSH:
+        raise ValueError("Anno del riferimento cambiato: riesegui la sezione del livello marino prima di esportare.")
+    location=apply_reference(location,SEA_LEVEL_REFERENCE)
 payload=dict(schema_version=1,slug=ID_SITO,data_mode="demo" if DEMO else "study",location=location,thresholds=thresholds,
     provenance=dict(created_at=iso(dt.datetime.now(dt.timezone.utc)),slope_method=BEACHFACE_METHOD_VERSION,
         reference_notebook="Stockdon_runup_soluzione.ipynb, celle 24–25",profile_source=PROFILE_SOURCE,
         profile_sha256=hashlib.sha256((WORK/"profili_normalizzati.csv").read_bytes()).hexdigest(),
         profile_data_mode=PROFILE_DATA_MODE,climate_data_mode=CLIMATE_DATA_MODE if CLIMATE else None,
+        sea_level_reference_year=SEA_LEVEL_REFERENCE["year"] if SEA_LEVEL_REFERENCE else None,
         profile_crs=crs.to_string(),vertical_reference=RIFERIMENTO_QUOTE,z_correction_m=CORREZIONE_QUOTE_DEM_M,
         excluded_transects=sorted(excluded),slope_sampling=MODALITA_PENDENZE,z_min_m=Z_MIN,z_max_m=Z_MAX))
 display(pd.DataFrame([{"località":NOME_SITO,"modalità":payload["data_mode"],"transetti inclusi":len(scelti),"pendenze":PENDENZE,"ERA5 o riferimento":CLIMATE["source"] if CLIMATE else "Non configurato","esposizione":location["wave_exposure"]["sectors_deg"] if location["wave_exposure"] else "Da definire","stagione estiva":f"{INIZIO_ESTATE} / {FINE_ESTATE}" if INIZIO_ESTATE else "Da definire"}]))

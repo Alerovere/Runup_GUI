@@ -108,14 +108,14 @@ Un percentile 99 indica che il 99% dei campioni storici ha altezza minore o ugua
 
 ## Livello marino e riferimento delle quote
 
-Il prodotto fisico Copernicus mediterraneo comprende la marea del modello. Il portale scarica `zos` e il riferimento statico `mdt` dalla stessa cella. La formula è:
+Il prodotto fisico Copernicus mediterraneo comprende la marea del modello. Il portale scarica `zos` e sottrae un riferimento fisso documentato per la località. Per Borghetto questo è la media di tutte le 8.760 ore del 2025 nella stessa cella, circa −0,4032 m. La formula è:
 
 ```text
-livello_marino = zos - mdt + datum_offset_m
+livello_marino = zos - mean_reference_m + datum_offset_m
 TWL = livello_marino + runup
 ```
 
-La superficie media statica fornisce un riferimento fisso; non è una calibrazione al caposaldo locale. Quando disponibile, una `mean_reference_m` validata sostituisce MDT. Una correzione di quota locale si configura con `datum_offset_m`. Non usare contemporaneamente correzioni che rappresentano lo stesso scarto. Non sommare una seconda marea al livello `zos`. Il livello è interpolato linearmente tra campioni orari, senza estrapolare né colmare ore mancanti; un errore impedisce la pubblicazione del nuovo bollettino.
+Per le località senza riferimento storico il codice mantiene MDT come riferimento provvisorio. Né MDT né la media di un anno del modello sono una calibrazione al caposaldo locale. Il notebook prepara una volta la media SSH storica; la configurazione conserva valore, anno, cella, conteggio delle ore, versione del dataset e hash dei dati. Una cella diversa o un riferimento incoerente interrompono il calcolo. La previsione SSH usa la versione del dataset del riferimento storico; dopo un cambio di versione del prodotto occorre preparare un riferimento coerente. Una correzione di quota locale si configura con `datum_offset_m`. Non usare contemporaneamente correzioni che rappresentano lo stesso scarto. Non sommare una seconda marea al livello `zos`. Il livello è interpolato linearmente tra campioni orari, senza estrapolare né colmare ore mancanti; un errore impedisce la pubblicazione del nuovo bollettino.
 
 Documentazione: [prodotto fisico](https://data.marine.copernicus.eu/product/MEDSEA_ANALYSISFORECAST_PHY_006_013/description), [manuale Copernicus](https://documentation.marine.copernicus.eu/PUM/CMEMS-MED-PUM-006-013.pdf).
 
@@ -147,3 +147,11 @@ python scripts/setup_climatology.py borghetto-santo-spirito \
 Il confronto iniziale del sito usa il picco Hs delle 96 ore e il settore della sua direzione nell’ora del picco. Cambiando settore, cambia anche il picco considerato: è il massimo previsto di quel settore. Non si usa una direzione media sui quattro giorni. Solo anni orari completi sono ammessi; servono 30 anni per il fit predefinito. Si mostrano massimi annuali empirici, curva Gumbel e banda bootstrap 95%. La curva oltre il numero di anni utilizzabili è tratteggiata. Per altezze oltre il limite di ritorno del grafico non si espone una cifra estrapolata arbitrariamente precisa.
 
 Il periodo di ritorno è `T = 1 / P(massimo annuale del settore > Hs)`. La frequenza delle ore usata dal confronto dei percentili rimane distinta. Le curve assumono massimi annuali indipendenti e stazionari e adeguatezza di Gumbel. La banda del fit non copre il bias fra ERA5 e Copernicus né gli effetti alla spiaggia. Il riferimento precedente con sole altezze ordinate continua a funzionare per i percentili, ma non produce tempi di ritorno settoriali. Mancanza di dati o di un fit valido viene segnalata, senza ripiegare su un altro settore o sulla distribuzione generale.
+
+## Riferimento storico SSH nel notebook
+
+La sezione **Zero del livello marino: riferimento storico fisso Copernicus** è indipendente da ERA5. Per Borghetto scegliere **Usa riferimento incluso**, anno **2025**: il valore verificato è già nella copia autosufficiente del notebook e non richiede download o credenziali. Per un’altra località scegliere **Calcola da Copernicus**, indicare un anno concluso disponibile nell’archivio e abilitare il download. Le credenziali Copernicus Marine si leggono dai Secrets Colab `COPERNICUSMARINE_USERNAME` e `COPERNICUSMARINE_PASSWORD` o da input protetto. L’account CDS rimane dedicato a ERA5.
+
+Il riferimento richiede un intero anno di campioni orari finiti e distinti. Le medie mensili e un hash della serie consentono il controllo della provenienza; il riferimento JSON è conservato nella cache e incluso nella configurazione esportata. In modalità demo non si applica il riferimento reale. I bollettini giornalieri riutilizzano la media salvata e non scaricano di nuovo l’anno storico.
+
+Importando un vecchio pacchetto privo dei nuovi campi, un riferimento già presente nella repository viene conservato se il punto marino è lo stesso. Se il punto cambia, l’importazione chiede un nuovo riferimento. I CSV del bollettino indicano il riferimento effettivamente usato, per esempio `copernicus_mean_2025_provisional`, anziché presentarlo come livello medio mare locale verificato.

@@ -34,13 +34,17 @@ def fetch_sealevel(location, settings, start, hours):
     import numpy as np
     import pandas as pd
     from forecast_service.pipeline import iso, parse_time
+    from forecast_service.sealevel_reference import validate_location_reference
+    validate_location_reference(location,dataset_id=settings['dataset_id'])
+    historical=location.get('sea_level_reference')
+    version_options={'dataset_version':historical['dataset_version']} if historical else {}
     point = location.get('sealevel_point', location['wave_point'])
     common = dict(username=os.environ['COPERNICUSMARINE_USERNAME'], password=os.environ['COPERNICUSMARINE_PASSWORD'],
                   minimum_longitude=point['longitude'], maximum_longitude=point['longitude'],
                   minimum_latitude=point['latitude'], maximum_latitude=point['latitude'],
                   coordinates_selection_method='nearest')
     ds = copernicusmarine.open_dataset(dataset_id=settings['dataset_id'], variables=['zos'],
-        start_datetime=iso(start-timedelta(hours=1)), end_datetime=iso(start+timedelta(hours=hours+1)), **common)
+        start_datetime=iso(start-timedelta(hours=1)), end_datetime=iso(start+timedelta(hours=hours+1)), **version_options, **common)
     try:
         array = ds['zos']
         for dim in list(array.dims):
@@ -55,9 +59,10 @@ def fetch_sealevel(location, settings, start, hours):
         selected = {key: float(np.asarray(ds[key].values).reshape(-1)[0]) for key in ('latitude','longitude')}
     finally:
         ds.close()
+    validate_location_reference(location,dataset_id=settings['dataset_id'],selected_point=selected)
     if location.get('mean_reference_m') is not None:
         mean = float(location['mean_reference_m'])
-        reference = 'fixed_local_reference'
+        reference = 'copernicus_historical_mean' if historical else 'fixed_local_reference'
     else:
         # The static MDT is sampled in the exact cell selected for SSH.
         static_common = dict(common, minimum_latitude=selected['latitude'], maximum_latitude=selected['latitude'],
@@ -78,6 +83,8 @@ def fetch_sealevel(location, settings, start, hours):
             static.close()
     return records, mean, {'dataset_id': settings['dataset_id'], 'variable': 'zos', 'selected_point': selected,
                            'mean_reference_m': mean, 'reference_source': reference,
+                           'historical_reference': historical,
+                           'dataset_version': historical['dataset_version'] if historical else None,
                            'datum_offset_m': location.get('datum_offset_m', 0.0),
                            'formula': 'zos - fixed_mean_reference + datum_offset',
                            'reference_status': location.get('vertical_reference_status', 'provisional')}

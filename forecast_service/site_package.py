@@ -16,6 +16,10 @@ def validate_payload(payload):
     if payload.get('data_mode')!='demo' and any(payload.get('provenance',{}).get(key)=='demo' for key in ('profile_data_mode','climate_data_mode')):
         raise ValueError('Dati dimostrativi dichiarati come dati di studio.')
     location=payload['location']
+    from forecast_service.sealevel_reference import validate_location_reference
+    validate_location_reference(location)
+    if payload.get('data_mode')!='demo' and (location.get('sea_level_reference') or {}).get('data_mode')=='demo':
+        raise ValueError('Riferimento SSH dimostrativo dichiarato come dato di studio.')
     from forecast_service.exposure import validate_exposure
     validate_exposure(location.get('wave_exposure'))
     if not location.get('slopes') or any(not isinstance(s,(int,float)) or not 0<s<1 for s in location['slopes']):
@@ -78,6 +82,16 @@ def import_site_package(path,root,*,replace=False,allow_demo=False):
             raise ValueError('Località già presente: usare --replace per aggiornarla intenzionalmente.')
         updates={}
         local=copy.deepcopy(payload['location'])
+        existing=locations['locations'].get(slug,{})
+        if 'sea_level_reference' not in local and 'mean_reference_m' not in local and existing.get('sea_level_reference'):
+            from forecast_service.sealevel_reference import apply_reference
+            local=apply_reference(local,existing['sea_level_reference'])
+            payload.setdefault('provenance',{})['retained_existing_sea_level_reference']=True
+        payload['location']=local
+        validate_payload(payload)
+        if local.get('sea_level_reference'):
+            ref=local['sea_level_reference']
+            updates[f"config/study_sites/{slug}/sea_level_reference_{ref['year']}.json"]=(json.dumps(ref,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode()
         if local.get('climatology_file'):
             raw=archive.read('climatology.json')
             with tempfile.TemporaryDirectory() as folder:
@@ -91,7 +105,7 @@ def import_site_package(path,root,*,replace=False,allow_demo=False):
         impacts['locations'][slug]={'name':local['name'],'thresholds':payload['thresholds']}
         for name,contents in [('locations.json',locations),('impact_thresholds.json',impacts)]:
             updates['config/'+name]=(json.dumps(contents,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode()
-        updates[f'config/study_sites/{slug}/site.json']=archive.read('site.json')
+        updates[f'config/study_sites/{slug}/site.json']=(json.dumps(payload,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode()
         for member in members:
             if member.filename.startswith('diagnostics/'):
                 updates[f'config/study_sites/{slug}/'+member.filename]=archive.read(member)

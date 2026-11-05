@@ -132,6 +132,26 @@ class PackageTests(unittest.TestCase):
             result=json.loads((root/'config/locations.json').read_text())
             self.assertEqual(result['locations'][payload['slug']]['wave_exposure'],exposure)
 
+    def test_old_package_keeps_existing_sea_level_reference_and_changed_point_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=self.copy_config(directory)
+            payload=self.payload()
+            original=payload['location']['sea_level_reference']
+            payload['location'].pop('sea_level_reference')
+            payload['location'].pop('mean_reference_m')
+            payload['location']['slopes']=[.045]
+            archive=write_site_package(Path(directory)/'old.zip',payload)
+            import_site_package(archive,root,replace=True)
+            result=json.loads((root/'config/locations.json').read_text())
+            self.assertEqual(result['locations'][payload['slug']]['sea_level_reference'],original)
+            self.assertEqual(result['locations'][payload['slug']]['slopes'],[.045])
+            before=(root/'config/locations.json').read_bytes()
+            payload['location']['wave_point']['longitude']+=.1
+            changed=write_site_package(Path(directory)/'changed.zip',payload)
+            with self.assertRaisesRegex(ValueError,'punto'):
+                import_site_package(changed,root,replace=True)
+            self.assertEqual((root/'config/locations.json').read_bytes(),before)
+
     def test_demo_package_is_rejected_by_default(self):
         with tempfile.TemporaryDirectory() as directory:
             root=self.copy_config(directory)

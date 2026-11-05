@@ -63,3 +63,11 @@ Il pacchetto ZIP include i parametri e le curve di tutti i settori e, quando esi
 Si assume che i massimi annuali siano indipendenti e stazionari e che Gumbel sia una distribuzione appropriata: sono ipotesi da verificare, non garantite dal numero di anni. Il tempo di ritorno riguarda l’altezza significativa **al largo** per il settore, non runup, TWL o allagamenti. Le elaborazioni rimangono sperimentali e non utilizzabili per previsioni, allerte o decisioni gestionali.
 
 Riferimenti: [Gumbel e metodi SciPy](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gumbel_r.html); [convenzione delle direzioni ECMWF](https://confluence.ecmwf.int/spaces/FCST/pages/111155338/What+is+the+direction+convention+for+wave+fields).
+
+## Riferimento SSH fisso: distinto da ERA5
+
+Prima dell’esportazione, la nuova sezione **Riferimento storico del livello marino** definisce lo zero dei grafici e del TWL. Per Borghetto è già incluso il riferimento Copernicus del **2025** (8.760 ore nella cella verificata; media circa −0,4032 m): scegliere **Usa riferimento incluso**. Non occorre riscaricare ERA5.
+
+Per un altro sito scegliere **Calcola da Copernicus**, indicare un anno completo disponibile e abilitare `CONSENSO_DOWNLOAD_SSH`. L’account è quello Copernicus Marine, distinto da CDS: le credenziali possono essere lette dai Secrets Colab `COPERNICUSMARINE_USERNAME` e `COPERNICUSMARINE_PASSWORD` oppure inserite tramite input protetto. Non sono scritte nei file esportati. È possibile anche importare un riferimento JSON precedentemente preparato. Il controllo verifica anno, punto richiesto, cella selezionata e completezza oraria; il riferimento non viene riutilizzato per una cella diversa.
+
+Il pacchetto salva `mean_reference_m` e `sea_level_reference`, inclusi anno, cella, versione del prodotto e hash della serie. La media resta fissa a ogni previsione. I grafici dichiarano **zero = media Copernicus 2025**, e non sostengono che questo coincida già con il livello medio mare locale misurato. Il raccordo alle quote delle strutture resta da verificare.

@@ -57,6 +57,8 @@ def load_configuration(root=ROOT):
             raise ValueError(f'Correzione delle quote non valida: {slug}')
         if loc.get('mean_reference_m') is not None and not math.isfinite(loc['mean_reference_m']):
             raise ValueError(f'Riferimento medio non valido: {slug}')
+        from forecast_service.sealevel_reference import validate_location_reference
+        validate_location_reference(loc,dataset_id=level.get('dataset_id'))
         from forecast_service.exposure import validate_exposure
         validate_exposure(loc.get('wave_exposure'))
         point = loc['wave_point']
@@ -137,6 +139,31 @@ def summarize_records(waves, location, thresholds, season, eta):
     return hourly, detail
 
 
+def wave_cycle_reference(dataset, start):
+    """Only explicit, plausible cycle metadata; never infer from download time."""
+    import numpy as np
+    import pandas as pd
+    candidates=[]
+    if 'forecast_reference_time' in dataset.coords:
+        values=np.unique(np.asarray(dataset.coords['forecast_reference_time'].values).reshape(-1))
+        if len(values)==1:
+            candidates.append((values[0],'coordinate:forecast_reference_time'))
+    for key in ('forecast_reference_time','forecast_reference_datetime'):
+        value=dataset.attrs.get(key)
+        if isinstance(value,str) and ('T' in value or ' ' in value):
+            candidates.append((value,'attribute:'+key))
+    for value,source in candidates:
+        try:
+            reference=parse_time(pd.Timestamp(value).isoformat())
+            if start-timedelta(days=10)<=reference<=start:
+                return {'forecast_reference_time':iso(reference),'forecast_reference_time_source':source}
+        except (ValueError,TypeError,OverflowError):
+            continue
+    # bulletin_date on the rolling archive can describe its first file (2023),
+    # rather than the current forecast cycle, and is intentionally not used.
+    return {}
+
+
 def fetch_copernicus(location, dataset_id, start, hours):
     import copernicusmarine
     import numpy as np
@@ -179,8 +206,10 @@ def fetch_copernicus(location, dataset_id, start, hours):
                     'downloaded_at': iso(datetime.now(UTC)), 'requested_point': point,
                     'selected_point': {key: float(ds[key].values.reshape(-1)[0])
                                        for key in ('latitude', 'longitude') if key in ds.coords}}
-        # The rolling dataset does not necessarily expose the original forecast issue time.
-        # Keep download time separate; never label it as the forecast cycle.
+        metadata.update(wave_cycle_reference(ds,start))
+        if 'forecast_reference_time' not in metadata:
+            from forecast_service.wave_cycle import verified_native_cycle
+            metadata.update(verified_native_cycle(dataset_id, records, metadata['selected_point']))
         return sorted(records, key=lambda r: r['time']), metadata
     finally:
         ds.close()
@@ -203,9 +232,14 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
     locations, impacts = load_configuration(root)
     if not demo and models is None:
         raise RuntimeError('py-wave-runup non disponibile: pubblicazione reale interrotta, senza fallback silenzioso.')
-    now = parse_time(now) if now else datetime.now(UTC)
+    controlled_time = now is not None
+    now = parse_time(now) if controlled_time else datetime.now(UTC)
     start = now.replace(minute=0, second=0, microsecond=0)
     bulletin = {'schema_version': 1, 'mode': 'demo' if demo else 'copernicus', 'generated_at': iso(now),
+                'processing_started_at': iso(now),
+                'wave_model': {'publication_hours_utc':[6,20],
+                               'schedule_status':'nominal_expected',
+                               'schedule_source':'https://documentation.marine.copernicus.eu/PUM/CMEMS-MED-PUM-006-017.pdf'},
                 'display_hours': locations['forecast_hours'], 'timezone': 'Europe/Rome',
                 'water_level': locations['water_level'], 'vertical_reference': impacts['vertical_reference'],
                 'thresholds_status': impacts['thresholds_status'], 'summer_season': impacts['summer_season'],
@@ -219,6 +253,8 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
         if demo:
             waves, metadata = demonstration_waves(location, start, locations['download_hours'])
         else:
+            if (location.get('sea_level_reference') or {}).get('data_mode')=='demo':
+                raise ValueError('Riferimento SSH dimostrativo: pubblicazione reale interrotta.')
             waves, metadata = (fetcher or fetch_copernicus)(location, locations['dataset_id'], start, locations['download_hours'])
         if locations['water_level']['mode'] == 'copernicus_ssh':
             if demo:
@@ -242,9 +278,16 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
         output = io.StringIO(newline='')
         writer = csv.DictWriter(output, fieldnames=['data_mode', 'vertical_reference', *detail[0].keys()])
         writer.writeheader()
+        reference_code = ('synthetic_reference' if demo else
+            'mean_sea_level_assumed' if locations['water_level']['mode']!='copernicus_ssh' else
+            f"copernicus_mean_{location['sea_level_reference']['year']}_provisional" if location.get('sea_level_reference') else
+            'fixed_reference_provisional' if location.get('mean_reference_m') is not None else
+            'model_mdt_provisional' if locations['water_level']['mode']=='copernicus_ssh' else 'mean_sea_level_assumed')
         for row in detail:
-            writer.writerow(dict(row, data_mode=bulletin['mode'], vertical_reference='mean_sea_level_assumed'))
+            writer.writerow(dict(row, data_mode=bulletin['mode'], vertical_reference=reference_code))
         csvs[f'{slug}.csv'] = output.getvalue()
+    if not controlled_time:
+        bulletin['generated_at'] = iso(datetime.now(UTC))
     # Fail before writing any published data if serialization finds NaN or Infinity.
     json.dumps(bulletin, allow_nan=False)
     return bulletin, csvs

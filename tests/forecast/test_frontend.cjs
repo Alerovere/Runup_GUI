@@ -150,3 +150,66 @@ test('Il grafico mostra la curva e il picco del solo settore selezionato',()=>{
   assert.match(nodes['extremes-summary'].innerHTML,/circa 20 anni/);
   delete context.window.Plotly;delete context.Plotly;
 });
+
+
+test('Il grafico identifica lo zero storico e la demo non viene etichettata come dato reale',()=>{
+  call("bulletin={mode:'copernicus'}");
+  context.levelLocation={datum_offset_m:0,mean_reference_m:-.4,sea_level_reference:{kind:'copernicus_historical_mean',year:2025,n_records:8760,mean_ssh_m:-.4,dataset_version:'202511',selected_point:{latitude:44.0625,longitude:8.333333}}};
+  assert.equal(call('seaLevelReference(levelLocation).label'),'media Copernicus 2025');
+  assert.match(call('seaLevelReference(levelLocation).caption'),/mantenuta fissa/);
+  assert.match(call('seaLevelReference(levelLocation).detail'),/8[.\s]?760 ore/);
+  call("bulletin={mode:'demo'}");
+  assert.equal(call('seaLevelReference(levelLocation).label'),'riferimento sintetico');
+});
+
+
+test('Il livello costante non viene scambiato con un riferimento storico eventualmente presente',()=>{
+  call("bulletin={mode:'copernicus'}");
+  context.constantLevelLocation={...context.levelLocation,sea_level_source:{mode:'constant_msl',offset_m:0}};
+  assert.equal(call('seaLevelReference(constantLevelLocation).label'),'livello medio mare assunto');
+  assert.match(call('seaLevelReference(constantLevelLocation).caption'),/fissato a 0,00 m/);
+});
+
+
+test('La prossima uscita segue Copernicus in UTC, con conversione italiana in inverno ed estate',()=>{
+  call("bulletin={wave_model:{publication_hours_utc:[6,20]}}");
+  assert.equal(call("nextWavePublication(Date.parse('2026-11-05T19:00Z'))"),'2026-11-05T20:00:00.000Z');
+  assert.match(call("noticeDate(nextWavePublication(Date.parse('2026-11-05T19:00Z')))"),/21:00/);
+  assert.match(call("noticeDate(nextWavePublication(Date.parse('2026-07-05T05:00Z')))"),/08:00/);
+  assert.equal(call("nextWavePublication(Date.parse('2026-11-05T06:00Z'))"),'2026-11-05T20:00:00.000Z');
+  assert.equal(call("nextWavePublication(Date.parse('2026-11-05T20:00Z'))"),'2026-11-06T06:00:00.000Z');
+});
+
+test('La data di acquisizione non diventa una data del ciclo e la homepage gestisce cicli diversi',()=>{
+  context.noticeLocations={a:{source:{downloaded_at:'2026-11-05T16:17Z',forecast_reference_time:'2026-11-05T00:00Z'}},b:{source:{downloaded_at:'2026-11-05T16:18Z',forecast_reference_time:'2026-11-05T12:00Z'}}};
+  call('bulletin={locations:noticeLocations}');
+  assert.equal(call('noticeWaveSource().kind'),'mixed');
+  assert.equal(call('noticeWaveSource(noticeLocations.a).kind'),'cycle');
+  assert.equal(call("noticeWaveSource({source:{downloaded_at:'2026-11-05T16:17Z'}}).kind"),'unknown');
+});
+
+test('Il bollettino mostra le tre informazioni richieste e mantiene gli avvisi di copertura',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  call("bulletin={mode:'copernicus',generated_at:'2026-11-05T16:20Z',wave_model:{publication_hours_utc:[6,20]}}");
+  call("setNotice('Copertura parziale.',{source:{forecast_reference_time:'2026-11-05T12:00Z',downloaded_at:'2026-11-05T16:17Z'}},Date.parse('2026-11-05T16:30Z'))");
+  assert.match(nodes.notice.innerHTML,/Elaborazione del/);
+  assert.match(nodes.notice.innerHTML,/Corsa del modello Copernicus del/);
+  assert.match(nodes.notice.innerHTML,/13:00/);
+  assert.match(nodes.notice.innerHTML,/Prossima uscita prevista/);
+  assert.match(nodes.notice.innerHTML,/21:00/);
+  assert.match(nodes.notice.innerHTML,/Copertura parziale/);
+  assert.doesNotMatch(nodes.notice.innerHTML,/Dati Copernicus Marine\./);
+  call("setNotice('',{source:{downloaded_at:'2026-11-05T16:17Z'}},Date.parse('2026-11-05T16:30Z'))");
+  assert.match(nodes.notice.innerHTML,/Corsa del modello Copernicus non disponibile/);
+  assert.doesNotMatch(nodes.notice.innerHTML,/acquisiti il/);
+});
+
+test('La modalità demo resta esplicita e non promette uscite reali del modello',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  call("bulletin={mode:'demo',generated_at:'2026-11-05T00:00Z',locations:{}}");
+  call("setNotice('',null,Date.parse('2026-11-06T00:00Z'))");
+  assert.match(nodes.notice.innerHTML,/Modalità dimostrativa/);
+  assert.match(nodes.notice.innerHTML,/sintetici/);
+  assert.match(nodes.notice.innerHTML,/Aggiornamento in ritardo/);
+  assert.doesNotMatch(nodes.notice.innerHTML,/Prossima uscita/);
+});

@@ -1,3 +1,4 @@
+import csv
 import json
 import math
 import tempfile
@@ -84,7 +85,9 @@ class ForecastTests(unittest.TestCase):
             p.write_bulletin(bulletin, csvs, directory)
             stored = json.loads((Path(directory)/'forecast.json').read_text())
             self.assertEqual(stored['mode'], 'demo')
-            self.assertIn('demo,mean_sea_level_assumed', (Path(directory)/'venezia.csv').read_text())
+            with (Path(directory)/'venezia.csv').open() as handle:
+                labels={(row['data_mode'],row['vertical_reference']) for row in csv.DictReader(handle)}
+            self.assertEqual(labels,{('demo','synthetic_reference')})
             self.assertFalse((Path(directory)/'forecast.json.tmp').exists())
 
     def test_one_failed_location_prevents_a_partial_bulletin(self):
@@ -108,10 +111,17 @@ class ForecastTests(unittest.TestCase):
                          for key,value in [('VHM0',1.5),('VTPK',8),('VMDR',135)]},
                         coords={'time':times,'latitude':[45.33],'longitude':[12.5]})
         with patch.dict('os.environ', {'COPERNICUSMARINE_USERNAME':'test','COPERNICUSMARINE_PASSWORD':'test'}):
-            with patch('copernicusmarine.open_dataset',return_value=ds):
+            with patch('copernicusmarine.open_dataset',return_value=ds), patch('forecast_service.wave_cycle.verified_native_cycle',return_value={'forecast_reference_time':'2026-11-05T00:00:00Z'}) as verify:
                 rows, metadata = p.fetch_copernicus(self.loc,self.config['dataset_id'],NOW,120)
             self.assertEqual(len(rows),120)
+            verify.assert_called_once()
+            self.assertEqual(len(verify.call_args.args[1]),120)
+            self.assertEqual(metadata['forecast_reference_time'],'2026-11-05T00:00:00Z')
             self.assertEqual(metadata['selected_point']['latitude'],45.33)
+            with patch('copernicusmarine.open_dataset',return_value=ds), patch('forecast_service.wave_cycle.verified_native_cycle',return_value={'forecast_reference_status':'unverified'}):
+                unlabelled_rows, unlabelled_metadata = p.fetch_copernicus(self.loc,self.config['dataset_id'],NOW,120)
+            self.assertEqual(unlabelled_rows,rows)
+            self.assertNotIn('forecast_reference_time',unlabelled_metadata)
             with patch('copernicusmarine.open_dataset',return_value=ds.isel(time=slice(0,119))):
                 with self.assertRaisesRegex(ValueError,'incompleta'):
                     p.fetch_copernicus(self.loc,self.config['dataset_id'],NOW,120)

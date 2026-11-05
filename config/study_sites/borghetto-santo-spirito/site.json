@@ -46,7 +46,7 @@
       "note": ""
     },
     "datum_offset_m": 0.0,
-    "vertical_reference_status": "provisional",
+    "vertical_reference_status": "provisional_model_mean",
     "climatology_file": "config/climatology/borghetto-santo-spirito.json",
     "summer_season": {
       "start_month_day": "05-01",
@@ -454,7 +454,82 @@
         "error": ""
       }
     ],
-    "notes": "Quote indicative, non ancora validate sul campo"
+    "notes": "Quote indicative, non ancora validate sul campo",
+    "mean_reference_m": -0.4032032064388128,
+    "sea_level_reference": {
+      "schema_version": 1,
+      "kind": "copernicus_historical_mean",
+      "year": 2025,
+      "dataset_id": "cmems_mod_med_phy-ssh_anfc_4.2km-2D_PT1H-m",
+      "dataset_version": "202511",
+      "variable": "zos",
+      "requested_point": {
+        "latitude": 44.08,
+        "longitude": 8.33
+      },
+      "selected_point": {
+        "latitude": 44.0625,
+        "longitude": 8.333333015441895
+      },
+      "start": "2025-01-01T00:00:00Z",
+      "end": "2025-12-31T23:00:00Z",
+      "n_records": 8760,
+      "mean_ssh_m": -0.4032032064388128,
+      "monthly": {
+        "1": {
+          "mean_ssh_m": -0.410685404639785,
+          "n_records": 744
+        },
+        "2": {
+          "mean_ssh_m": -0.5115411359226191,
+          "n_records": 672
+        },
+        "3": {
+          "mean_ssh_m": -0.4807945041263441,
+          "n_records": 744
+        },
+        "4": {
+          "mean_ssh_m": -0.46933154022222223,
+          "n_records": 720
+        },
+        "5": {
+          "mean_ssh_m": -0.4296025681586021,
+          "n_records": 744
+        },
+        "6": {
+          "mean_ssh_m": -0.4312678409444445,
+          "n_records": 720
+        },
+        "7": {
+          "mean_ssh_m": -0.3726959052822581,
+          "n_records": 744
+        },
+        "8": {
+          "mean_ssh_m": -0.3369342917688172,
+          "n_records": 744
+        },
+        "9": {
+          "mean_ssh_m": -0.3413011670013889,
+          "n_records": 720
+        },
+        "10": {
+          "mean_ssh_m": -0.36464155797715053,
+          "n_records": 744
+        },
+        "11": {
+          "mean_ssh_m": -0.31705964612500004,
+          "n_records": 720
+        },
+        "12": {
+          "mean_ssh_m": -0.38133004919354835,
+          "n_records": 744
+        }
+      },
+      "data_mode": "study",
+      "local_datum_status": "not_validated",
+      "method": "Arithmetic mean of all hourly SSH values in one complete UTC calendar year; fixed for future forecasts.",
+      "input_sha256": "c5f2271ef0e2de0c95d91b074a032294af6ee9c1e46074d74c122dfacf6eaef2"
+    }
   },
   "thresholds": [
     {
@@ -500,6 +575,7 @@
     "excluded_transects": [],
     "slope_sampling": "Valori dei transetti",
     "z_min_m": 0.0,
-    "z_max_m": 1.0
+    "z_max_m": 1.0,
+    "sea_level_reference_file": "sea_level_reference_2025.json"
   }
 }

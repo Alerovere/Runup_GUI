@@ -4,9 +4,9 @@
   "comparison_variable": "total_water_level",
   "vertical_reference": {
     "id": "mean_sea_level",
-    "description": "Quote preliminarmente riferite al livello medio mare. Livello Copernicus raccordato alla superficie media fissa del modello; scarto locale da validare.",
+    "description": "Quote preliminarmente riferite al livello medio mare locale. Il livello marino usa il riferimento fisso dichiarato per ciascuna località; il raccordo con le quote delle strutture resta da validare.",
     "status": "provisional_assumption",
-    "water_level_alignment": "model_mdt_provisional"
+    "water_level_alignment": "location_specific_fixed_model_reference_provisional"
   },
   "thresholds_status": "illustrative_not_site_validated",
   "summer_season": {

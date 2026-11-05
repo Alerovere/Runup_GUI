@@ -68,11 +68,55 @@ function climateFrequency(percentile, stepHours) {
   return `Nella serie storica, circa ${num(tail,tail<10?1:0)} ${unit} su 100 presentano onde più alte di questa.`;
 }
 
-function setNotice(extra='') {
+
+function seaLevelReference(location) {
+  const meta=location.sea_level_source||{};
+  if (bulletin?.mode==='demo' || meta.reference_source==='synthetic') return {label:'riferimento sintetico',axis:'riferimento sintetico',caption:'Onde e livello marino sono sintetici: non sono una previsione.',detail:'Lo zero appartiene al segnale sintetico usato per la dimostrazione.'};
+  if (meta.mode==='constant_msl') return {label:'livello medio mare assunto',axis:'livello medio assunto',caption:`Contributo del livello marino fissato a ${num(meta.offset_m)} m rispetto al livello medio assunto.`,detail:'Questa configurazione usa un livello costante; non rappresenta una previsione di marea o di variazioni meteorologiche.'};
+  const ref=meta.historical_reference||location.sea_level_reference;
+  if (ref?.kind==='copernicus_historical_mean') {
+    return {label:`media Copernicus ${ref.year}`,axis:`zero = media ${ref.year}`,
+      caption:`Lo zero è la media del livello del mare del modello Copernicus nell’intero ${ref.year}, mantenuta fissa per tutti gli aggiornamenti. Il segnale comprende la marea e le variazioni atmosferiche e oceanografiche. Il raccordo con le quote locali rimane da verificare.`,
+      detail:`Media calcolata su ${num(ref.n_records,0)} ore, dal 1 gennaio al 31 dicembre ${ref.year}, nella cella ${num(ref.selected_point.latitude,5)}° N, ${num(ref.selected_point.longitude,5)}° E. Media della SSH originale: ${num(ref.mean_ssh_m,4)} m; versione del prodotto: ${ref.dataset_version}. Correzione locale aggiuntiva: ${num(location.datum_offset_m||0)} m.`};
+  }
+  if (location.mean_reference_m!==undefined && location.mean_reference_m!==null) return {label:'riferimento fisso configurato',axis:'riferimento fisso',caption:'Livello marino Copernicus riferito al valore fisso configurato per la località. Il raccordo con le quote locali rimane da verificare.',detail:`Riferimento SSH configurato: ${num(location.mean_reference_m,4)} m. Correzione locale: ${num(location.datum_offset_m||0)} m.`};
+  return {label:'MDT Copernicus provvisoria',axis:'zero = MDT provvisoria',caption:'Lo zero deriva dalla superficie media dinamica (MDT) del prodotto Copernicus. Non è un riferimento del livello medio mare locale verificato. Marea e altre variazioni del modello sono comprese nel segnale.',detail:'Il riferimento MDT va verificato o sostituito con un riferimento storico documentato della stessa cella. La differenza dalle quote locali non è ancora calibrata.'};
+}
+
+function noticeDate(value) {
+  if (!Number.isFinite(Date.parse(value))) return 'data non disponibile';
+  return new Date(value).toLocaleString('it-IT',{timeZone:'Europe/Rome',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+}
+
+function nextWavePublication(now=Date.now()) {
+  const configured=bulletin.wave_model?.publication_hours_utc;
+  const fallback=bulletin.source?.product_id==='MEDSEA_ANALYSISFORECAST_WAV_006_017'?[6,20]:[];
+  const hours=(configured||fallback).filter(h=>Number.isInteger(h)&&h>=0&&h<24).sort((a,b)=>a-b);
+  const today=new Date(now);
+  for (let day=0;day<2;day++) {
+    for (const hour of hours) {
+      const time=Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()+day,hour);
+      if (time>now) return new Date(time).toISOString();
+    }
+  }
+  return null;
+}
+
+function noticeWaveSource(location=null) {
+  const sources=location?[location.source||{}]:Object.values(bulletin.locations||{}).map(loc=>loc.source||{});
+  const reference=sources.map(src=>src.forecast_reference_time).filter(value=>Number.isFinite(Date.parse(value)));
+  if (reference.length===sources.length && reference.length && new Set(reference).size===1) return {kind:'cycle',time:reference[0]};
+  return reference.length===sources.length && reference.length?{kind:'mixed'}:{kind:'unknown'};
+}
+
+function setNotice(extra='',location=null,now=Date.now()) {
   const demo = bulletin.mode === 'demo';
-  const age = (Date.now()-new Date(bulletin.generated_at))/hourMs;
+  const age = (now-new Date(bulletin.generated_at))/hourMs;
   $('notice').className = `notice${demo ? ' demo' : ''}`;
-  const message = demo ? '<strong>MODALITÀ DIMOSTRATIVA.</strong> Onde e livello del mare sintetici: questi grafici non sono previsioni meteo-marine.' : `<strong>Dati Copernicus Marine.</strong> Elaborazione del ${esc(local(bulletin.generated_at))} (ora italiana).`;
+  const source=noticeWaveSource(location);
+  const next=nextWavePublication(now);
+  const sourceText=source.kind==='cycle'?`Corsa del modello Copernicus del <strong>${esc(noticeDate(source.time))}</strong>`:source.kind==='mixed'?'Corse del modello Copernicus diverse: consultare la singola località':'Corsa del modello Copernicus non disponibile in questo bollettino';
+  const message=demo?`<strong>Modalità dimostrativa.</strong> Elaborazione del ${esc(noticeDate(bulletin.generated_at))}. Onde e livello del mare sintetici.`:`Elaborazione del <strong>${esc(noticeDate(bulletin.generated_at))}</strong>. ${sourceText}.${next?` Prossima uscita prevista: <strong>${esc(noticeDate(next))}</strong> (ora italiana).`:' Orari italiani.'}`;
   $('notice').innerHTML = message + (age > 18 ? ' <strong>Aggiornamento in ritardo: il bollettino ha più di 18 ore.</strong>' : '') + (extra ? ' '+esc(extra) : '');
 }
 
@@ -238,7 +282,7 @@ function renderCharts(location, rows) {
     line('twl_mean_m','Media degli scenari','#194e4c',2.5)
   ];
   location.thresholds.forEach((t,i)=>traces.push({x,y:rows.map(()=>t.elevation_m),name:assetName(t),showlegend:false,mode:'lines',line:{color:thresholdColors[i%thresholdColors.length],width:1,dash:'dash'},hovertemplate:`${esc(assetName(t))}: ${num(t.elevation_m)} m<extra></extra>`}));
-  const layout = chartLayout('Livello totale [m; riferimento provvisorio]',x);
+  const layout = chartLayout(`Livello totale [m; ${seaLevelReference(location).axis}]`,x);
   layout.legend.font.size=9;
   Plotly.react('twl-chart',traces,layout,plotOptions);
   const waveLayout=chartLayout('Hs [m]',x);
@@ -254,7 +298,7 @@ function renderCharts(location, rows) {
     }
   }
   Plotly.react('wave-chart',waveTraces,waveLayout,plotOptions);
-  const seaLayout=chartLayout('Livello marino [m sul riferimento medio]',x,260);
+  const seaLayout=chartLayout(`Livello del mare [m; ${seaLevelReference(location).axis}]`,x,260);
   Plotly.react('sealevel-chart',[{x,text,y:rows.map(r=>r.water_level_m),name:'Livello del mare',mode:'lines',line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra></extra>'}],seaLayout,plotOptions);
 }
 
@@ -324,14 +368,17 @@ function renderDetail(slug) {
   $('location-title').textContent=location.name;
   $('area').textContent=location.area;
   $('water-level-title').textContent=bulletin.mode==='demo'?'Livello marino dimostrativo':'Onde + livello marino Copernicus';
-  $('water-level-note').textContent=bulletin.mode==='demo'?'Onde e livello marino sono sintetici nell’anteprima. La previsione reale userà il livello Copernicus con marea inclusa; il riferimento delle quote resta da validare.':bulletin.water_level.description;
-  $('sealevel-caption').textContent=bulletin.mode==='demo'?'Esempio sintetico del contributo del livello marino, sommato al runup. Non è una previsione di marea.':'Livello marino Copernicus (zos), con marea del modello, riferito alla superficie media fissa e alla correzione locale configurata. Non viene sottratta la media dei giorni di previsione.';
+  const reference=seaLevelReference(location);
+  $('water-level-note').textContent=reference.caption;
+  $('twl-reference-label').textContent=`metri · zero: ${reference.label}`;
+  $('sealevel-caption').textContent=reference.caption;
+  $('reference-description').textContent=reference.detail;
   $('download').href=location.csv;
   const valid=rows.filter(r=>Number.isFinite(r.twl_max_m));
   const futureEnd=Math.floor(Date.now()/hourMs)*hourMs + bulletin.display_hours*hourMs;
   const insufficient = new Date(location.valid_to).getTime()<futureEnd;
   const invalid=rows.filter(r=>!r.n_estimates).length;
-  setNotice(!rows.length ? 'Bollettino scaduto: nessun campione futuro disponibile. È necessario un aggiornamento.' : `${insufficient?'Copertura parziale: non sono disponibili tutte le prossime 96 ore. ':''}${invalid?`${invalid} ore senza risultati validi dei modelli.`:''}`);
+  setNotice(!rows.length ? 'Bollettino scaduto: nessun campione futuro disponibile. È necessario un aggiornamento.' : `${insufficient?'Copertura parziale: non sono disponibili tutte le prossime 96 ore. ':''}${invalid?`${invalid} ore senza risultati validi dei modelli.`:''}`,location);
   $('period').textContent=rows.length ? `${local(rows[0].time)} — ${local(rows[rows.length-1].time)} · ${rows.length} campioni orari · ora italiana` : 'Nessuna previsione futura disponibile';
   const peak=valid.length ? valid.reduce((best,row)=>row.twl_max_m>best.twl_max_m?row:best) : null;
   const hs=rows.length ? Math.max(...rows.map(r=>r.hs_m)) : null;
@@ -345,7 +392,7 @@ function renderDetail(slug) {
   renderClimate(location,rows);
   renderExtremes(location,rows);
   renderThresholds(location,rows);
-  $('parameters').innerHTML=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>SSH meno superficie media fissa del modello, più correzione locale. Raccordo con il livello medio mare locale da validare.</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti gli scenari sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
+  $('parameters').innerHTML=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti gli scenari sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
   renderCharts(location,rows);
 }
 
