@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "units": "m",
+  "comparison_variable": "total_water_level",
+  "vertical_reference": {
+    "id": "mean_sea_level",
+    "description": "Quote preliminarmente riferite al livello medio mare. Livello Copernicus raccordato alla superficie media fissa del modello; scarto locale da validare.",
+    "status": "provisional_assumption",
+    "water_level_alignment": "model_mdt_provisional"
+  },
+  "thresholds_status": "illustrative_not_site_validated",
+  "summer_season": {
+    "start_month_day": null,
+    "end_month_day": null,
+    "status": "to_be_defined"
+  },
+  "locations": {
+    "venezia": {
+      "name": "Venezia",
+      "thresholds": [
+        {
+          "id": "prima_fila_ombrelloni",
+          "elevation_m": 0.7,
+          "description": "Inondazione della prima fila di ombrelloni",
+          "season": "summer",
+          "short_label": "Prima fila di ombrelloni"
+        },
+        {
+          "id": "strutture_turistiche_stagionali",
+          "elevation_m": 0.9,
+          "description": "Inondazione diffusa delle strutture turistiche stagionali",
+          "season": "summer",
+          "short_label": "Strutture turistiche stagionali"
+        },
+        {
+          "id": "strutture_turistiche_fisse",
+          "elevation_m": 1.1,
+          "description": "Inondazione delle strutture turistiche fisse, ad esempio chioschi",
+          "season": "all_year",
+          "short_label": "Chioschi e strutture fisse"
+        },
+        {
+          "id": "infrastrutture_fisse",
+          "elevation_m": 1.4,
+          "description": "Inondazione delle infrastrutture fisse, ad esempio la passeggiata a mare",
+          "season": "all_year",
+          "short_label": "Passeggiata a mare"
+        }
+      ]
+    },
+    "borghetto-santo-spirito": {
+      "name": "Borghetto Santo Spirito (SV)",
+      "thresholds": [
+        {
+          "id": "prima_fila_ombrelloni",
+          "elevation_m": 0.7,
+          "description": "Inondazione della prima fila di ombrelloni",
+          "season": "summer",
+          "short_label": "Prima fila di ombrelloni"
+        },
+        {
+          "id": "strutture_turistiche_stagionali",
+          "elevation_m": 0.9,
+          "description": "Inondazione diffusa delle strutture turistiche stagionali",
+          "season": "summer",
+          "short_label": "Strutture turistiche stagionali"
+        },
+        {
+          "id": "strutture_turistiche_fisse",
+          "elevation_m": 1.1,
+          "description": "Inondazione delle strutture turistiche fisse, ad esempio chioschi",
+          "season": "all_year",
+          "short_label": "Chioschi e strutture fisse"
+        },
+        {
+          "id": "infrastrutture_fisse",
+          "elevation_m": 1.4,
+          "description": "Inondazione delle infrastrutture fisse, ad esempio la passeggiata a mare",
+          "season": "all_year",
+          "short_label": "Passeggiata a mare"
+        }
+      ]
+    }
+  }
+}

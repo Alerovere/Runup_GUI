@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Previsioni locali di runup e livello totale dell'acqua per Venezia e Borghetto Santo Spirito. Prototipo scientifico con dati Copernicus Marine.">
+  <title>Onde a riva · Previsioni locali</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Vai al contenuto</a>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Onde a riva, selezione località"><img src="icon.svg" alt="" width="36" height="36"><span>onde<span class="brand-light">a</span>riva</span></a>
+    <div class="top-meta"><span class="dot"></span> Mediterraneo <span class="divider">/</span> Prototipo scientifico</div>
+  </header>
+  <main id="main">
+    <div id="notice" class="notice" role="status">Caricamento del bollettino…</div>
+    <section id="home" hidden>
+      <div class="hero">
+        <p class="eyebrow">DAL MARE ALLA SPIAGGIA</p>
+        <h1>Le onde arrivano.<br><span>Guardiamo fin dove.</span></h1>
+        <p class="intro">Runup, livello totale dell’acqua e soglie di impatto.<br>Esplora le prossime 96 ore lungo le nostre coste.</p>
+        <div class="hero-tags"><span>Copernicus Marine</span><span>4 giorni</span><span>Modelli a confronto</span></div>
+      </div>
+      <div class="section-heading"><div><p class="eyebrow">DUE COSTE, UN SOLO SGUARDO</p><h2>Scegli una località</h2></div><span class="muted">Seleziona un’area sulla mappa o una scheda</span></div>
+      <div class="explore-grid">
+        <div id="map" aria-label="Mappa delle località costiere"><p class="map-placeholder">Le località sono accessibili anche dalle schede.</p></div>
+        <div id="location-cards" class="location-cards"></div>
+      </div>
+      <div class="method-strip"><span class="section-number">01—04</span><div><h3>Una previsione, più scenari</h3><p>Ogni ora viene analizzata con diversi modelli e pendenze di spiaggia. L’intervallo mostra la dispersione dei risultati, senza attribuirgli una probabilità calibrata.</p></div><a href="#method">Come leggere i dati <span aria-hidden="true">↗</span></a></div>
+    </section>
+    <section id="detail" hidden>
+      <a href="./" id="back" class="back">← Tutte le località</a>
+      <div class="detail-heading"><div><p id="area" class="eyebrow"></p><h1 id="location-title"></h1><p id="period" class="muted"></p></div><a id="download" class="button" download>Scarica scenari CSV ↓</a></div>
+      <div class="assumption"><strong id="water-level-title">Onde e livello del mare</strong><span id="water-level-note"></span></div>
+      <div id="metrics" class="metrics"></div>
+      <section class="panel outlook-panel"><p class="eyebrow">IN BREVE</p><h2>Cosa indicano i prossimi giorni</h2><div id="outlook"></div></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">L’ACQUA A RIVA</p><h2>Livello totale dell’acqua</h2></div><span class="small muted">metri sul livello medio mare assunto</span></div><p class="chart-caption">La linea verde mostra il livello medio stimato; la fascia raccoglie i diversi scenari di onde e pendenza. Una linea di soglia superata indica che l’acqua può raggiungere la quota della struttura associata. Le quote sono ancora illustrative.</p><div id="threshold-key" class="threshold-key"></div><div id="twl-chart" class="chart" aria-label="Previsione del livello totale dell’acqua"></div></section>
+      <div class="section-heading"><div><p class="eyebrow">UNO SGUARDO AI PROSSIMI GIORNI</p><h2>Cosa aspettarsi giorno per giorno</h2></div></div>
+      <div id="daily" class="daily-grid"></div>
+      <section class="panel"><div class="panel-heading"><div><p class="eyebrow">LE QUOTE CHE CONTANO</p><h2>Quali strutture possono essere interessate</h2></div><span class="tag">Valori illustrativi</span></div><p class="chart-caption">Ogni struttura è associata a una quota: se uno o più scenari la superano, l’acqua potrebbe raggiungere quel livello. La concordanza degli scenari aiuta a leggere l’incertezza; non misura la probabilità di inondazione. La diffusione dell’acqua sulla spiaggia non è simulata.</p><div id="thresholds"></div><div id="events"></div></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">IL MARE AL LARGO</p><h2>Onde previste</h2></div><span class="small muted">Hs · periodo di picco Tp · direzione di provenienza</span></div><div id="wave-chart" class="chart" aria-label="Altezza, periodo e direzione delle onde offshore"></div><div id="climate-summary" class="climate-summary"></div></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">IL MARE CHE SALE E SCENDE</p><h2>Contributo del livello marino</h2></div></div><p id="sealevel-caption" class="chart-caption"></p><div id="sealevel-chart" class="chart" aria-label="Contributo del livello marino al TWL"></div></section>
+      <details class="panel"><summary>Parametri della località e copertura dei modelli</summary><div id="parameters"></div></details>
+    </section>
+    <section id="method" class="methodology">
+      <p class="eyebrow">LEGGERE LA COSTA, CONOSCERE I LIMITI</p><h2>Dal dato offshore al runup</h2>
+      <div class="method-grid"><div><h3>Onde e modelli</h3><p>Hs, Tp e direzione sono estratti in un punto offshore. I modelli empirici del progetto sono applicati a ogni pendenza configurata. Il runup comprende il contributo delle onde; il TWL aggiunge il livello marino.</p></div><div><h3>Questa prima versione</h3><p>Il TWL somma runup e livello marino Copernicus, che include la marea nel modello. La quota media di riferimento è fissa, senza rimuovere la media dei giorni di previsione. Il raccordo con il livello medio mare locale, le pendenze, i punti e le soglie sono ancora da validare. Non viene simulata la propagazione delle onde verso riva né l’estensione dell’inondazione.</p></div><div><h3>Stagioni e orari</h3><p>Le prime due soglie riguardano le strutture stagionali. Finché le date estive non sono definite, la loro applicabilità è indicata come da definire. Orari mostrati in Italia (Europe/Rome); file CSV in UTC.</p></div></div>
+      <details><summary>Fonti, modelli e riferimenti scientifici</summary><div id="references"><p>Previsioni reali: <a href="https://data.marine.copernicus.eu/product/MEDSEA_ANALYSISFORECAST_WAV_006_017/description" target="_blank" rel="noopener">Mediterranean Sea Waves Analysis and Forecast</a>, DOI <a href="https://doi.org/10.48670/mds-00373" target="_blank" rel="noopener">10.48670/mds-00373</a>. Generated using E.U. Copernicus Marine Service Information.</p><p>Livello marino: <a href="https://data.marine.copernicus.eu/product/MEDSEA_ANALYSISFORECAST_PHY_006_013/description" target="_blank" rel="noopener">Mediterranean Sea Physics Analysis and Forecast</a>, DOI <a href="https://doi.org/10.48670/mds-00359">10.48670/mds-00359</a>. Climatologia, quando disponibile: <a href="https://doi.org/10.24381/1cf1ad76">ERA5 hourly time-series</a>. Percentili e massimi osservati descrivono la serie storica; non sono periodi di ritorno.</p><p>Calcoli basati su <a href="https://github.com/chrisleaman/py-wave-runup" target="_blank" rel="noopener">py-wave-runup</a>. Il modello Passarella restituisce l’escursione di swash, mantenuta come nel confronto originale del progetto; le uscite dei modelli non sono tutte equivalenti a R₂.</p><div id="model-references"></div></div></details>
+    </section>
+  </main>
+  <footer><a class="footer-brand" href="./">ondeariva</a><span>Esplorazione scientifica · Prototipo con parametri provvisori</span><span id="updated"></span></footer>
+  <noscript>Attiva JavaScript per consultare località e grafici.</noscript>
+</body>
+</html>

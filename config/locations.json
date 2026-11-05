@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "forecast_hours": 96,
+  "download_hours": 120,
+  "dataset_id": "cmems_mod_med_wav_anfc_4.2km_PT1H-i",
+  "water_level": {
+    "mode": "copernicus_ssh",
+    "dataset_id": "cmems_mod_med_phy-ssh_anfc_4.2km-2D_PT1H-m",
+    "static_dataset_id": "cmems_mod_med_phy_anfc_4.2km_static",
+    "description": "Livello marino Copernicus, con marea inclusa, più runup delle onde. Quote rapportate alla superficie media del modello; raccordo locale da validare."
+  },
+  "locations": {
+    "venezia": {
+      "name": "Venezia",
+      "area": "Lido di Venezia · Adriatico settentrionale",
+      "map_point": {
+        "latitude": 45.4,
+        "longitude": 12.38
+      },
+      "wave_point": {
+        "latitude": 45.35,
+        "longitude": 12.5
+      },
+      "slopes": [
+        0.03,
+        0.05,
+        0.07
+      ],
+      "roughness_m": 0.001,
+      "parameters_status": "provisional",
+      "notes": "Punto offshore, tratto rappresentato e pendenze sono illustrativi e da validare. Nessuna trasformazione delle onde verso riva. Tutte le direzioni sono incluse.",
+      "datum_offset_m": 0.0,
+      "vertical_reference_status": "provisional",
+      "climatology_file": null
+    },
+    "borghetto-santo-spirito": {
+      "name": "Borghetto Santo Spirito (SV)",
+      "area": "Riviera di Ponente · Mar Ligure",
+      "map_point": {
+        "latitude": 44.109,
+        "longitude": 8.242
+      },
+      "wave_point": {
+        "latitude": 44.046833,
+        "longitude": 8.389593
+      },
+      "slopes": [
+        0.03,
+        0.05,
+        0.07
+      ],
+      "roughness_m": 0.001,
+      "parameters_status": "provisional",
+      "notes": "Punto offshore e pendenze sono illustrativi e da validare. Nessuna trasformazione delle onde verso riva. Tutte le direzioni sono incluse.",
+      "datum_offset_m": 0.0,
+      "vertical_reference_status": "provisional",
+      "climatology_file": null
+    }
+  }
+}
