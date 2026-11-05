@@ -62,7 +62,8 @@ def fetch_sealevel(location, settings, start, hours):
         # The static MDT is sampled in the exact cell selected for SSH.
         static_common = dict(common, minimum_latitude=selected['latitude'], maximum_latitude=selected['latitude'],
                              minimum_longitude=selected['longitude'], maximum_longitude=selected['longitude'])
-        static = copernicusmarine.open_dataset(dataset_id=settings['static_dataset_id'], variables=['mdt'], **static_common)
+        static = copernicusmarine.open_dataset(dataset_id=settings['static_dataset_id'],
+            dataset_part='mdt', variables=['mdt'], **static_common)
         try:
             if static['mdt'].attrs.get('units','m') not in ('m','meter','metre'):
                 raise ValueError('La superficie media deve essere espressa in metri.')

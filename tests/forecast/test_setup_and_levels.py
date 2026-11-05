@@ -44,6 +44,8 @@ class SeaLevelTests(unittest.TestCase):
         self.assertEqual(reference,.2)
         self.assertEqual(request.call_args_list[0].kwargs['variables'],['zos'])
         self.assertEqual(request.call_args_list[1].kwargs['variables'],['mdt'])
+        # Without an explicit part the Toolbox selects bathymetry, which has no MDT.
+        self.assertEqual(request.call_args_list[1].kwargs['dataset_part'],'mdt')
         self.assertEqual(metadata['reference_source'],'static::mdt')
 
 
