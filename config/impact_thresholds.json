@@ -54,30 +54,30 @@
         {
           "id": "prima_fila_ombrelloni",
           "elevation_m": 0.7,
-          "description": "Inondazione della prima fila di ombrelloni",
-          "season": "summer",
-          "short_label": "Prima fila di ombrelloni"
+          "short_label": "Prima fila di ombrelloni",
+          "description": "Possibile interessamento: prima fila di ombrelloni",
+          "season": "summer"
         },
         {
           "id": "strutture_turistiche_stagionali",
           "elevation_m": 0.9,
-          "description": "Inondazione diffusa delle strutture turistiche stagionali",
-          "season": "summer",
-          "short_label": "Strutture turistiche stagionali"
+          "short_label": "Strutture turistiche stagionali",
+          "description": "Possibile interessamento: strutture turistiche stagionali",
+          "season": "summer"
         },
         {
           "id": "strutture_turistiche_fisse",
           "elevation_m": 1.1,
-          "description": "Inondazione delle strutture turistiche fisse, ad esempio chioschi",
-          "season": "all_year",
-          "short_label": "Chioschi e strutture fisse"
+          "short_label": "Chioschi e strutture fisse",
+          "description": "Possibile interessamento: chioschi e strutture fisse",
+          "season": "all_year"
         },
         {
           "id": "infrastrutture_fisse",
           "elevation_m": 1.4,
-          "description": "Inondazione delle infrastrutture fisse, ad esempio la passeggiata a mare",
-          "season": "all_year",
-          "short_label": "Passeggiata a mare"
+          "short_label": "Passeggiata a mare",
+          "description": "Possibile interessamento: passeggiata a mare",
+          "season": "all_year"
         }
       ]
     }
