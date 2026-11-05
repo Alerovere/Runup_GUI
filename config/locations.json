@@ -67,6 +67,15 @@
       ],
       "roughness_m": 0.001,
       "parameters_status": "provisional",
+      "wave_exposure": {
+        "sectors_deg": [
+          [
+            112.25,
+            247.25
+          ]
+        ],
+        "note": ""
+      },
       "datum_offset_m": 0.0,
       "vertical_reference_status": "provisional",
       "climatology_file": "config/climatology/borghetto-santo-spirito.json",
@@ -476,7 +485,7 @@
           "error": ""
         }
       ],
-      "notes": "Parametri di studio; quote e raccordo verticale da validare."
+      "notes": "Quote indicative, non ancora validate sul campo"
     }
   }
 }
