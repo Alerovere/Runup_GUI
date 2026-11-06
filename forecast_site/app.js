@@ -44,22 +44,6 @@ function isExposed(degrees, exposure) {
   return sectors.some(([start,end])=>end-start===360 || ((angle-start+360)%360)<=(end-start+360)%360);
 }
 
-function exposureAtPeak(location, rows) {
-  const peak=wavePeak(rows);
-  if (!peak || peak.hs_m<=0) return {peak,status:null,text:'Direzione non valutabile nelle ore con altezza delle onde nulla o mancante.'};
-  const status=isExposed(peak.direction_deg,location.wave_exposure);
-  const prefix=`Al picco delle onde al largo: ${directionLabel(peak.direction_deg)}.`;
-  return {peak,status,text:prefix+' '+(status===false?'Provenienza fuori dai settori di esposizione configurati: il risultato a riva richiede cautela.':status===true?'Provenienza compresa nei settori di esposizione configurati.':'Esposizione della spiaggia o direzione non ancora definita.')};
-}
-
-function renderExposure(location, rows) {
-  const result=exposureAtPeak(location,rows);
-  const available=rows.filter(row=>row.hs_m>0 && Number.isFinite(row.direction_deg));
-  const outside=available.filter(row=>isExposed(row.direction_deg,location.wave_exposure)===false).length;
-  const configured=!!location.wave_exposure?.sectors_deg?.length;
-  $('direction-summary').innerHTML=`<h3>Le onde al largo raggiungono questa spiaggia?</h3><p>${esc(result.text)}</p>${!configured?'<p>Per questa località i settori di esposizione della spiaggia non sono ancora definiti. Onde alte al largo possono avere effetti diversi su una spiaggia esposta o riparata.</p>':''}${outside?`<p>La provenienza è fuori settore in <strong>${outside} ${outside===1?'ora':'ore'} su ${available.length}</strong> con altezza e direzione disponibili.</p>`:''}${location.wave_exposure?.note?`<p>${esc(location.wave_exposure.note)}</p>`:''}<p class="small muted">Runup e TWL sono calcolati senza correzioni per la direzione. I settori sono un’indicazione di esposizione: non simulano rifrazione, diffrazione o riparo e non garantiscono l’assenza di onde sulla spiaggia.</p>`;
-}
-
 function climateFrequency(percentile, stepHours) {
   const tail=Math.max(0,Math.min(100,100-percentile));
   const unit=stepHours===1?'ore':'campioni';
@@ -123,8 +107,9 @@ function setNotice(extra='',location=null,now=Date.now()) {
 function locationCards() {
   $('location-cards').innerHTML = Object.entries(bulletin.locations).map(([slug, location], index) => {
     const rows = windowRows(location);
-    const maximum = rows.length ? Math.max(...rows.filter(r => Number.isFinite(r.twl_max_m)).map(r => r.twl_max_m)) : NaN;
-    return `<a class="location-card" href="?localita=${encodeURIComponent(slug)}"><div><div class="card-top"><span class="card-index">LOCALITÀ / 0${index+1}</span><span class="card-arrow" aria-hidden="true">↗</span></div><h3>${esc(location.name)}</h3><p>${esc(location.area)}</p></div><div class="card-bottom"><span>${rows.length ? `Massimo scenari: <strong>${num(maximum)} m</strong>` : 'Nessun dato futuro disponibile'}</span><span>Esplora le previsioni →</span></div></a>`;
+    const valid=rows.filter(r=>hasFilteredStatistics(r) && Number.isFinite(r.twl_p95_m));
+    const maximum=valid.length?Math.max(...valid.map(r=>r.twl_p95_m)):NaN;
+    return `<a class="location-card" href="?localita=${encodeURIComponent(slug)}"><div><div class="card-top"><span class="card-index">LOCALITÀ / 0${index+1}</span><span class="card-arrow" aria-hidden="true">↗</span></div><h3>${esc(location.name)}</h3><p>${esc(location.area)}</p></div><div class="card-bottom"><span>${valid.length ? `Fascia alta filtrata (P95): <strong>${num(maximum)} m</strong>` : rows.length?'Statistiche filtrate da aggiornare':'Nessun dato futuro disponibile'}</span><span>Esplora le previsioni →</span></div></a>`;
   }).join('');
 }
 
@@ -163,98 +148,146 @@ function groupsByDay(rows) {
   return [...groups.values()];
 }
 
-function thresholdState(threshold, rows) {
-  const samples = rows.map(row => ({time:row.time, ...row.thresholds.find(t => t.id===threshold.id)}));
-  const available = samples.filter(s => s.active!==false && Number.isFinite(s.fraction));
-  const max = available.length ? Math.max(...available.map(s => s.fraction)) : null;
-  let season = 'Tutto l’anno';
-  if (threshold.season==='summer') {
-    season = samples.some(s => s.active===null) ? 'Stagione estiva: date da definire · confronto indicativo' : samples.some(s=>s.active===true) ? 'Stagione estiva: attiva nel periodo' : 'Fuori stagione · soglia non applicata';
-  }
+const impactLevels=[
+  {key:'white',name:'Bianco',label:'P95 non supera la quota',title:'Nelle ore frontali, la fascia alta non supera la quota'},
+  {key:'yellow',name:'Giallo',label:'P95 supera la quota',title:'Nelle ore frontali, la fascia alta supera la quota'},
+  {key:'orange',name:'Arancione',label:'Anche P75 supera la quota',title:'Nelle ore frontali, anche P75 supera la quota'}
+];
+
+function percentage(fraction) {
+  if (!Number.isFinite(fraction)) return '—';
+  if (fraction>0 && fraction<.001) return '<0,1%';
+  if (fraction<1 && fraction>.999) return '>99,9%';
+  const value=fraction*100;
+  return `${num(value,Math.abs(value-Math.round(value))<1e-8?0:1)}%`;
+}
+
+function timeOnly(value) {
+  return new Date(value).toLocaleTimeString('it-IT',{timeZone:'Europe/Rome',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
+}
+
+function hasFilteredStatistics(row) {
+  return row.statistics_method==='sigma_clip_3_population_v1';
+}
+
+
+function forecastExposure(location,row) {
+  return row.hs_m>0?isExposed(row.direction_deg,location?.wave_exposure):null;
+}
+
+
+function thresholdState(threshold,rows,location) {
+  const original=rows.map(row=>({time:row.time,...row.thresholds?.find(t=>t.id===threshold.id)}));
+  const samples=original.map((sample,i)=>({...sample,
+    active:sample.active===false || !hasFilteredStatistics(rows[i]) || forecastExposure(location,rows[i])!==true?false:sample.active,
+    above_p95:Number.isFinite(rows[i].twl_p95_m) && rows[i].twl_p95_m>threshold.elevation_m}));
+  const available=samples.filter(s=>s.active!==false && Number.isFinite(s.fraction));
+  const max=available.length?Math.max(...available.map(s=>s.fraction)):null;
+  const season=threshold.season!=='summer'?'Tutto l’anno':original.some(s=>s.active===null)?'Calendario estivo da definire · confronto indicativo':original.some(s=>s.active===true)?'Struttura stagionale · nel periodo estivo':'Fuori stagione · confronto non applicato';
   return {samples,available,max,season};
 }
 
-function assetName(threshold) {
-  return threshold.short_label || threshold.description;
+function assetName(threshold) {return threshold.short_label||threshold.description;}
+
+function impactIcon(id) {
+  const shapes={
+    prima_fila_ombrelloni:'<path d="M3 14a11 11 0 0 1 22 0H3Zm11-11v22c0 3 4 3 4 0M6 14c0-7 4-11 8-11s8 4 8 11M4 29h24"/>',
+    strutture_turistiche_stagionali:'<path d="m3 14 8-8 8 8M5 13v15h12V13M9 28v-8h4v8M19 12a5 5 0 0 1 10 0H19Zm5-5v21M2 29h28"/>',
+    strutture_turistiche_fisse:'<path d="m3 13 4-7h18l4 7H3Zm3 0v16h20V13M6 19h20M10 19v10M22 19v10M11 6V3h10v3M3 29h26"/>',
+    infrastrutture_fisse:'<path d="M3 7h26M5 7v13M13 7v13M21 7v13M29 7v13M3 20h26M3 25c4-4 6 4 10 0s6 4 10 0 6 4 8 0M3 30h26"/>'
+  };
+  return `<svg class="asset-icon" viewBox="0 0 32 34" width="32" height="34" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes[id]||shapes.strutture_turistiche_fisse}</svg>`;
 }
 
-function assessImpact(location, rows) {
-  const valid=rows.filter(row=>row.n_estimates>0);
-  const active=[];
-  const seasonal=[];
-  for (const threshold of location.thresholds) {
-    const samples=rows.map(row=>({time:row.time,n:row.n_estimates,...row.thresholds.find(t=>t.id===threshold.id)}));
-    const known=samples.filter(s=>s.active===true && Number.isFinite(s.fraction));
-    const peak=known.length?known.reduce((best,s)=>s.fraction>best.fraction?s:best):null;
-    if (peak && peak.fraction>0) active.push({threshold,peak,samples:known});
-    if (samples.some(s=>s.active===null && s.fraction>0)) seasonal.push(threshold);
-  }
-  active.sort((a,b)=>a.threshold.elevation_m-b.threshold.elevation_m);
-  const mostShared=active.filter(s=>s.peak.fraction>=.5).at(-1);
-  const upper=active.at(-1);
-  let title='Strutture fisse: quote non raggiunte negli scenari disponibili';
-  let explanation='I livelli calcolati restano sotto le quote configurate per chioschi e passeggiata.';
-  if (!valid.length) {
-    title='Dati insufficienti per descrivere gli impatti';
-    explanation='Nessuno scenario valido nelle ore disponibili.';
-  } else if (mostShared) {
-    title=`Possibile interessamento: ${assetName(mostShared.threshold).toLowerCase()}`;
-    explanation=`La quota di ${num(mostShared.threshold.elevation_m)} m è superata da almeno metà degli scenari in una o più ore.`;
-  } else if (upper) {
-    title=`Alcuni scenari raggiungono la quota associata a ${assetName(upper.threshold).toLowerCase()}`;
-    explanation='Il superamento compare in meno della metà degli scenari: il risultato è poco condiviso.';
-  }
-  const focus=mostShared||upper;
-  const hours=focus?focus.samples.filter(s=>s.fraction>0):[];
-  const upperNote=upper && mostShared && upper.threshold.id!==mostShared.threshold.id
-    ? `Negli scenari superiori può essere raggiunta anche la quota associata a ${assetName(upper.threshold).toLowerCase()} (${num(upper.threshold.elevation_m)} m).` : '';
-  return {title,explanation,focus,hours,upperNote,seasonal,validCount:valid.length};
+function referenceThreshold(location) {return location.thresholds.find(t=>t.id==='strutture_turistiche_fisse')||null;}
+
+function rowImpact(threshold,row,location) {
+  const sample=row.thresholds?.find(t=>t.id===threshold?.id);
+  const result={rank:null,row,fraction:sample?.fraction??null};
+  if (!threshold || !sample || !(row.n_estimates>0) || !Number.isFinite(sample.fraction) || ![row.twl_p75_m,row.twl_p95_m].every(Number.isFinite)) return {...result,kind:'missing'};
+  if (!hasFilteredStatistics(row)) return {...result,kind:'unfiltered'};
+  if (sample.active===false) return {...result,kind:'inactive'};
+  const exposure=location?forecastExposure(location,row):true;
+  if (exposure===false) return {...result,kind:'nonfrontal'};
+  if (exposure===null) return {...result,kind:'unknown-direction'};
+  return {...result,kind:'numeric',rank:row.twl_p75_m>threshold.elevation_m?2:row.twl_p95_m>threshold.elevation_m?1:0};
 }
 
-function renderDaily(location, rows) {
-  $('daily').innerHTML=groupsByDay(rows).map(group=>{
-    const result=assessImpact(location,group);
-    const valid=group.filter(r=>Number.isFinite(r.twl_max_m));
-    const maximum=valid.length?Math.max(...valid.map(r=>r.twl_max_m)):NaN;
-    const peak=valid.length?valid.reduce((best,r)=>r.twl_max_m>best.twl_max_m?r:best):null;
-    const date=new Date(group[0].time).toLocaleDateString('it-IT',{timeZone:'Europe/Rome',weekday:'long',day:'numeric',month:'long'});
-    const intervals=result.focus?exceedanceEvents(result.focus.samples):[];
-    const window=intervals.length?intervals.map(event=>`${local(event.start,{day:undefined,month:undefined})}–${local(event.end,{day:undefined,month:undefined})}`).join(' · '):'Nessuna fascia di superamento delle soglie attive';
-    return `<article class="day-card impact-day"><h3>${esc(date)}</h3><div class="day-impact">${esc(result.title)}</div><p>${esc(result.explanation)}</p><div class="day-time">${esc(window)}</div><p class="day-range">Livello massimo degli scenari: <strong>${num(maximum)} m</strong>${peak?` · picco alle ${local(peak.time,{day:undefined,month:undefined})}`:''}</p>${result.upperNote?`<p>${esc(result.upperNote)}</p>`:''}<p class="direction-day">${esc(exposureAtPeak(location,group).text)}</p>${result.seasonal.length?'<p class="season-note">Ombrelloni / strutture stagionali: calendario da definire.</p>':''}<p>${group.length} ore disponibili${group.length<24?' · giornata parziale':''}${valid.length<group.length?' · alcuni risultati mancanti':''}</p></article>`;
-  }).join('');
-  const outlook=assessImpact(location,rows);
-  $('outlook').innerHTML=`<h3>${esc(outlook.title)}</h3><p>${esc(outlook.explanation)}</p>${outlook.upperNote?`<p>${esc(outlook.upperNote)}</p>`:''}<p class="small muted">Le associazioni fra quote e strutture sono esempi da verificare sul posto. ${outlook.seasonal.length?'Le soglie estive sono mostrate a titolo indicativo perché il calendario non è ancora definito.':''}</p>`;
+function assessTrend(location,rows,threshold=referenceThreshold(location)) {
+  const results=rows.map(row=>rowImpact(threshold,row,location));
+  const available=results.filter(r=>r.kind==='numeric');
+  const peak=available.reduce((best,r)=>!best || r.rank>best.rank || (r.rank===best.rank && (r.fraction>best.fraction || (r.fraction===best.fraction && r.row.twl_p95_m>best.row.twl_p95_m)))?r:best,null);
+  const nonfrontalCount=results.filter(r=>r.kind==='nonfrontal').length;
+  const unknownCount=results.filter(r=>['unknown-direction','unfiltered'].includes(r.kind)).length;
+  const gray=!peak && nonfrontalCount>0 && !unknownCount;
+  const level=peak?impactLevels[peak.rank]:gray?{key:'gray',name:'Grigio',title:'Onde non frontali: categoria non applicata'}:null;
+  return {threshold,peak,level,key:level?.key||'unavailable',title:level?.title||'Dati o direzione insufficienti per assegnare una categoria',nonfrontalCount,
+    missingCount:results.filter(r=>!['numeric','nonfrontal','inactive'].includes(r.kind)).length};
+}
+
+function exposureAtPeak(location,rows) {
+  const peak=wavePeak(rows);
+  if (!peak || peak.hs_m<=0) return {peak,status:null,text:'La direzione non è valutabile: altezza delle onde nulla o dati mancanti.'};
+  const status=isExposed(peak.direction_deg,location.wave_exposure);
+  return {peak,status,text:`Le onde più alte arrivano da ${directionLabel(peak.direction_deg)}. `+(status===false?'Non arrivano frontalmente verso questa spiaggia: il loro effetto a riva potrebbe essere minore.':status===true?'Arrivano da una direzione rivolta verso questa spiaggia.':'Il confronto con l’orientamento della spiaggia non è ancora disponibile.')};
+}
+
+function directionSummary(location,rows,compact=false) {
+  const result=exposureAtPeak(location,rows);
+  const key=result.status===false?'away':result.status===true?'toward':'unknown';
+  const label=result.status===false?'Onde non frontali':result.status===true?'Onde verso la costa':'Direzione da verificare';
+  const available=rows.filter(r=>r.hs_m>0 && isExposed(r.direction_deg,location.wave_exposure)!==null);
+  const frontal=available.filter(r=>isExposed(r.direction_deg,location.wave_exposure)).length;
+  return `<span class="direction-badge direction-${key}">${esc(label)}</span><p>${esc(result.text)}</p>${!compact && available.length?`<p>Direzione rivolta verso la spiaggia in <strong>${frontal} ${frontal===1?'ora':'ore'} su ${available.length}</strong> con dati disponibili.</p>`:''}${result.status===false?'<p class="small">Questa indicazione non esclude onde sulla spiaggia.</p>':''}`;
+}
+
+function impactLegend() {
+  return `<div class="impact-legend" aria-label="Legenda dei colori della tendenza">${[...impactLevels,{key:'gray',name:'Grigio',label:'Onde non frontali'}].map(l=>`<div class="legend-item impact-${l.key}"><span class="impact-swatch" aria-hidden="true"></span><span><strong>${l.name}</strong>${l.label}</span></div>`).join('')}</div><p class="legend-note">Percentili dopo il filtro ±3σ, riferiti alla quota dei chioschi. La categoria usa soltanto le ore con onde rivolte verso la costa. <a href="metodo.html#colori">Come leggere colori e percentuali ↗</a></p>`;
 }
 
 function exceedanceEvents(samples) {
-  const events = [];
-  let event = null;
+  const events=[];let event=null;
   for (const sample of samples) {
-    const exceeds = sample.active!==false && Number.isFinite(sample.fraction) && sample.fraction>0;
-    if (!exceeds) {event=null; continue;}
-    const time = new Date(sample.time).getTime();
-    if (!event || time-event.lastTime!==hourMs) {
-      event = {start:sample.time,end:sample.time,lastTime:time,peak:sample.fraction};
-      events.push(event);
-    } else {
-      event.end=sample.time; event.lastTime=time; event.peak=Math.max(event.peak,sample.fraction);
-    }
+    if (sample.active===false || !Number.isFinite(sample.fraction) || sample.fraction<=0 || sample.above_p95===false) {event=null;continue;}
+    const time=new Date(sample.time).getTime();
+    if (!event || time-event.lastTime!==hourMs) {event={start:sample.time,end:sample.time,lastTime:time,peak:sample.fraction};events.push(event);}
+    else {event.end=sample.time;event.lastTime=time;event.peak=Math.max(event.peak,sample.fraction);}
   }
   return events;
 }
 
-function renderThresholds(location, rows) {
-  const events = [];
-  $('thresholds').innerHTML = location.thresholds.map(threshold => {
-    const state = thresholdState(threshold,rows);
-    for (const event of exceedanceEvents(state.samples)) events.push({...event,threshold,state});
-    const crossed=state.available.filter(s=>s.fraction>0);
-    const peak=crossed.length?crossed.reduce((best,s)=>s.fraction>best.fraction?s:best):null;
-    const n=peak?rows.find(r=>r.time===peak.time).n_estimates:0;
-    const message=state.max===null?'Confronto non applicabile o dati non disponibili':!crossed.length?'Quota non raggiunta negli scenari disponibili':`L’acqua potrebbe raggiungere questa quota in ${crossed.length} ore del periodo.`;
-    return `<article class="threshold-explained"><div class="threshold-level">${num(threshold.elevation_m)}<span class="small"> m</span></div><div><h3>${esc(assetName(threshold))}</h3><p>${esc(message)}</p><p class="threshold-season">${esc(state.season)}</p>${peak?`<p class="small">Il ${esc(dateInWords(peak.time))}, alle ${esc(local(peak.time,{day:undefined,month:undefined}))}, <strong>${Math.round(peak.fraction*n)} ${Math.round(peak.fraction*n)===1?'scenario':'scenari'} su ${n}</strong> ${Math.round(peak.fraction*n)===1?'supera':'superano'} questa quota. ${state.samples.some(s=>s.active===null)?'Confronto stagionale indicativo.':''}</p>`:''}<details><summary>Come leggere questa soglia</summary><p>Se il livello totale dell’acqua supera ${num(threshold.elevation_m)} m rispetto al riferimento usato, può essere raggiunta la quota associata a ${esc(assetName(threshold).toLowerCase())}. La posizione reale e l’estensione degli allagamenti richiedono quote e profili locali verificati.</p>${state.max!==null?`<p>Ogni scenario combina un modello e una pendenza della spiaggia. Nel momento con più superamenti, il ${num(state.max*100,0)}% dei calcoli supera la quota. Questa percentuale non è una probabilità di allagamento.</p>`:''}</details></div></article>`;
+function eventLabel(event,compact=false) {
+  if (event.start===event.end) return `${compact?'':dateInWords(event.start)+' · '}${timeOnly(event.start)}`;
+  if (italianTime(event.start).slice(0,10)===italianTime(event.end).slice(0,10)) return `${compact?'':dateInWords(event.start)+' · '}${timeOnly(event.start)}–${timeOnly(event.end)}`;
+  return `${dateInWords(event.start)}, ${timeOnly(event.start)} → ${dateInWords(event.end)}, ${timeOnly(event.end)}`;
+}
+
+function modelAgreement(result) {
+  if (result.key==='gray') return 'Il confronto non viene applicato alle ore con onde non frontali. Il livello marino resta da considerare.';
+  if (!result.peak) return 'Il confronto richiede statistiche filtrate e direzioni della costa definite.';
+  return `Risultati filtrati dei modelli sopra quota (ora frontale): <strong>${esc(percentage(result.peak.fraction))}</strong>.<br><span class="agreement-time">${esc(dateInWords(result.peak.row.time))}, ore ${esc(timeOnly(result.peak.row.time))}.</span>${result.peak.rank===0?' Il 95° percentile non supera la quota.':''}`;
+}
+
+function renderDaily(location,rows) {
+  const threshold=referenceThreshold(location),trend=assessTrend(location,rows,threshold),days=Math.ceil(bulletin.display_hours/24);
+  $('outlook-title').textContent=`Tendenza a ${days} ${days===1?'giorno':'giorni'}`;
+  $('outlook-panel').className=`panel outlook-panel impact-${trend.key}`;
+  $('outlook').innerHTML=`<div class="trend-content"><div><span class="impact-badge impact-${trend.key}">${esc(trend.level?.name||'Non disponibile')}</span><h3>${esc(trend.title)}</h3><p>Riferimento: <strong>${threshold?esc(assetName(threshold))+' · '+num(threshold.elevation_m)+' m':'quota dei chioschi da definire'}</strong>.</p><p class="model-agreement">${modelAgreement(trend)}</p></div><div class="trend-direction">${directionSummary(location,rows)}</div></div>${impactLegend()}<p class="small muted">${rows.length} ore disponibili su ${bulletin.display_hours}${trend.nonfrontalCount?` · ${trend.nonfrontalCount} ${trend.nonfrontalCount===1?'ora non frontale esclusa':'ore non frontali escluse'} dalla categoria`:''}${trend.missingCount?` · ${trend.missingCount} ${trend.missingCount===1?'ora':'ore'} con confronto incompleto`:''}. Quote delle strutture ancora illustrative. Le percentuali non sono probabilità di allagamento.</p>`;
+  $('daily').innerHTML=groupsByDay(rows).map(group=>{
+    const r=assessTrend(location,group,threshold),valid=group.filter(row=>hasFilteredStatistics(row) && Number.isFinite(row.twl_p95_m));
+    const date=new Date(group[0].time).toLocaleDateString('it-IT',{timeZone:'Europe/Rome',weekday:'long',day:'numeric',month:'long'});
+    const intervals=threshold?exceedanceEvents(thresholdState(threshold,group,location).samples):[];
+    return `<article class="day-card impact-day impact-${r.key}"><div class="day-heading"><h3>${esc(date)}</h3><span class="impact-badge impact-${r.key}">${esc(r.level?.name||'Non disponibile')}</span></div><div class="day-impact">${esc(r.title)}</div><p>${modelAgreement(r)}</p><p class="day-time">${intervals.length?'Ore con P95 sopra la quota dei chioschi<br><strong>'+intervals.map(e=>esc(eventLabel(e,true))).join(' · ')+'</strong>':r.peak?'Nessuna ora frontale con P95 sopra quota':'Categoria non applicata'}</p><p class="day-range">${r.key==='gray'?'P95 teorico, onde non frontali':'Fascia alta filtrata (P95)'}: <strong>${num(valid.length?Math.max(...valid.map(row=>row.twl_p95_m)):NaN)} m</strong></p><div class="direction-day">${directionSummary(location,group,true)}</div><p class="day-coverage">${group.length} ore disponibili${group.length<24?' · giornata parziale':''}${r.missingCount?' · confronto incompleto':''}${r.nonfrontalCount?` · ${r.nonfrontalCount} ${r.nonfrontalCount===1?'ora non frontale':'ore non frontali'}`:''}</p></article>`;
   }).join('');
-  $('events').innerHTML = events.length ? `<h3 class="event-title">Finestre di possibile interessamento</h3><p class="small muted">Prima e ultima ora con almeno uno scenario sopra quota. Le righe estive con calendario da definire sono confronti indicativi.</p><div class="events-wrap"><table class="events-table"><thead><tr><th>Struttura e quota</th><th>Inizio (Italia)</th><th>Ultima ora (Italia)</th><th>Scenari sopra la quota (massimo)</th></tr></thead><tbody>${events.sort((a,b)=>new Date(a.start)-new Date(b.start)).map(event=>`<tr><td>${esc(assetName(event.threshold))} · ${num(event.threshold.elevation_m)} m${event.threshold.season==='summer'?' · estiva':''}</td><td>${esc(local(event.start))}</td><td>${esc(local(event.end))}</td><td>${num(event.peak*100,0)}% degli scenari</td></tr>`).join('')}</tbody></table></div>` : '<p class="small muted">Nessun superamento nelle soglie applicabili e nei campioni orari disponibili.</p>';
+}
+
+function renderThresholds(location,rows) {
+  $('thresholds').innerHTML=location.thresholds.map(threshold=>{
+    const s=thresholdState(threshold,rows,location),r=assessTrend(location,rows,threshold),events=exceedanceEvents(s.samples),crossed=s.available.filter(sample=>sample.above_p95);
+    const peak=crossed.reduce((best,sample)=>!best || sample.fraction>best.fraction?sample:best,null);
+    const message=r.key==='gray'?'Onde non frontali: confronto con le strutture non applicato. Il livello marino resta da considerare.':s.max===null?'Confronto non disponibile o non applicabile nel periodo.':!crossed.length?'Il 95° percentile non supera la quota nelle ore frontali disponibili.':`P95 sopra quota in ${crossed.length} ${crossed.length===1?'ora':'ore'} con onde frontali.`;
+    return `<article class="threshold-explained impact-${r.key}"><div class="impact-asset">${impactIcon(threshold.id)}<span class="threshold-level">${num(threshold.elevation_m)}<small> m</small></span></div><div><div class="impact-title"><h3>${esc(assetName(threshold))}</h3><span class="impact-badge impact-${r.key}">${esc(r.level?.name||'Non applicabile')}</span></div><p>${esc(message)}</p>${peak?`<p class="impact-agreement">Al momento più condiviso: <strong>${esc(percentage(peak.fraction))}</strong> dei risultati filtrati dei modelli supera la quota.<br><span>${esc(dateInWords(peak.time))}, ore ${esc(timeOnly(peak.time))}.</span></p><div class="agreement-meter" role="img" aria-label="${esc(percentage(peak.fraction))} dei risultati filtrati sopra la quota"><span style="width:${peak.fraction*100}%"></span></div>`:''}<p class="threshold-season">${esc(s.season)}</p>${events.length?`<div class="impact-windows"><h4>Finestre con P95 sopra quota e onde frontali</h4><ul>${events.map(e=>`<li><span>${esc(eventLabel(e))}</span><span>fino al <strong>${esc(percentage(e.peak))}</strong> dei risultati filtrati</span></li>`).join('')}</ul></div>`:''}</div></article>`;
+  }).join('');
 }
 
 function chartLayout(yTitle, x, height=350) {
@@ -263,55 +296,55 @@ function chartLayout(yTitle, x, height=350) {
 }
 const plotOptions = {responsive:true,displaylogo:false,modeBarButtonsToRemove:['select2d','lasso2d'],toImageButtonOptions:{format:'png',filename:'onde-a-riva'}};
 
-function renderCharts(location, rows) {
+function renderCharts(location,rows) {
   $('threshold-key').innerHTML=location.thresholds.map((t,i)=>`<div style="--threshold-color:${thresholdColors[i%thresholdColors.length]}"><span class="threshold-swatch"></span><strong>${num(t.elevation_m)} m</strong><span>${esc(assetName(t))}${t.season==='summer'?' · estiva':''}</span></div>`).join('');
+  const historical=location.climatology?.status==='available',unit=location.climatology?.time_step_hours===1?'ore':'campioni';
+  $('wave-series-key').innerHTML='<span><i style="--series-color:#194e4c"></i>Altezza delle onde (Hs)</span><span><i style="--series-color:#c49b54"></i>Periodo fra le onde (Tp)</span>'+(historical?`<span><i class="dashed" style="--series-color:#a6a15c"></i>Onde alte · superate in 5 ${unit} su 100</span><span><i class="dashed" style="--series-color:#bd784f"></i>Onde molto alte · superate in 1 ${unit==='ore'?'ora':'campione'} su 100</span>`:'');
+  $('wave-history-note').textContent=historical?'Le due linee orizzontali indicano altezze superate raramente nella serie storica ERA5 della località.':'';
   if (!window.Plotly) {
-    for (const id of ['twl-chart','wave-chart','sealevel-chart']) $(id).innerHTML='<p class="muted">Grafico non disponibile. Le tabelle e il download CSV restano accessibili.</p>';
+    for (const id of ['twl-chart','wave-chart']) $(id).innerHTML='<p class="muted">Grafico non disponibile. I riepiloghi e il download CSV restano accessibili.</p>';
     return;
   }
-  const x = rows.map(row=>new Date(row.time).getTime());
-  const text=rows.map(row=>local(row.time));
-  const line = (key,name,color,width=1,extra={}) => ({x,text,y:rows.map(r=>r[key]),name,type:'scatter',mode:'lines',connectgaps:false,line:{color,width},hovertemplate:'%{text}<br>%{y:.2f} m<extra>'+name+'</extra>',...extra});
-  const traces = [
+  const x=rows.map(row=>new Date(row.time).getTime()),text=rows.map(row=>local(row.time));
+  const line=(key,name,color,width=1,extra={})=>({x,text,y:rows.map(r=>hasFilteredStatistics(r)?r[key]:null),name,type:'scatter',mode:'lines',connectgaps:false,line:{color,width},hovertemplate:'%{text}<br>%{y:.2f} m<extra>'+name+'</extra>',...extra});
+  const traces=[
     line('twl_p05_m','5–95%','#dbe7d5',0,{showlegend:false,hoverinfo:'skip'}),
     line('twl_p95_m','5–95%','#dbe7d5',0,{fill:'tonexty',fillcolor:'#e5eddf',hoverinfo:'skip'}),
     line('twl_p25_m','25–75%','#99b690',0,{showlegend:false,hoverinfo:'skip'}),
     line('twl_p75_m','25–75%','#99b690',0,{fill:'tonexty',fillcolor:'#b9cfad',hoverinfo:'skip'}),
-    line('twl_min_m','Minimo','#93a99b',1,{line:{color:'#93a99b',width:1,dash:'dot'}}),
-    line('twl_max_m','Massimo','#93a99b',1,{line:{color:'#93a99b',width:1,dash:'dot'}}),
-    line('twl_mean_m','Media degli scenari','#194e4c',2.5)
+    line('twl_mean_m','Media dei risultati filtrati','#194e4c',2.5)
   ];
   location.thresholds.forEach((t,i)=>traces.push({x,y:rows.map(()=>t.elevation_m),name:assetName(t),showlegend:false,mode:'lines',line:{color:thresholdColors[i%thresholdColors.length],width:1,dash:'dash'},hovertemplate:`${esc(assetName(t))}: ${num(t.elevation_m)} m<extra></extra>`}));
-  const layout = chartLayout(`Livello totale [m; ${seaLevelReference(location).axis}]`,x);
-  layout.legend.font.size=9;
-  Plotly.react('twl-chart',traces,layout,plotOptions);
-  const waveLayout=chartLayout('Hs [m]',x);
-  waveLayout.margin.r=48;
-  waveLayout.yaxis2={title:{text:'Tp [s]',font:{size:11}},overlaying:'y',side:'right',showgrid:false,rangemode:'tozero'};
-  const waveTraces=[
-    {x,text,y:rows.map(r=>r.hs_m),name:'Hs [m]',mode:'lines',line:{color:'#194e4c',width:2},fill:'tozeroy',fillcolor:'#e6eddf',customdata:rows.map(r=>r.direction_deg),hovertemplate:'%{text}<br>Hs: %{y:.2f} m<br>Provenienza: %{customdata:.0f}°<extra></extra>'},
-    {x,text,y:rows.map(r=>r.tp_s),name:'Tp [s]',mode:'lines',yaxis:'y2',line:{color:'#c49b54',width:2},hovertemplate:'%{text}<br>Tp: %{y:.1f} s<extra></extra>'}
+  const twlLayout=chartLayout(`Livello totale [m; ${seaLevelReference(location).axis}]`,x);
+  twlLayout.legend.font.size=9;
+  Plotly.react('twl-chart',traces,twlLayout,plotOptions);
+  // All three panels use xaxis, so zoom and pan always keep the times aligned.
+  const layout=chartLayout('Altezza onde [m]',x,650);
+  layout.margin.r=48;layout.showlegend=false;layout.yaxis.domain=[.59,1];layout.xaxis.anchor='y4';
+  layout.yaxis2={title:{text:'Periodo [s]',font:{size:10}},overlaying:'y',side:'right',showgrid:false,rangemode:'tozero'};
+  layout.yaxis3={title:{text:'Provenienza',font:{size:10}},domain:[.40,.49],anchor:'x',range:[-10,370],tickvals:[0,90,180,270,360],ticktext:['N','E','S','O','N'],gridcolor:'#e8ede5',zeroline:false};
+  layout.yaxis4={title:{text:'Livello [m]',font:{size:10}},domain:[0,.21],anchor:'x',gridcolor:'#e8ede5',zerolinecolor:'#c7d5c5'};
+  layout.annotations=[
+    {xref:'paper',yref:'paper',x:0,y:.32,xanchor:'left',yanchor:'bottom',showarrow:false,text:'<b>Marea + Storm surge</b>',font:{size:16,color:'#123f41'}},
+    {xref:'paper',yref:'paper',x:0,y:.235,xanchor:'left',yanchor:'bottom',showarrow:false,align:'left',text:'Oscillazioni della marea ed effetti di vento e pressione.<br>Include anche la circolazione marina del modello.',font:{size:10,color:'#637775'}}
   ];
-  if (location.climatology?.status==='available') {
-    for (const [key,label,color] of [['p95_m','95° percentile storico','#a6a15c'],['p99_m','99° percentile storico','#bd784f']]) {
-      waveTraces.push({x,y:rows.map(()=>location.climatology[key]),name:label,mode:'lines',line:{color,width:1,dash:'dot'},hovertemplate:label+': %{y:.2f} m<extra></extra>'});
+  const waveTraces=[
+    {x,text,y:rows.map(r=>r.hs_m),name:'Altezza delle onde (Hs)',mode:'lines',connectgaps:false,line:{color:'#194e4c',width:2},fill:'tozeroy',fillcolor:'#e6eddf',customdata:rows.map(r=>directionLabel(r.direction_deg)),hovertemplate:'%{text}<br>Hs: %{y:.2f} m<br>Da %{customdata}<extra></extra>'},
+    {x,text,y:rows.map(r=>r.tp_s),name:'Periodo (Tp)',mode:'lines',yaxis:'y2',connectgaps:false,line:{color:'#c49b54',width:2,shape:'spline',smoothing:.8},hovertemplate:'%{text}<br>Tp orario: %{y:.1f} s<extra></extra>'}
+  ];
+  for (const [status,name,color] of [[false,'Onde non frontali','#347e4b'],[true,'Onde verso la costa','#b45b2b'],[null,'Direzione non valutabile','#7b8984']]) {
+    const state=r=>r.hs_m>0?isExposed(r.direction_deg,location.wave_exposure):null;
+    waveTraces.push({x,text,y:rows.map(r=>state(r)===status && Number.isFinite(r.direction_deg)?((r.direction_deg%360)+360)%360:null),yaxis:'y3',name,type:'scatter',mode:'markers',marker:{color,size:6},customdata:rows.map(r=>directionLabel(r.direction_deg)),hovertemplate:'%{text}<br>Da %{customdata}<extra>'+name+'</extra>'});
+  }
+  if (historical) {
+    for (const [key,label,color] of [['p95_m','Onde alte · superate in 5 '+unit+' su 100','#a6a15c'],['p99_m','Onde molto alte · superate in 1 '+(unit==='ore'?'ora':'campione')+' su 100','#bd784f']]) {
+      waveTraces.push({x,y:rows.map(()=>location.climatology[key]),name:label,mode:'lines',line:{color,width:1,dash:'dot'},hovertemplate:label+': %{y:.2f} m<extra>ERA5</extra>'});
     }
   }
-  Plotly.react('wave-chart',waveTraces,waveLayout,plotOptions);
-  const seaLayout=chartLayout(`Livello del mare [m; ${seaLevelReference(location).axis}]`,x,260);
-  Plotly.react('sealevel-chart',[{x,text,y:rows.map(r=>r.water_level_m),name:'Livello del mare',mode:'lines',line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra></extra>'}],seaLayout,plotOptions);
+  waveTraces.push({x,text,y:rows.map(r=>r.water_level_m),yaxis:'y4',name:'Marea + Storm surge',mode:'lines',connectgaps:false,line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra>Marea + Storm surge</extra>'});
+  Plotly.react('wave-chart',waveTraces,layout,plotOptions);
 }
 
-function renderClimate(location,rows) {
-  const climate=location.climatology;
-  if (!climate || climate.status!=='available') {
-    $('climate-summary').innerHTML='<h3>Le onde previste rispetto al passato</h3><p>Per capire se l’altezza al largo è comune o poco frequente serve una serie storica locale. Il riferimento ERA5 non è ancora disponibile per questa località.</p>';
-    return;
-  }
-  const peak=wavePeak(rows.filter(r=>Number.isFinite(r.hs_percentile)));
-  const step=climate.time_step_hours;
-  $('climate-summary').innerHTML=`<h3>Le onde previste rispetto al passato</h3>${peak?`<div class="climate-comparison"><strong>${num(peak.hs_m)} m</strong><span>Altezza significativa massima al largo<br>Il ${esc(dateInWords(peak.time))}, alle ${esc(local(peak.time,{day:undefined,month:undefined}))}</span></div><p><strong>${esc(climateFrequency(peak.hs_percentile,step))}</strong></p>`:'<p>Il confronto non è disponibile nelle ore selezionate.</p>'}<p>Questo confronto descrive l’altezza al largo in tutte le stagioni e da tutte le direzioni. Non indica quante mareggiate raggiungono la spiaggia, né quanto è probabile un allagamento.</p><details><summary>Dati e metodo del confronto storico</summary><p>Serie ${esc(climate.source)}, ${new Date(climate.start).getUTCFullYear()}–${new Date(climate.end).getUTCFullYear()}, ${num(climate.n_records,0)} campioni${Number.isFinite(step)?`, uno ogni ${num(step,step%1?1:0)} ${step===1?'ora':'ore'}`:''}. Copertura del periodo: ${num(climate.coverage_fraction*100,1)}%.</p><p>Il 95° percentile è ${num(climate.p95_m)} m; il 99° percentile è ${num(climate.p99_m)} m. Sono riferimenti delle altezze superate rispettivamente in circa il 5% e l’1% dei campioni. Massimo storico della serie: ${num(climate.max_hs_m)} m.${peak?` L’altezza prevista corrisponde al percentile ${num(peak.hs_percentile,1)}.`:''}</p><p>${esc(climate.comparison_note)}</p><p>La frequenza delle singole ore non è la frequenza delle mareggiate: ore consecutive possono appartenere allo stesso evento. Non viene stimato un periodo di ritorno.</p></details>`;
-}
 
 
 function extremeComparison(location,rows,sectorId=null) {
@@ -341,7 +374,7 @@ function renderExtremes(location,rows,sectorId=null) {
   const period=peak.hs_return_period_years;
   const upper=fit.return_period_years?.at(-1)||100;
   const periodText=fit.status!=='available'?'Stima non disponibile per questo settore.':!Number.isFinite(period)||period>upper?`Oltre ${num(upper,0)} anni secondo il fit, fuori dall’intervallo mostrato.`:period<2?'Altezza inferiore al livello con tempo di ritorno di 2 anni in questo settore.':`Tempo di ritorno stimato: circa ${num(period,period<10?1:0)} anni per questo settore.`;
-  $('extremes-summary').innerHTML=`<p class="chart-caption">Confronto con i massimi annuali delle onde provenienti dallo stesso settore. La selezione iniziale usa il settore dell’altezza massima nei quattro giorni; scegliendo un altro settore si mostra il suo picco nel periodo.</p><label class="sector-selector" for="extreme-sector">Settore presente nelle onde previste<select id="extreme-sector">${represented.map(s=>`<option value="${esc(s.id)}"${s.id===sector.id?' selected':''}>${esc(sectorLabel(s))}</option>`).join('')}</select></label><p class="extreme-peak"><strong>${num(peak.hs_m)} m al largo</strong> da ${esc(directionLabel(peak.direction_deg))}, il ${esc(dateInWords(peak.time))} alle ${esc(local(peak.time,{day:undefined,month:undefined}))}.</p><p><strong>${esc(periodText)}</strong></p>${fit.status==='available'?'<p class="chart-caption">Asse orizzontale: tempo di ritorno in anni, in scala logaritmica. Punti verdi: massimi annuali storici. Linea: Gumbel stimata. Fascia: incertezza del fit al 95%. Punto arancione: altezza massima prevista nel settore.</p><div id="extreme-chart" class="chart extreme-chart" aria-label="Curva Gumbel dei tempi di ritorno e altezza massima prevista nello stesso settore"></div>':`<p class="chart-caption">${esc(fit.reason||'Serie insufficiente per il fit.')}</p>`}<p class="chart-caption"><strong>Il tempo di ritorno riguarda le onde al largo, non gli allagamenti.</strong> Non significa che un evento si ripeta a intervalli regolari. La spiaggia può essere esposta o riparata: ${esc(exposureAtPeak(location,[peak]).text)}</p>${fit.status==='available'?`<details class="extremes-method"><summary>Metodo, dati e limiti della stima</summary><p>Fit Gumbel per massima verosimiglianza su ${fit.n_years} massimi annuali, ${fit.first_year}–${fit.last_year}. Un massimo per settore e per anno UTC con copertura oraria completa. Gli anni senza onde del settore non vengono rimossi silenziosamente. Settori statistici di ${num(extremes.sector_width_deg,0)}°, separati dai settori di esposizione della spiaggia; inizio incluso e fine esclusa.</p><p>T = 1 / P(massimo annuale del settore &gt; Hs). I punti storici usano le posizioni empiriche (n + 1) / rango. La fascia al 95% deriva da ${fit.bootstrap_replicates} ricampionamenti bootstrap degli anni. Non comprende l’incertezza della previsione, la differenza fra ERA5 e Copernicus o la trasformazione delle onde verso riva.</p><p>Gumbel è un’ipotesi da verificare, con massimi annuali assunti indipendenti e stazionari. Oltre la durata della serie, la curva è un’estrapolazione; il tratto è tratteggiato. Il confronto non applica una correzione dei bias fra prodotti e non costituisce una stima operativa del rischio.</p></details>`:''}`;
+  $('extremes-summary').innerHTML=`<p class="chart-caption">Confronto con i massimi annuali delle onde provenienti dallo stesso settore. La selezione iniziale usa il settore dell’altezza massima nei quattro giorni; scegliendo un altro settore si mostra il suo picco nel periodo.</p><label class="sector-selector" for="extreme-sector">Settore presente nelle onde previste<select id="extreme-sector">${represented.map(s=>`<option value="${esc(s.id)}"${s.id===sector.id?' selected':''}>${esc(sectorLabel(s))}</option>`).join('')}</select></label><p class="extreme-peak"><strong>${num(peak.hs_m)} m al largo</strong> da ${esc(directionLabel(peak.direction_deg))}, il ${esc(dateInWords(peak.time))} alle ${esc(local(peak.time,{day:undefined,month:undefined}))}.</p><p><strong>${esc(periodText)}</strong></p>${fit.status==='available'?'<p class="chart-caption">Asse orizzontale: tempo di ritorno in anni, in scala logaritmica. Punti verdi: massimi annuali storici. Linea: Gumbel stimata. Fascia: incertezza del fit al 95%. Punto arancione: altezza massima prevista nel settore.</p><div id="extreme-chart" class="chart extreme-chart" aria-label="Curva Gumbel dei tempi di ritorno e altezza massima prevista nello stesso settore"></div>':`<p class="chart-caption">${esc(fit.reason||'Serie insufficiente per il fit.')}</p>`}<p class="chart-caption"><strong>Il tempo di ritorno riguarda le onde al largo, non gli allagamenti.</strong> Non significa che un evento si ripeta a intervalli regolari. La spiaggia può essere esposta o riparata: ${esc(exposureAtPeak(location,[peak]).text)}</p><p class="small"><a href="metodo.html#storico">Metodo, dati e limiti della stima ↗</a></p>`;
   $('extreme-sector').onchange=event=>renderExtremes(location,rows,event.target.value);
   if (fit.status!=='available') return;
   if (!window.Plotly) {
@@ -361,38 +394,57 @@ function renderExtremes(location,rows,sectorId=null) {
   Plotly.react('extreme-chart',traces,layout,plotOptions);
 }
 
+function locationParameters(location) {
+  const reference=seaLevelReference(location);
+  const content=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti i risultati dei modelli sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
+  const c=location.climatology,e=c?.directional_extremes;
+  const filtered=location.hourly.filter(hasFilteredStatistics);
+  const filterInfo=filtered.length?`<h4>Filtro dei risultati di runup</h4><p>Filtro ±3σ per ora, un passaggio. ${num(filtered.reduce((sum,r)=>sum+r.n_outliers,0),0)} esclusioni su ${num(filtered.reduce((sum,r)=>sum+r.n_estimates_raw,0),0)} calcoli grezzi nell’intero periodo scaricato. I CSV conservano tutti i risultati con il campo included_in_summary.</p>`:'<p>Statistiche filtrate non disponibili: occorre aggiornare il bollettino.</p>';
+  return content+filterInfo+(c?.status==='available'?`<h4>Serie storica ERA5</h4><p>${esc(c.source)}, ${new Date(c.start).getUTCFullYear()}–${new Date(c.end).getUTCFullYear()}; ${num(c.n_records,0)} campioni; passo ${num(c.time_step_hours,1)} ore; copertura ${num(c.coverage_fraction*100,1)}%.</p><p>95° percentile: ${num(c.p95_m)} m; 99° percentile: ${num(c.p99_m)} m; massimo: ${num(c.max_hs_m)} m. ${esc(c.comparison_note||'')}</p>`:'')+(e?.status==='available'?`<h4>Massimi annuali per settore</h4><p>Settori statistici di ${num(e.sector_width_deg,0)}°, distinti dalle direzioni di esposizione.</p><ul>${e.sectors.map(s=>`<li>${esc(sectorLabel(s))}: ${s.fit.status==='available'?`${s.fit.n_years} anni, ${s.fit.first_year}–${s.fit.last_year}; ${s.fit.bootstrap_replicates} ricampionamenti bootstrap.`:esc(s.fit.reason||'Fit non disponibile.')}</li>`).join('')}</ul>`:'');
+}
+
+async function bootMethod() {
+  try {
+    const response=await fetch(`data/forecast.json?t=${Math.floor(Date.now()/300000)}`,{cache:'no-cache'});
+    if (!response.ok) throw new Error('Metadati non disponibili');
+    bulletin=await response.json();
+    if (bulletin.schema_version!==1 || !bulletin.locations) throw new Error('Metadati non riconosciuti');
+    $('model-references').innerHTML=bulletin.model_order.map(name=>`<p>${esc(bulletin.citations[name]||name)}</p>`).join('');
+    $('method-locations').innerHTML=Object.entries(bulletin.locations).map(([slug,loc])=>`<details class="location-technical" id="parametri-${esc(slug)}"><summary>${esc(loc.name)}</summary><div>${locationParameters(loc)}</div></details>`).join('');
+    $('updated').textContent=`Metadati del bollettino: ${local(bulletin.generated_at)} · Italia`;
+    const slug=new URL(window.location.href).searchParams.get('localita');
+    if (slug && Object.hasOwn(bulletin.locations,slug)) {$('method-return').href=`./?localita=${encodeURIComponent(slug)}`;$('method-return').textContent=`← Torna a ${bulletin.locations[slug].name}`;}
+  } catch(error) {$('method-locations').innerHTML='<p>Parametri momentaneamente non disponibili. Le spiegazioni del metodo restano consultabili.</p>';}
+}
+
 function renderDetail(slug) {
   const location=bulletin.locations[slug];
   const rows=windowRows(location);
   document.title=`${location.name} · Onde a riva`;
   $('location-title').textContent=location.name;
   $('area').textContent=location.area;
-  $('water-level-title').textContent=bulletin.mode==='demo'?'Livello marino dimostrativo':'Onde + livello marino Copernicus';
   const reference=seaLevelReference(location);
-  $('water-level-note').textContent=reference.caption;
   $('twl-reference-label').textContent=`metri · zero: ${reference.label}`;
-  $('sealevel-caption').textContent=reference.caption;
-  $('reference-description').textContent=reference.detail;
+  $('sealevel-caption').innerHTML=`Zero del livello marino: ${esc(reference.label)}. <a href="metodo.html?localita=${encodeURIComponent(slug)}#zero">Riferimento delle quote ↗</a>`;
+  $('technical-link').href=`metodo.html?localita=${encodeURIComponent(slug)}`;
   $('download').href=location.csv;
-  const valid=rows.filter(r=>Number.isFinite(r.twl_max_m));
+  const valid=rows.filter(r=>hasFilteredStatistics(r) && Number.isFinite(r.twl_p95_m));
   const futureEnd=Math.floor(Date.now()/hourMs)*hourMs + bulletin.display_hours*hourMs;
   const insufficient = new Date(location.valid_to).getTime()<futureEnd;
   const invalid=rows.filter(r=>!r.n_estimates).length;
-  setNotice(!rows.length ? 'Bollettino scaduto: nessun campione futuro disponibile. È necessario un aggiornamento.' : `${insufficient?'Copertura parziale: non sono disponibili tutte le prossime 96 ore. ':''}${invalid?`${invalid} ore senza risultati validi dei modelli.`:''}`,location);
+  const staleStatistics=rows.some(r=>!hasFilteredStatistics(r));
+  setNotice(!rows.length ? 'Bollettino scaduto: nessun campione futuro disponibile. È necessario un aggiornamento.' : `${staleStatistics?'Serve un nuovo bollettino con filtro ±3σ: categorie e curve TWL non applicate ai vecchi dati. ':''}${insufficient?'Copertura parziale: non sono disponibili tutte le prossime 96 ore. ':''}${invalid?`${invalid} ore senza risultati validi dei modelli.`:''}`,location);
   $('period').textContent=rows.length ? `${local(rows[0].time)} — ${local(rows[rows.length-1].time)} · ${rows.length} campioni orari · ora italiana` : 'Nessuna previsione futura disponibile';
-  const peak=valid.length ? valid.reduce((best,row)=>row.twl_max_m>best.twl_max_m?row:best) : null;
+  const peak=valid.length ? valid.reduce((best,row)=>row.twl_p95_m>best.twl_p95_m?row:best) : null;
   const hs=rows.length ? Math.max(...rows.map(r=>r.hs_m)) : null;
   $('metrics').innerHTML=[
-    ['Massimo livello totale stimato',`${num(peak?.twl_max_m)} <small>m</small>`,peak ? `Scenario superiore · ${local(peak.time)} · quote provvisorie` : 'Dati non disponibili'],
+    ['Livello alto stimato (P95)',`${num(peak?.twl_p95_m)} <small>m</small>`,peak ? `Picco del 95° percentile filtrato · ${local(peak.time)} · quote provvisorie` : 'Dati non disponibili'],
     ['Massima altezza delle onde',`${num(hs)} <small>m</small>`,'Hs nel punto offshore'],
-    ['Modelli con risultati validi',`${location.valid_models.length} <small>/ ${bulletin.model_order.length}</small>`,`${location.slopes.length} pendenze configurate · numero di scenari variabile`]
+    ['Modelli calcolati',`${location.valid_models.length} <small>/ ${bulletin.model_order.length}</small>`,`${location.slopes.length} pendenze della spiaggia · ogni modello è applicato a ciascuna pendenza`]
   ].map(([label,value,note])=>`<div class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value}</div><div class="metric-note">${esc(note)}</div></div>`).join('');
-  renderExposure(location,rows);
   renderDaily(location,rows);
-  renderClimate(location,rows);
   renderExtremes(location,rows);
   renderThresholds(location,rows);
-  $('parameters').innerHTML=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti gli scenari sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
   renderCharts(location,rows);
 }
 
@@ -417,7 +469,6 @@ async function boot() {
     bulletin=await response.json();
     if (bulletin.schema_version!==1 || !bulletin.locations || !['demo','copernicus'].includes(bulletin.mode)) throw new Error('Formato del bollettino non riconosciuto');
     $('updated').textContent=`Ultima elaborazione: ${local(bulletin.generated_at)} · Italia`;
-    $('model-references').innerHTML=bulletin.model_order.map(name=>`<p>${esc(bulletin.citations[name]||name)}</p>`).join('');
     document.addEventListener('click',event=>{
       const link=event.target.closest('a[href]');
       if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0) return;
@@ -436,4 +487,4 @@ async function boot() {
     console.error(error.message);
   }
 }
-boot();
+if (document.body?.dataset?.page==='method') bootMethod(); else boot();

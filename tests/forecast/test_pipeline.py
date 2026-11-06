@@ -32,7 +32,8 @@ class ForecastTests(unittest.TestCase):
                     self.assertAlmostEqual(actual[0]['twl_m'], expected + .25, places=12)
                 else:
                     self.assertFalse(actual)
-        self.assertEqual(rows[0]['n_estimates'], len(detail))
+        self.assertEqual(rows[0]['n_estimates_raw'], len(detail))
+        self.assertEqual(rows[0]['n_estimates'], sum(r['included_in_summary'] for r in detail))
         self.assertLessEqual(rows[0]['twl_min_m'], rows[0]['twl_p05_m'])
         self.assertLessEqual(rows[0]['twl_p95_m'], rows[0]['twl_max_m'])
 
@@ -77,6 +78,7 @@ class ForecastTests(unittest.TestCase):
         with patch.object(p, 'compute_runup', return_value={'Stockdon et al. (2006)': .8}):
             bulletin, csvs = p.build_bulletin(demo=True, now=NOW)
         self.assertEqual(bulletin['mode'], 'demo')
+        self.assertEqual(bulletin['ensemble_statistics']['method'], 'sigma_clip_3_population_v1')
         for loc in bulletin['locations'].values():
             self.assertEqual(len(loc['hourly']), 120)
             self.assertIsNone(loc['source']['dataset_id'])
@@ -86,7 +88,10 @@ class ForecastTests(unittest.TestCase):
             stored = json.loads((Path(directory)/'forecast.json').read_text())
             self.assertEqual(stored['mode'], 'demo')
             with (Path(directory)/'venezia.csv').open() as handle:
-                labels={(row['data_mode'],row['vertical_reference']) for row in csv.DictReader(handle)}
+                exported=list(csv.DictReader(handle))
+                labels={(row['data_mode'],row['vertical_reference']) for row in exported}
+            self.assertEqual(len(exported),sum(row['n_estimates_raw'] for row in stored['locations']['venezia']['hourly']))
+            self.assertTrue(all(row['included_in_summary']=='True' for row in exported))
             self.assertEqual(labels,{('demo','synthetic_reference')})
             self.assertFalse((Path(directory)/'forecast.json.tmp').exists())
 

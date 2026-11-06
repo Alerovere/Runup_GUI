@@ -9,6 +9,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from forecast_service.ensemble import sigma_clip, STATISTICS_METHOD, STATISTICS_METADATA
+
 from src.runup_models import MODEL_CITATIONS, MODEL_ORDER, RunupInputs, compute_runup, models
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +112,7 @@ def summarize_records(waves, location, thresholds, season, eta):
         if not math.isfinite(eta_value):
             raise ValueError('Livello marino mancante: il TWL non può essere calcolato.')
         values = []
+        detail_start = len(detail)
         if wave['hs_m'] > 0 and wave['tp_s'] > 0:
             for slope in location['slopes']:
                 results = compute_runup(RunupInputs(wave['hs_m'], wave['tp_s'], slope, eta_value, location['roughness_m']))
@@ -117,14 +120,24 @@ def summarize_records(waves, location, thresholds, season, eta):
                     if not math.isfinite(float(runup)):
                         continue
                     twl = float(runup) + eta_value
+                    if not math.isfinite(twl):
+                        continue
                     values.append(twl)
                     detail.append({'time': wave['time'], 'slope': slope, 'model': name,
                                    'hs_m': wave['hs_m'], 'tp_s': wave['tp_s'], 'direction_deg': wave['direction_deg'],
                                    'water_level_m': eta_value, 'runup_m': float(runup), 'twl_m': twl,
                                    'ssh_m': wave.get('ssh_m'), 'mean_reference_m': wave.get('mean_reference_m')})
-        row = dict(wave, water_level_m=eta_value, n_estimates=len(values), twl_min_m=None,
-                   twl_mean_m=None, twl_max_m=None, twl_p05_m=None, twl_p25_m=None,
-                   twl_p75_m=None, twl_p95_m=None)
+        included, filter_mean, filter_sigma = sigma_clip(values)
+        for record, keep in zip(detail[detail_start:], included):
+            record['included_in_summary'] = keep
+        raw_count = len(values)
+        values = [value for value, keep in zip(values, included) if keep]
+        row = dict(wave, water_level_m=eta_value, n_estimates=len(values),
+                   n_estimates_raw=raw_count, n_outliers=raw_count-len(values),
+                   statistics_method=STATISTICS_METHOD,
+                   filter_mean_m=filter_mean, filter_sigma_m=filter_sigma,
+                   twl_min_m=None, twl_mean_m=None, twl_max_m=None,
+                   twl_p05_m=None, twl_p25_m=None, twl_p75_m=None, twl_p95_m=None)
         if values:
             row.update(twl_min_m=min(values), twl_mean_m=sum(values)/len(values), twl_max_m=max(values),
                        **{f'twl_p{int(q*100):02d}_m': quantile(values, q) for q in [.05, .25, .75, .95]})
@@ -237,6 +250,7 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
     start = now.replace(minute=0, second=0, microsecond=0)
     bulletin = {'schema_version': 1, 'mode': 'demo' if demo else 'copernicus', 'generated_at': iso(now),
                 'processing_started_at': iso(now),
+                'ensemble_statistics': dict(STATISTICS_METADATA),
                 'wave_model': {'publication_hours_utc':[6,20],
                                'schedule_status':'nominal_expected',
                                'schedule_source':'https://documentation.marine.copernicus.eu/PUM/CMEMS-MED-PUM-006-017.pdf'},

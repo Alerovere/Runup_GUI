@@ -35,21 +35,7 @@ test('Il calendario usa Europe/Rome anche vicino alla mezzanotte UTC',()=>{
   assert.equal(call("italianTime('2026-11-01T23:30:00Z')"),'2026-11-02T00:30:00');
 });
 
-test('Gli impatti stagionali ignoti non vengono presentati come impatti annuali',()=>{
-  context.fixture={thresholds:[{id:'a',elevation_m:.7,season:'summer',short_label:'Ombrelloni'},{id:'b',elevation_m:1.1,season:'all_year',short_label:'Chioschi'}]};
-  context.rows=[{time:'2026-11-05T10:00Z',n_estimates:30,thresholds:[{id:'a',active:null,fraction:.8},{id:'b',active:true,fraction:0}]}];
-  const result=call('assessImpact(fixture,rows)');
-  assert.equal(result.seasonal.length,1);
-  assert.equal(result.focus,undefined);
-  assert.match(result.title,/non raggiunte/);
-});
 
-test('Una quota superata da pochi scenari resta distinta da un esito condiviso',()=>{
-  context.rows=[{time:'2026-11-05T10:00Z',n_estimates:30,thresholds:[{id:'a',active:false,fraction:.8},{id:'b',active:true,fraction:.1}]}];
-  const result=call('assessImpact(fixture,rows)');
-  assert.match(result.title,/Alcuni scenari/);
-  assert.equal(result.focus.threshold.short_label,'Chioschi');
-});
 
 
 test('I settori di provenienza gestiscono direzioni arbitrarie, estremi e attraversamento dello zero',()=>{
@@ -78,7 +64,7 @@ test('L’avviso direzionale si riferisce al picco Hs e non al picco TWL',()=>{
   assert.equal(result.status,false);
   assert.equal(result.peak.hs_m,2);
   assert.match(result.text,/Sud \(180°\)/);
-  assert.match(result.text,/fuori/);
+  assert.match(result.text,/Non arrivano frontalmente/);
 });
 
 test('La frequenza storica distingue ore, campioni e altezze oltre tutta la serie',()=>{
@@ -88,26 +74,7 @@ test('La frequenza storica distingue ore, campioni e altezze oltre tutta la seri
   assert.match(call('climateFrequency(100,1)'),/non compaiono onde più alte/);
 });
 
-test('Il confronto storico usa la vera altezza massima anche con percentili saturi',()=>{
-  const nodes={};
-  context.document.getElementById=id=>(nodes[id]??={});
-  context.climateFixture={climatology:{status:'available',source:'ERA5',start:'2000-01-01',end:'2020-12-31',time_step_hours:1,n_records:100,coverage_fraction:1,p95_m:2,p99_m:2.5,max_hs_m:2.8,comparison_note:'Confronto indicativo.'}};
-  call("renderClimate(climateFixture,[{time:'2026-11-07T06:00Z',hs_m:3,hs_percentile:100},{time:'2026-11-07T07:00Z',hs_m:4,hs_percentile:100}])");
-  assert.match(nodes['climate-summary'].innerHTML,/4,00 m/);
-  assert.match(nodes['climate-summary'].innerHTML,/non compaiono onde più alte/);
-  assert.match(nodes['climate-summary'].innerHTML,/tutte le direzioni/);
-});
 
-test('La soglia usa una frase italiana con data, ora e accordo singolare o plurale',()=>{
-  const nodes={};
-  context.document.getElementById=id=>(nodes[id]??={});
-  context.thresholdFixture={thresholds:[{id:'a',elevation_m:.7,season:'all_year',short_label:'Struttura'}]};
-  call("renderThresholds(thresholdFixture,[{time:'2026-11-07T06:00Z',n_estimates:30,thresholds:[{id:'a',active:true,fraction:.9}]}])");
-  assert.match(nodes.thresholds.innerHTML,/Il 7 novembre, alle 07:00/);
-  assert.match(nodes.thresholds.innerHTML,/27 scenari su 30<\/strong> superano questa quota/);
-  call("renderThresholds(thresholdFixture,[{time:'2026-11-07T06:00Z',n_estimates:30,thresholds:[{id:'a',active:true,fraction:1\/30}]}])");
-  assert.match(nodes.thresholds.innerHTML,/1 scenario su 30<\/strong> supera questa quota/);
-});
 
 
 test('Il confronto degli estremi usa il settore al picco Hs, e può selezionare altri settori previsti',()=>{
@@ -212,4 +179,111 @@ test('La modalità demo resta esplicita e non promette uscite reali del modello'
   assert.match(nodes.notice.innerHTML,/sintetici/);
   assert.match(nodes.notice.innerHTML,/Aggiornamento in ritardo/);
   assert.doesNotMatch(nodes.notice.innerHTML,/Prossima uscita/);
+});
+
+
+const fixedThreshold={id:'strutture_turistiche_fisse',elevation_m:1.1,season:'all_year',short_label:'Chioschi e strutture fisse'};
+const exposure={sectors_deg:[[112,247]]};
+const makeRow=(extra={})=>({time:'2026-11-06T05:00Z',statistics_method:'sigma_clip_3_population_v1',n_estimates:190,n_estimates_raw:190,n_outliers:0,twl_max_m:100,twl_mean_m:.7,twl_p05_m:.2,twl_p25_m:.4,twl_p75_m:.9,twl_p95_m:1.2,hs_m:1,tp_s:5,direction_deg:180,water_level_m:.15,thresholds:[{id:fixedThreshold.id,active:true,fraction:5/190}],...extra});
+
+test('La scala usa soltanto i percentili filtrati, con uguaglianza esclusa dal superamento',()=>{
+  context.fixedThreshold=fixedThreshold;
+  for (const [rank,extra] of [[0,{twl_p95_m:1.1}],[1,{}],[2,{twl_p75_m:1.2}]]) {
+    context.colorRow=makeRow(extra);assert.equal(call('rowImpact(fixedThreshold,colorRow).rank'),rank);
+  }
+  context.colorRow=makeRow({twl_mean_m:1000,twl_max_m:10000,twl_p75_m:.8,twl_p95_m:1});
+  assert.equal(call('rowImpact(fixedThreshold,colorRow).rank'),0);
+  assert.equal(call('rowImpact({...fixedThreshold,elevation_m:2},colorRow).rank'),0);
+});
+
+test('Bollettini precedenti, direzioni ignote e dati mancanti non ricevono categorie rassicuranti',()=>{
+  context.colorLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  for (const extra of [{n_estimates:0},{twl_p95_m:null},{statistics_method:null},{thresholds:[]}]) {
+    context.colorRow=makeRow(extra);assert.equal(call('rowImpact(fixedThreshold,colorRow,colorLocation).rank'),null);
+  }
+  context.colorRow=makeRow();
+  assert.equal(call('assessTrend({thresholds:[fixedThreshold]},[colorRow]).key'),'unavailable');
+  context.colorRow=makeRow({direction_deg:null});assert.equal(call('assessTrend(colorLocation,[colorRow]).key'),'unavailable');
+});
+
+test('Le ore non frontali sono grigie e non cancellano le ore frontali dello stesso periodo',()=>{
+  context.colorLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.colorRows=[makeRow({direction_deg:85,twl_p75_m:99,twl_p95_m:100})];
+  assert.equal(call('assessTrend(colorLocation,colorRows).key'),'gray');
+  context.colorRows.push(makeRow({twl_p95_m:1}));
+  assert.equal(call('assessTrend(colorLocation,colorRows).key'),'white');
+  context.colorRows.push(makeRow({twl_p75_m:1.3}));
+  assert.equal(call('assessTrend(colorLocation,colorRows).key'),'orange');
+});
+
+test('Tendenza e giornate usano la stessa scala e la percentuale dell’ora selezionata',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.colorLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.colorRows=[makeRow({twl_p75_m:1.3}),makeRow({time:'2026-11-07T05:00Z',direction_deg:85})];
+  call('bulletin={display_hours:96};renderDaily(colorLocation,colorRows)');
+  assert.equal(nodes['outlook-panel'].className,'panel outlook-panel impact-orange');
+  assert.match(nodes.daily.innerHTML,/impact-orange/);assert.match(nodes.daily.innerHTML,/impact-gray/);
+  assert.match(nodes.outlook.innerHTML,/2,6%/);assert.doesNotMatch(nodes.outlook.innerHTML,/scenar|Rosso|Verde/);
+  assert.equal(nodes['outlook-title'].textContent,'Tendenza a 4 giorni');
+});
+
+test('Una piccola coda sopra quota non rende il bianco un falso “nessun modello supera”',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.structureLocation={thresholds:[fixedThreshold],wave_exposure:exposure};context.structureRows=[makeRow({twl_p95_m:1})];
+  call('renderThresholds(structureLocation,structureRows)');
+  assert.match(nodes.thresholds.innerHTML,/impact-white/);assert.match(nodes.thresholds.innerHTML,/95° percentile non supera/);
+  assert.doesNotMatch(nodes.thresholds.innerHTML,/Finestre con|nessun risultato|quota non è superata dai modelli/i);
+});
+
+test('Le finestre richiedono P95 sopra quota e onde frontali, con separazione ai cambi di direzione',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.structureLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.structureRows=[makeRow(),makeRow({time:'2026-11-06T06:00Z',direction_deg:85}),makeRow({time:'2026-11-06T07:00Z'}),makeRow({time:'2026-11-06T08:00Z',twl_p95_m:1}),makeRow({time:'2026-11-06T09:00Z'})];
+  call('renderThresholds(structureLocation,structureRows)');
+  assert.equal((nodes.thresholds.innerHTML.match(/<li>/g)||[]).length,3);
+  assert.match(nodes.thresholds.innerHTML,/2,6%/);assert.match(nodes.thresholds.innerHTML,/class="asset-icon"/);
+  assert.match(nodes.thresholds.innerHTML,/impact-yellow/);assert.doesNotMatch(nodes.thresholds.innerHTML,/scenar|<table|<details/);
+  context.structureRows=[makeRow({direction_deg:85})];call('renderThresholds(structureLocation,structureRows)');
+  assert.match(nodes.thresholds.innerHTML,/impact-gray/);assert.doesNotMatch(nodes.thresholds.innerHTML,/<li>/);
+});
+
+test('Il calendario estivo continua a distinguere stagione ignota e non attiva',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.seasonLocation={thresholds:[{...fixedThreshold,season:'summer'}],wave_exposure:exposure};
+  context.seasonRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:false,fraction:1}]})];
+  call('renderThresholds(seasonLocation,seasonRows)');assert.match(nodes.thresholds.innerHTML,/Fuori stagione/);assert.doesNotMatch(nodes.thresholds.innerHTML,/Finestre con/);
+  context.seasonRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:null,fraction:.5}]})];
+  call('renderThresholds(seasonLocation,seasonRows)');assert.match(nodes.thresholds.innerHTML,/Calendario estivo da definire/);assert.match(nodes.thresholds.innerHTML,/50%/);
+});
+
+test('Il TWL non disegna estremi e non presenta statistiche vecchie come filtrate',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  const plots={};context.Plotly={react:(id,traces,layout)=>plots[id]={traces,layout}};context.window.Plotly=context.Plotly;
+  context.graphLocation={thresholds:[],wave_exposure:exposure,sea_level_source:{mode:'constant_msl',offset_m:0}};
+  context.graphRows=[makeRow(),makeRow({statistics_method:null})];
+  call("bulletin={mode:'copernicus'};renderCharts(graphLocation,graphRows)");
+  assert.doesNotMatch(plots['twl-chart'].traces.map(t=>t.name).join(' '),/Massimo|Minimo/);
+  const mean=plots['twl-chart'].traces.find(t=>t.name==='Media dei risultati filtrati');
+  assert.deepEqual(Array.from(mean.y),[.7,null]);
+  delete context.window.Plotly;delete context.Plotly;
+});
+
+test('Onde, provenienza e livello marino conservano date e valori originali',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  const plots={};context.Plotly={react:(id,traces,layout)=>plots[id]={traces,layout}};context.window.Plotly=context.Plotly;
+  context.waveLocation={thresholds:[],wave_exposure:exposure,sea_level_source:{mode:'constant_msl',offset_m:0},climatology:{status:'available',time_step_hours:1,p95_m:2,p99_m:3}};
+  context.waveRows=[makeRow({direction_deg:85}),makeRow({tp_s:8}),makeRow({hs_m:0,direction_deg:90,tp_s:null})];
+  call("bulletin={mode:'copernicus'};renderCharts(waveLocation,waveRows)");
+  const wave=plots['wave-chart'],away=wave.traces.find(t=>t.name==='Onde non frontali'),toward=wave.traces.find(t=>t.name==='Onde verso la costa');
+  const sea=wave.traces.find(t=>t.name==='Marea + Storm surge'),tp=wave.traces.find(t=>t.name==='Periodo (Tp)');
+  assert.equal(away.y[0],85);assert.equal(away.y[1],null);assert.equal(toward.y[1],180);assert.equal(toward.y[2],null);
+  assert.deepEqual(Array.from(sea.y),[.15,.15,.15]);assert.equal(sea.x,wave.traces[0].x);assert.equal(wave.layout.xaxis.anchor,'y4');
+  assert.deepEqual(Array.from(tp.y),[5,8,null]);assert.equal(tp.line.shape,'spline');assert.equal(tp.connectgaps,false);
+  assert.match(nodes['wave-series-key'].innerHTML,/5 ore su 100/);assert.doesNotMatch(nodes['wave-series-key'].innerHTML,/percentile/);
+  assert.equal(wave.traces.find(t=>t.name.startsWith('Onde alte')).y[0],2);assert.equal(wave.traces.find(t=>t.name.startsWith('Onde molto alte')).y[0],3);
+  delete context.window.Plotly;delete context.Plotly;
+});
+
+test('Le percentuali rare non diventano zero e un accordo incompleto non diventa cento',()=>{
+  assert.equal(call('percentage(5/190)'),'2,6%');assert.equal(call('percentage(.0001)'),'<0,1%');assert.equal(call('percentage(.9999)'),'>99,9%');
 });
