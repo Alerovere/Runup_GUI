@@ -13,9 +13,10 @@ from forecast_service.pipeline import build_bulletin, write_bulletin
 def main():
     parser = argparse.ArgumentParser(description='Genera il bollettino del portale locale.')
     parser.add_argument('--demo', action='store_true', help='Usa onde sintetiche, sempre etichettate come dimostrative.')
+    parser.add_argument('--provider', choices=['meteocean','copernicus'], help='Fornitore reale; Copernicus rimane riattivabile.')
     parser.add_argument('--output', type=Path, default=ROOT / 'forecast_site/data')
     args = parser.parse_args()
-    bulletin, csvs = build_bulletin(demo=args.demo)
+    bulletin, csvs = build_bulletin(demo=args.demo, provider=args.provider)
     write_bulletin(bulletin, csvs, args.output)
     print(f"Bollettino {bulletin['mode']}: {len(bulletin['locations'])} località, generato {bulletin['generated_at']}")
 

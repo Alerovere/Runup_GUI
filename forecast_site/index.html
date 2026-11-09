@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Previsioni locali di runup e livello totale dell'acqua per Venezia e Borghetto Santo Spirito. Prototipo scientifico con dati Copernicus Marine.">
+  <meta name="description" content="Previsioni locali di runup e livello totale dell'acqua per Venezia e Borghetto Santo Spirito. Prototipo scientifico con onde e storm surge MeteOcean e marea NOAA.">
   <title>Onde a riva · Previsioni locali</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
@@ -28,8 +28,8 @@
     <section id="home" hidden>
       <div class="hero">
         <h1>Onde in arrivo sulle nostre coste.<br><span>Quali strutture potrebbe raggiungere l’acqua?</span></h1>
-        <p class="intro">Esplora le stime delle prossime 96 ore: onde, marea e sovralzo meteorologico, confrontati con le quote di spiagge e strutture costiere.</p>
-        <div class="hero-tags"><span>Copernicus Marine</span><span>4 giorni</span><span>Modelli a confronto</span></div>
+        <p class="intro">Esplora le stime su quattro giorni, aggiornate ogni giorno: onde, marea e sovralzo meteorologico, confrontati con le quote di spiagge e strutture costiere.</p>
+        <div class="hero-tags"><span id="hero-provider">MeteOcean + NOAA</span><span>4 giorni</span><span>Modelli a confronto</span></div>
       </div>
       <div class="section-heading"><div><h2>Scegli una località</h2></div><span class="muted">Seleziona un’area sulla mappa o una scheda</span></div>
       <div class="explore-grid">
@@ -47,10 +47,14 @@
       <div class="section-heading"><div><p class="eyebrow">UNO SGUARDO AI PROSSIMI GIORNI</p><h2>Cosa aspettarsi giorno per giorno</h2></div></div>
       <div id="daily" class="daily-grid"></div>
       <section class="panel"><div class="panel-heading"><div><p class="eyebrow">LE QUOTE CHE CONTANO</p><h2>Quali strutture possono essere interessate</h2></div><span class="tag">Quote provvisorie</span></div><p class="chart-caption">Per ogni tipo di struttura mostriamo la quota usata nel confronto e gli orari in cui le stime più alte la superano, con onde provenienti dalle direzioni di esposizione della spiaggia. Le quote sono esempi da verificare sul posto: il superamento non dimostra che una struttura sarà allagata.</p><div id="thresholds"></div></section>
-      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">IL MARE AL LARGO</p><h2>Onde previste</h2></div><span class="small muted">Altezza, tempo tra le onde e provenienza</span></div><p class="chart-caption">L’altezza significativa (Hs) rappresenta le onde più alte, senza indicare la singola onda massima. Il tempo tra le onde (Tp), espresso in secondi, descrive quanto sono distanziate le creste delle onde dominanti. Tutti i grafici seguono gli stessi orari.</p><div class="wave-direction-key"><span class="direction-badge direction-away">Verde · onde da altre direzioni</span><span class="direction-badge direction-toward">Arancione · onde verso la costa</span><span class="direction-badge direction-unknown">Grigio · confronto non disponibile</span></div><div id="wave-series-key" class="wave-series-key" aria-label="Legenda delle onde"></div><p id="wave-history-note" class="small muted"></p><div id="wave-chart" class="chart" aria-label="Onde, provenienza e Marea più Storm surge sullo stesso asse temporale"></div><p id="sealevel-caption" class="chart-caption"></p></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">IL MARE AL LARGO</p><h2>Onde previste</h2></div><span class="small muted">Altezza, tempo tra le onde e provenienza</span></div><p class="chart-caption">L’altezza significativa (Hs) rappresenta le onde più alte, senza indicare la singola onda massima. Il tempo tra le onde (Tp), espresso in secondi, descrive quanto sono distanziate le creste delle onde dominanti. Tutti i grafici seguono gli stessi orari.</p><div class="wave-direction-key"><span class="direction-badge direction-away">Verde · onde da altre direzioni</span><span class="direction-badge direction-toward">Arancione · onde verso la costa</span><span class="direction-badge direction-unknown">Grigio · confronto non disponibile</span></div><div id="wave-series-key" class="wave-series-key" aria-label="Legenda delle onde"></div><p id="wave-history-note" class="small muted"></p><div id="wave-chart" class="chart" aria-label="Onde, provenienza e contributi del livello marino sullo stesso asse temporale"></div><p id="sealevel-caption" class="chart-caption"></p></section>
       <section class="panel chart-panel"><p class="eyebrow">MAREGGIATE E SERIE STORICA</p><h2>Quanto sono insolite le onde previste?</h2><div id="extremes-summary"></div></section>
 
       <p class="technical-link"><a id="technical-link" href="metodo.html">Dati, metodo, riferimenti delle quote e limiti della stima ↗</a></p>
+    </section>
+    <section id="data-sources" class="data-credit" aria-label="Ringraziamento ai fornitori dei dati">
+      <a href="https://meteocean.science/" target="_blank" rel="noopener"><img src="assets/meteocean-unige.svg" width="2284" height="521" alt="MeteOcean — Università di Genova"></a>
+      <div><h2>Dati MeteOcean e NOAA</h2><p>Si ringrazia il gruppo <a href="https://meteocean.science/" target="_blank" rel="noopener">MeteOcean – DICCA, Università di Genova</a> per i dati di onda e storm surge. La marea astronomica proviene da <a href="https://registry.opendata.aws/noaa-gestofs/" target="_blank" rel="noopener">NOAA STOFS-2D-Global</a>. I calcoli di runup e le elaborazioni del portale sono a cura del progetto MARINA.</p></div>
     </section>
     <section id="funding" class="funding" aria-labelledby="funding-title">
       <div class="funding-identity">

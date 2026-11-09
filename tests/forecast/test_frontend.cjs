@@ -287,3 +287,53 @@ test('Onde, provenienza e livello marino conservano date e valori originali',()=
 test('Le percentuali rare non diventano zero e un accordo incompleto non diventa cento',()=>{
   assert.equal(call('percentage(5/190)'),'2,6%');assert.equal(call('percentage(.0001)'),'<0,1%');assert.equal(call('percentage(.9999)'),'>99,9%');
 });
+
+
+test('La finestra giornaliera MeteOcean termina dopo quattro giorni senza riproporre ore passate',()=>{
+  call("bulletin={display_hours:96,display_to:'2026-11-13T00:00:00Z'}");
+  context.dailyWindow={hourly:Array.from({length:120},(_,i)=>({time:new Date(Date.UTC(2026,10,9)+i*3600000).toISOString()}))};
+  assert.equal(call('windowRows(dailyWindow,Date.UTC(2026,10,9,14,30)).length'),82);
+  assert.equal(call('windowRows(dailyWindow,Date.UTC(2026,10,13)).length'),0);
+});
+
+test('MeteOcean e NOAA sono descritti senza riutilizzare la media Copernicus',()=>{
+  const reference=call("seaLevelReference({sea_level_source:{mode:'noaa_tide_meteocean_surge'},mean_reference_m:-.403,sea_level_reference:{kind:'copernicus_historical_mean',year:2025}})");
+  assert.match(reference.caption,/NOAA/);
+  assert.match(reference.caption,/MeteOcean/);
+  assert.doesNotMatch(reference.axis,/2025/);
+});
+
+
+test('La prossima acquisizione MeteOcean è una data valida e il ritardo segue la cadenza giornaliera',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  call("bulletin={mode:'meteocean',generated_at:'2026-11-09T00:00Z',stale_after_hours:30,wave_model:{publication_hours_utc:[]},locations:{}}");
+  call("setNotice('',null,Date.parse('2026-11-10T02:00Z'))");
+  assert.match(nodes.notice.innerHTML,/MeteOcean/);assert.match(nodes.notice.innerHTML,/NOAA/);
+  assert.match(nodes.notice.innerHTML,/01:00/);assert.doesNotMatch(nodes.notice.innerHTML,/data non disponibile|Aggiornamento in ritardo|Corsa del modello Copernicus/);
+  call("setNotice('',null,Date.parse('2026-11-10T07:00Z'))");
+  assert.match(nodes.notice.innerHTML,/più di 30 ore/);
+});
+
+
+test('Marea e surge sono separati con scala comune, somma e campioni mancanti conservati',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={style:{}});
+  const plots={};context.Plotly={react:(id,traces,layout)=>plots[id]={traces,layout}};context.window.Plotly=context.Plotly;
+  context.separateLocation={thresholds:[],wave_exposure:exposure,sea_level_source:{mode:'noaa_tide_meteocean_surge'}};
+  context.separateRows=[makeRow({tide_m:-.2,surge_m:.1,water_level_m:-.1}),makeRow({tide_m:.3,surge_m:null,water_level_m:null})];
+  call("bulletin={mode:'meteocean'};renderCharts(separateLocation,separateRows)");
+  const graph=plots['wave-chart'];
+  const tide=graph.traces.find(t=>t.name==='Marea astronomica NOAA');
+  const surge=graph.traces.find(t=>t.name==='Storm surge MeteOcean');
+  const sum=graph.traces.find(t=>t.name==='Marea + Storm surge');
+  assert.equal(tide.yaxis,'y4');assert.equal(surge.yaxis,'y5');assert.equal(sum.yaxis,'y6');
+  assert.equal(tide.x,surge.x);assert.equal(surge.x,sum.x);assert.equal(graph.layout.xaxis.anchor,'y6');
+  assert.deepEqual(Array.from(tide.y),[-.2,.3]);assert.deepEqual(Array.from(surge.y),[.1,null]);assert.deepEqual(Array.from(sum.y),[-.1,null]);
+  assert.equal(surge.connectgaps,false);assert.equal(sum.connectgaps,false);
+  assert.deepEqual(Array.from(graph.layout.yaxis4.range),Array.from(graph.layout.yaxis5.range));
+  assert.deepEqual(Array.from(graph.layout.yaxis5.range),Array.from(graph.layout.yaxis6.range));
+  assert.ok(graph.layout.yaxis4.range[0]<-.2);assert.ok(graph.layout.yaxis4.range[1]>.3);
+  assert.equal(nodes['wave-chart'].style.height,'1150px');
+  call("bulletin={mode:'copernicus'};renderCharts(separateLocation,[{...separateRows[0],tide_m:undefined,surge_m:undefined}])");
+  assert.equal(plots['wave-chart'].layout.yaxis6,undefined);assert.equal(nodes['wave-chart'].style.height,'650px');
+  delete context.window.Plotly;delete context.Plotly;
+});

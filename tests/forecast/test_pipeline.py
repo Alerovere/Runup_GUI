@@ -104,7 +104,7 @@ class ForecastTests(unittest.TestCase):
             return p.demonstration_waves(location, start, hours)
         with patch.object(p, 'compute_runup', return_value={'Stockdon et al. (2006)': .8}):
             with self.assertRaisesRegex(ValueError, 'Cella marina'):
-                p.build_bulletin(now=NOW, fetcher=fetcher,
+                p.build_bulletin(now=NOW, provider="copernicus", fetcher=fetcher,
                     sealevel_fetcher=lambda loc,settings,start,hours: __import__('forecast_service.sealevel',fromlist=['demonstration_sealevel']).demonstration_sealevel(loc,p.demonstration_waves(loc,start,hours)[0]))
         self.assertEqual(len(calls), 2)
 

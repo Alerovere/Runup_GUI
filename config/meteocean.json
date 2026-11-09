@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "provider_url": "https://meteocean.science/",
+  "metadata_confirmed_by_provider_via_user": true,
+  "time_zone": "UTC",
+  "wave_height_unit": "m",
+  "peak_period_unit": "s",
+  "direction_convention": "WW3 nautical, from north clockwise",
+  "surge_unit": "m",
+  "surge_components": "meteorological_only",
+  "surge_reference": "anomaly_about_mean_sea_level",
+  "locations": {
+    "venezia": {
+      "waves_url": "http://54.171.51.212/csvFiles/ww3_forecast_venezia_lido.csv",
+      "surge_url": "http://54.171.51.212/csvFiles/surge_forecast_venezia_lido.csv"
+    },
+    "borghetto-santo-spirito": {
+      "waves_url": "http://54.171.51.212/csvFiles/ww3_forecast_borghetto_santo_spirito.csv",
+      "surge_url": "http://54.171.51.212/csvFiles/surge_forecast_borghetto_santo_spirito.csv"
+    }
+  }
+}

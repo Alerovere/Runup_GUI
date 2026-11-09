@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "grid_title_prefix": "STOFS_2D_GLOBAL.V3.1.0",
+  "node_count": 12785004,
+  "source_setup_cycle_utc": "2026-11-09T00:00:00Z",
+  "source_url": "https://noaa-gestofs-pds.s3.amazonaws.com/README.html",
+  "reference": "MSL according to NOAA distribution documentation; local structure datum remains provisional",
+  "locations": {
+    "borghetto-santo-spirito": {
+      "node_index_zero_based": 6197634,
+      "requested_latitude": 44.08,
+      "requested_longitude": 8.33,
+      "latitude": 44.0755172229,
+      "longitude": 8.3169733298,
+      "distance_km": 1.1538224959268741,
+      "depth_m": 339.85415649
+    },
+    "venezia": {
+      "node_index_zero_based": 5228022,
+      "requested_latitude": 45.35,
+      "requested_longitude": 12.5,
+      "latitude": 45.3650909444,
+      "longitude": 12.4904939866,
+      "distance_km": 1.8350695771169996,
+      "depth_m": 18.140625
+    }
+  }
+}

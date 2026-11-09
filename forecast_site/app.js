@@ -18,7 +18,7 @@ function italianTime(value) {
 
 function windowRows(location, now=Date.now()) {
   const start = Math.floor(now/hourMs)*hourMs;
-  return location.hourly.filter(row => new Date(row.time).getTime() >= start && new Date(row.time).getTime() < start + bulletin.display_hours*hourMs);
+  return location.hourly.filter(row => new Date(row.time).getTime() >= start && new Date(row.time).getTime() < (bulletin.display_to ? Date.parse(bulletin.display_to) : start + bulletin.display_hours*hourMs));
 }
 
 
@@ -57,6 +57,7 @@ function seaLevelReference(location) {
   const meta=location.sea_level_source||{};
   if (bulletin?.mode==='demo' || meta.reference_source==='synthetic') return {label:'riferimento sintetico',axis:'riferimento sintetico',caption:'Onde e livello marino sono sintetici: non sono una previsione.',detail:'Lo zero appartiene al segnale sintetico usato per la dimostrazione.'};
   if (meta.mode==='constant_msl') return {label:'livello medio mare assunto',axis:'livello medio assunto',caption:`Contributo del livello marino fissato a ${num(meta.offset_m)} m rispetto al livello medio assunto.`,detail:'Questa configurazione usa un livello costante; non rappresenta una previsione di marea o di variazioni meteorologiche.'};
+  if (meta.mode==='noaa_tide_meteocean_surge') return {label:'media del modello · raccordo locale provvisorio',axis:'riferimento medio del modello',caption:'Marea astronomica NOAA STOFS + sovralzo meteorologico MeteOcean. Non è applicata la media storica Copernicus. Il raccordo con le quote locali rimane da validare.',detail:'Somma della sola marea NOAA HTP e del surge MeteOcean, confermato come anomalia rispetto al livello medio. Il livello completo NOAA CWL non viene sommato al surge. Lo zero non certifica il riferimento dei rilievi sulla spiaggia.'};
   const ref=meta.historical_reference||location.sea_level_reference;
   if (ref?.kind==='copernicus_historical_mean') {
     return {label:`media Copernicus ${ref.year}`,axis:`zero = media ${ref.year}`,
@@ -100,8 +101,17 @@ function setNotice(extra='',location=null,now=Date.now()) {
   const source=noticeWaveSource(location);
   const next=nextWavePublication(now);
   const sourceText=source.kind==='cycle'?`Corsa del modello Copernicus del <strong>${esc(noticeDate(source.time))}</strong>`:source.kind==='mixed'?'Corse del modello Copernicus diverse: consultare la singola località':'Corsa del modello Copernicus non disponibile in questo bollettino';
-  const message=demo?`<strong>Modalità dimostrativa.</strong> Elaborazione del ${esc(noticeDate(bulletin.generated_at))}. Onde e livello del mare sintetici.`:`Elaborazione del <strong>${esc(noticeDate(bulletin.generated_at))}</strong>. ${sourceText}.${next?` Prossima uscita prevista: <strong>${esc(noticeDate(next))}</strong> (ora italiana).`:' Orari italiani.'}`;
-  $('notice').innerHTML = message + (age > 18 ? ' <strong>Aggiornamento in ritardo: il bollettino ha più di 18 ore.</strong>' : '') + (extra ? ' '+esc(extra) : '');
+  let sourceSummary=sourceText;
+  let updateText=next?` Prossima uscita prevista: <strong>${esc(noticeDate(next))}</strong> (ora italiana).`:' Orari italiani.';
+  if (bulletin.mode==='meteocean') {
+    sourceSummary='Onde e storm surge <a href="https://meteocean.science/" target="_blank" rel="noopener">MeteOcean – UniGE</a>; marea astronomica NOAA';
+    const day=new Date(now);let nextUpdate=Date.UTC(day.getUTCFullYear(),day.getUTCMonth(),day.getUTCDate(),0);
+    if(nextUpdate<=now) nextUpdate+=24*hourMs;
+    updateText=` Prossima acquisizione prevista: <strong>${esc(noticeDate(new Date(nextUpdate).toISOString()))}</strong> (ora italiana).`;
+  }
+  const message=demo?`<strong>Modalità dimostrativa.</strong> Elaborazione del ${esc(noticeDate(bulletin.generated_at))}. Onde e livello del mare sintetici.`:`Elaborazione del <strong>${esc(noticeDate(bulletin.generated_at))}</strong>. ${sourceSummary}.${updateText}`;
+  const staleAfter=Number.isFinite(bulletin.stale_after_hours)?bulletin.stale_after_hours:18;
+  $('notice').innerHTML = message + (age > staleAfter ? ` <strong>Aggiornamento in ritardo: il bollettino ha più di ${staleAfter} ore.</strong>` : '') + (extra ? ' '+esc(extra) : '');
 }
 
 function locationCards() {
@@ -328,16 +338,39 @@ function renderCharts(location,rows) {
   const twlLayout=chartLayout(`Livello totale [m; ${seaLevelReference(location).axis}]`,x);
   twlLayout.legend.font.size=9;
   Plotly.react('twl-chart',traces,twlLayout,plotOptions);
-  // All three panels use xaxis, so zoom and pan always keep the times aligned.
-  const layout=chartLayout('Altezza onde [m]',x,650);
+  // Every panel uses the same xaxis, so zoom and pan keep the times aligned.
+  const separateSea=rows.some(r=>Number.isFinite(r.tide_m)) && rows.some(r=>Number.isFinite(r.surge_m));
+  const height=separateSea?1150:650;
+  if ($('wave-chart').style) $('wave-chart').style.height=height+'px';
+  const layout=chartLayout('Altezza onde [m]',x,height);
   layout.margin.r=48;layout.showlegend=false;layout.yaxis.domain=[.59,1];layout.xaxis.anchor='y4';
   layout.yaxis2={title:{text:'Tempo tra le onde [s]',font:{size:10}},overlaying:'y',side:'right',showgrid:false,rangemode:'tozero'};
   layout.yaxis3={title:{text:'Provenienza',font:{size:10}},domain:[.40,.49],anchor:'x',range:[-10,370],tickvals:[0,90,180,270,360],ticktext:['N','E','S','O','N'],gridcolor:'#e8ede5',zeroline:false};
   layout.yaxis4={title:{text:'Livello [m]',font:{size:10}},domain:[0,.21],anchor:'x',gridcolor:'#e8ede5',zerolinecolor:'#c7d5c5'};
   layout.annotations=[
     {xref:'paper',yref:'paper',x:0,y:.32,xanchor:'left',yanchor:'bottom',showarrow:false,text:'<b>Marea + Storm surge</b>',font:{size:16,color:'#123f41'}},
-    {xref:'paper',yref:'paper',x:0,y:.235,xanchor:'left',yanchor:'bottom',showarrow:false,align:'left',text:'Oscillazioni della marea ed effetti di vento e pressione.<br>Include anche la circolazione marina del modello.',font:{size:10,color:'#637775'}}
+    {xref:'paper',yref:'paper',x:0,y:.235,xanchor:'left',yanchor:'bottom',showarrow:false,align:'left',text:bulletin.mode==='meteocean'?'Marea astronomica NOAA + sovralzo da vento e pressione MeteOcean.':'Oscillazioni della marea ed effetti di vento e pressione.<br>Include anche la circolazione marina del modello.',font:{size:10,color:'#637775'}}
   ];
+  if (separateSea) {
+    layout.yaxis.domain=[.81,1];
+    layout.yaxis3.domain=[.68,.75];
+    layout.xaxis.anchor='y6';
+    const values=rows.flatMap(r=>[r.tide_m,r.surge_m,r.water_level_m]).filter(Number.isFinite);
+    const bound=Math.max(.05,...values.map(Math.abs))*1.15;
+    const seaAxis=domain=>({title:{text:'metri',font:{size:10}},domain,anchor:'x',range:[-bound,bound],gridcolor:'#e8ede5',zeroline:true,zerolinecolor:'#94aaa1',zerolinewidth:1.5});
+    layout.yaxis4=seaAxis([.46,.59]);
+    layout.yaxis5=seaAxis([.23,.36]);
+    layout.yaxis6=seaAxis([0,.13]);
+    const label=(y,text,color,size)=>({xref:'paper',yref:'paper',x:0,y,xanchor:'left',yanchor:'bottom',showarrow:false,align:'left',text,font:{size,color}});
+    layout.annotations=[
+      label(.645,'<b>Marea astronomica</b>','#287f85',16),
+      label(.603,'Oscillazioni dovute a Luna e Sole.<br>Fonte: NOAA.','#637775',10),
+      label(.415,'<b>Storm surge · effetto del meteo</b>','#b7703c',16),
+      label(.373,'Variazioni del livello causate da vento e pressione.<br>Fonte: MeteOcean – UniGE.','#637775',10),
+      label(.185,'<b>Livello del mare · marea + surge</b>','#426b96',16),
+      label(.143,'Somma dei due contributi.<br>La risalita delle onde si aggiunge nel grafico del livello totale.','#637775',10)
+    ];
+  }
   const waveTraces=[
     {x,text,y:rows.map(r=>r.hs_m),name:'Altezza delle onde (Hs)',mode:'lines',connectgaps:false,line:{color:'#194e4c',width:2},fill:'tozeroy',fillcolor:'#e6eddf',customdata:rows.map(r=>directionLabel(r.direction_deg)),hovertemplate:'%{text}<br>Hs: %{y:.2f} m<br>Da %{customdata}<extra></extra>'},
     {x,text,y:rows.map(r=>r.tp_s),name:'Tempo tra le onde (Tp)',mode:'lines',yaxis:'y2',connectgaps:false,line:{color:'#c49b54',width:2,shape:'spline',smoothing:.8},hovertemplate:'%{text}<br>Tempo tra le onde: %{y:.1f} s<extra></extra>'}
@@ -351,7 +384,11 @@ function renderCharts(location,rows) {
       waveTraces.push({x,y:rows.map(()=>location.climatology[key]),name:label,mode:'lines',line:{color,width:1,dash:'dot'},hovertemplate:label+': %{y:.2f} m<extra>ERA5</extra>'});
     }
   }
-  waveTraces.push({x,text,y:rows.map(r=>r.water_level_m),yaxis:'y4',name:'Marea + Storm surge',mode:'lines',connectgaps:false,line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra>Marea + Storm surge</extra>'});
+  if (separateSea) {
+    waveTraces.push({x,text,y:rows.map(r=>r.tide_m),yaxis:'y4',name:'Marea astronomica NOAA',mode:'lines',connectgaps:false,line:{color:'#287f85',width:2},fill:'tozeroy',fillcolor:'rgba(40,127,133,.10)',hovertemplate:'%{text}<br>Marea NOAA: %{y:.2f} m<extra></extra>'});
+    waveTraces.push({x,text,y:rows.map(r=>r.surge_m),yaxis:'y5',name:'Storm surge MeteOcean',mode:'lines',connectgaps:false,line:{color:'#b7703c',width:2},fill:'tozeroy',fillcolor:'rgba(183,112,60,.10)',hovertemplate:'%{text}<br>Surge MeteOcean: %{y:.2f} m<extra></extra>'});
+  }
+  waveTraces.push({x,text,y:rows.map(r=>r.water_level_m),yaxis:separateSea?'y6':'y4',name:'Marea + Storm surge',mode:'lines',connectgaps:false,line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra>Marea + Storm surge</extra>'});
   Plotly.react('wave-chart',waveTraces,layout,plotOptions);
 }
 
@@ -406,7 +443,7 @@ function renderExtremes(location,rows,sectorId=null) {
 
 function locationParameters(location) {
   const reference=seaLevelReference(location);
-  const content=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : 'Non applicabile ai dati dimostrativi'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti i risultati dei modelli sull’intero periodo scaricato (120 ore); tempi in UTC.</dd></dl>`;
+  const content=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : bulletin.mode==='demo'?'Non applicabile ai dati dimostrativi':'Coordinate del campione non esposte nel CSV'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti i risultati dei modelli sull’intero periodo disponibile; tempi in UTC. Con MeteOcean include anche i contributi separati di marea e surge.</dd></dl>`;
   const c=location.climatology,e=c?.directional_extremes;
   const filtered=location.hourly.filter(hasFilteredStatistics);
   const filterInfo=filtered.length?`<h4>Filtro dei risultati di runup</h4><p>Filtro ±3σ per ora, un passaggio. ${num(filtered.reduce((sum,r)=>sum+r.n_outliers,0),0)} esclusioni su ${num(filtered.reduce((sum,r)=>sum+r.n_estimates_raw,0),0)} calcoli grezzi nell’intero periodo scaricato. I CSV conservano tutti i risultati con il campo included_in_summary.</p>`:'<p>Statistiche filtrate non disponibili: occorre aggiornare il bollettino.</p>';
@@ -421,6 +458,7 @@ async function bootMethod() {
     if (bulletin.schema_version!==1 || !bulletin.locations) throw new Error('Metadati non riconosciuti');
     $('model-references').innerHTML=bulletin.model_order.map(name=>`<p>${esc(bulletin.citations[name]||name)}</p>`).join('');
     $('method-locations').innerHTML=Object.entries(bulletin.locations).map(([slug,loc])=>`<details class="location-technical" id="parametri-${esc(slug)}"><summary>${esc(loc.name)}</summary><div>${locationParameters(loc)}</div></details>`).join('');
+    if ($('hero-provider')) $('hero-provider').textContent=bulletin.mode==='meteocean'?'MeteOcean + NOAA':bulletin.mode==='demo'?'Dati dimostrativi':'Copernicus Marine';
     $('updated').textContent=`Metadati del bollettino: ${local(bulletin.generated_at)} · Italia`;
     const slug=new URL(window.location.href).searchParams.get('localita');
     if (slug && Object.hasOwn(bulletin.locations,slug)) {$('method-return').href=`./?localita=${encodeURIComponent(slug)}`;$('method-return').textContent=`← Torna a ${bulletin.locations[slug].name}`;}
@@ -435,11 +473,11 @@ function renderDetail(slug) {
   $('area').textContent=location.area;
   const reference=seaLevelReference(location);
   $('twl-reference-label').textContent=`metri · zero: ${reference.label}`;
-  $('sealevel-caption').innerHTML=`Zero del livello marino: ${esc(reference.label)}. <a href="metodo.html?localita=${encodeURIComponent(slug)}#zero">Riferimento delle quote ↗</a>`;
+  $('sealevel-caption').innerHTML=`${location.sea_level_source?.mode==='noaa_tide_meteocean_surge'?'Marea, storm surge e loro somma sono separati e usano la stessa scala verticale. I valori negativi indicano un livello sotto il riferimento. ':''}Zero del livello marino: ${esc(reference.label)}. <a href="metodo.html?localita=${encodeURIComponent(slug)}#zero">Riferimento delle quote ↗</a>`;
   $('technical-link').href=`metodo.html?localita=${encodeURIComponent(slug)}`;
   $('download').href=location.csv;
   const valid=rows.filter(r=>hasFilteredStatistics(r) && Number.isFinite(r.twl_p95_m));
-  const futureEnd=Math.floor(Date.now()/hourMs)*hourMs + bulletin.display_hours*hourMs;
+  const futureEnd=bulletin.display_to ? Date.parse(bulletin.display_to) : Math.floor(Date.now()/hourMs)*hourMs + bulletin.display_hours*hourMs;
   const insufficient = new Date(location.valid_to).getTime()<futureEnd;
   const invalid=rows.filter(r=>!r.n_estimates).length;
   const staleStatistics=rows.some(r=>!hasFilteredStatistics(r));
@@ -477,7 +515,8 @@ async function boot() {
     const response=await fetch(`data/forecast.json?t=${Math.floor(Date.now()/300000)}`,{cache:'no-cache'});
     if (!response.ok) throw new Error('Bollettino non disponibile');
     bulletin=await response.json();
-    if (bulletin.schema_version!==1 || !bulletin.locations || !['demo','copernicus'].includes(bulletin.mode)) throw new Error('Formato del bollettino non riconosciuto');
+    if (bulletin.schema_version!==1 || !bulletin.locations || !['demo','copernicus','meteocean'].includes(bulletin.mode)) throw new Error('Formato del bollettino non riconosciuto');
+    if ($('hero-provider')) $('hero-provider').textContent=bulletin.mode==='meteocean'?'MeteOcean + NOAA':bulletin.mode==='demo'?'Dati dimostrativi':'Copernicus Marine';
     $('updated').textContent=`Ultima elaborazione: ${local(bulletin.generated_at)} · Italia`;
     document.addEventListener('click',event=>{
       const link=event.target.closest('a[href]');

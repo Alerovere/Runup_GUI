@@ -6,11 +6,11 @@ on:
       mode:
         description: Origine dei dati (demo = onde sintetiche)
         type: choice
-        options: [copernicus, demo]
-        default: copernicus
+        options: [meteocean, copernicus, demo]
+        default: meteocean
   schedule:
-    # UTC, after the nominal 06:00 / 20:00 publication windows. Best effort.
-    - cron: '37 6,20 * * *'
+    # UTC, daily acquisition. Provider files/model cycles are checked independently.
+    - cron: '0 0 * * *'
 
 permissions:
   contents: read
@@ -47,14 +47,15 @@ jobs:
       - name: Genera il bollettino dimostrativo
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'demo'
         run: python -B scripts/update_forecasts.py --demo --output _site/data
-      - name: Scarica Copernicus e calcola le previsioni
+      - name: Scarica i dati e calcola le previsioni
         if: github.event_name != 'workflow_dispatch' || inputs.mode != 'demo'
         env:
+          FORECAST_PROVIDER: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || vars.FORECAST_PROVIDER || 'meteocean' }}
           COPERNICUSMARINE_USERNAME: ${{ secrets.COPERNICUSMARINE_USERNAME }}
           COPERNICUSMARINE_PASSWORD: ${{ secrets.COPERNICUSMARINE_PASSWORD }}
         run: |
           for attempt in 1 2 3; do
-            if python -B scripts/update_forecasts.py --output _site/data; then
+            if python -B scripts/update_forecasts.py --provider "$FORECAST_PROVIDER" --output _site/data; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then sleep 60; fi

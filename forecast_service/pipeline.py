@@ -126,7 +126,8 @@ def summarize_records(waves, location, thresholds, season, eta):
                     detail.append({'time': wave['time'], 'slope': slope, 'model': name,
                                    'hs_m': wave['hs_m'], 'tp_s': wave['tp_s'], 'direction_deg': wave['direction_deg'],
                                    'water_level_m': eta_value, 'runup_m': float(runup), 'twl_m': twl,
-                                   'ssh_m': wave.get('ssh_m'), 'mean_reference_m': wave.get('mean_reference_m')})
+                                   'ssh_m': wave.get('ssh_m'), 'mean_reference_m': wave.get('mean_reference_m'),
+                                   'tide_m': wave.get('tide_m'), 'surge_m': wave.get('surge_m')})
         included, filter_mean, filter_sigma = sigma_clip(values)
         for record, keep in zip(detail[detail_start:], included):
             record['included_in_summary'] = keep
@@ -239,7 +240,7 @@ def demonstration_waves(location, start, hours):
     return waves, {'dataset_id': None, 'description': 'Onde sintetiche per verificare il portale; non sono previsioni.'}
 
 
-def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fetcher=None):
+def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fetcher=None, provider=None, tide_fetcher=None):
     from forecast_service.sealevel import align_sealevel, fetch_sealevel, demonstration_sealevel
     from forecast_service.climate import load_climate, compare_waves
     locations, impacts = load_configuration(root)
@@ -247,8 +248,13 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
         raise RuntimeError('py-wave-runup non disponibile: pubblicazione reale interrotta, senza fallback silenzioso.')
     controlled_time = now is not None
     now = parse_time(now) if controlled_time else datetime.now(UTC)
+    provider = provider or locations.get('forecast_provider', 'copernicus')
+    if provider not in ('copernicus', 'meteocean'):
+        raise ValueError('Fornitore della previsione non supportato.')
     start = now.replace(minute=0, second=0, microsecond=0)
-    bulletin = {'schema_version': 1, 'mode': 'demo' if demo else 'copernicus', 'generated_at': iso(now),
+    if provider == 'meteocean' and not demo:
+        start = start.replace(hour=0)
+    bulletin = {'schema_version': 1, 'mode': 'demo' if demo else provider, 'generated_at': iso(now),
                 'processing_started_at': iso(now),
                 'ensemble_statistics': dict(STATISTICS_METADATA),
                 'wave_model': {'publication_hours_utc':[6,20],
@@ -262,15 +268,53 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
                 'source': {'product_id': 'MEDSEA_ANALYSISFORECAST_WAV_006_017', 'doi': '10.48670/mds-00373',
                            'attribution': 'Generated using E.U. Copernicus Marine Service Information.'},
                 'locations': {}}
+    bulletin['update_schedule'] = {'hours_utc':[0], 'interval_hours':24}
+    bulletin['stale_after_hours'] = 30
+    prepared = {}
+    if provider == 'meteocean' and not demo:
+        from forecast_service.meteocean import fetch_meteocean
+        from forecast_service.noaa_tide import fetch_tides
+        settings = json.loads((root/'config/meteocean.json').read_text())
+        grid = json.loads((root/'config/noaa_tide_points.json').read_text())
+        if not set(locations['locations']).issubset(settings['locations']) or not set(locations['locations']).issubset(grid['locations']):
+            raise ValueError('Configurare i flussi MeteOcean e il nodo NOAA per ogni località.')
+        for slug, location in locations['locations'].items():
+            point = grid['locations'][slug]
+            if any(abs(location['wave_point'][key]-point['requested_'+key])>1e-8 for key in ('latitude','longitude')):
+                raise ValueError('Punto della località cambiato: ripetere il setup NOAA.')
+            prepared[slug] = fetch_meteocean(settings, slug, start, locations['download_hours'], locations['forecast_hours'])
+        if len({meta.get('coverage_start') for _,meta in prepared.values()}) > 1:
+            raise ValueError('Flussi MeteOcean di giornate diverse: aggiornamento incompleto fra località.')
+        common_hours = min(len(waves) for waves,_ in prepared.values())
+        tides, tide_meta = (tide_fetcher or fetch_tides)(grid, start, common_hours, now=now)
+        bulletin.update(source={'provider':'meteocean', 'name':'MeteOcean – Università di Genova',
+                                'url':'https://meteocean.science/', 'attribution':'Dati di onda e storm surge forniti da MeteOcean – DICCA, Università di Genova. Marea astronomica NOAA STOFS-2D-Global.'},
+                        wave_model={'publication_hours_utc':[], 'schedule_status':'publication_time_not_confirmed'},
+                        water_level={'mode':'noaa_tide_meteocean_surge', 'description':'Marea NOAA + surge MeteOcean; riferimento medio del modello, raccordo locale provvisorio.'},
+                        display_from=iso(start), display_to=iso(start+timedelta(hours=locations['forecast_hours'])))
     csvs = {}
     for slug, location in locations['locations'].items():
-        if demo:
+        if provider == 'meteocean' and not demo:
+            native, metadata = prepared[slug]
+            wave_rows = native[:common_hours]
+            tidal_rows = tides[slug]
+            if len(tidal_rows) != len(wave_rows) or any(w['time']!=t['time'] for w,t in zip(wave_rows,tidal_rows)):
+                raise ValueError('Marea NOAA non allineata alle onde MeteOcean.')
+            waves = [dict(w, tide_m=t['tide_m'], water_level_m=t['tide_m']+w['surge_m'])
+                     for w,t in zip(wave_rows,tidal_rows)]
+            level_meta = dict(tide_meta, mode='noaa_tide_meteocean_surge', reference_source='model_mean_sea_level_provisional',
+                              selected_point=grid['locations'][slug], surge_source=metadata['surge'],
+                              formula='NOAA HTP tide + MeteOcean meteorological surge',
+                              tide_included=True, reference_status='local_datum_not_validated')
+        elif demo:
             waves, metadata = demonstration_waves(location, start, locations['download_hours'])
         else:
             if (location.get('sea_level_reference') or {}).get('data_mode')=='demo':
                 raise ValueError('Riferimento SSH dimostrativo: pubblicazione reale interrotta.')
             waves, metadata = (fetcher or fetch_copernicus)(location, locations['dataset_id'], start, locations['download_hours'])
-        if locations['water_level']['mode'] == 'copernicus_ssh':
+        if provider == 'meteocean' and not demo:
+            pass
+        elif locations['water_level']['mode'] == 'copernicus_ssh':
             if demo:
                 levels, reference, level_meta = demonstration_sealevel(location, waves)
             else:
@@ -293,6 +337,7 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
         writer = csv.DictWriter(output, fieldnames=['data_mode', 'vertical_reference', *detail[0].keys()])
         writer.writeheader()
         reference_code = ('synthetic_reference' if demo else
+            'noaa_htp_plus_meteocean_surge_provisional_msl' if provider=='meteocean' else
             'mean_sea_level_assumed' if locations['water_level']['mode']!='copernicus_ssh' else
             f"copernicus_mean_{location['sea_level_reference']['year']}_provisional" if location.get('sea_level_reference') else
             'fixed_reference_provisional' if location.get('mean_reference_m') is not None else
