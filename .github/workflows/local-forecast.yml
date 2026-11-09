@@ -41,7 +41,7 @@ jobs:
       - name: Prepara il sito
         run: |
           mkdir -p _site
-          cp forecast_site/index.html forecast_site/metodo.html forecast_site/styles.css forecast_site/app.js forecast_site/icon.svg _site/
+          cp forecast_site/index.html forecast_site/metodo.html forecast_site/disclaimer.html forecast_site/styles.css forecast_site/app.js forecast_site/icon.svg _site/
           cp -R forecast_site/assets _site/
           touch _site/.nojekyll
       - name: Genera il bollettino dimostrativo

@@ -64,3 +64,5 @@
 @media(max-width:600px){.outlook-panel{padding:23px 19px}.outlook-panel h2{font-size:24px}.outlook-panel h3{font-size:20px}.impact-legend{grid-template-columns:1fr 1fr;gap:13px}.threshold-explained{grid-template-columns:45px 1fr;padding:18px 13px;gap:13px}.impact-asset .threshold-level{font-size:18px}.impact-title h3{font-size:16px}.impact-title .impact-badge{font-size:9px}.impact-windows li{display:block}.impact-windows li span{display:block}.impact-windows li span+span{margin-top:3px}.method-heading h1{font-size:32px}.method-color-list p{display:block}.method-color-list .impact-swatch{vertical-align:middle;margin-right:7px}.location-technical dl{grid-template-columns:1fr;gap:5px}.location-technical dd{margin-bottom:12px}}
 
 .impact-gray{--impact-bg:#e4e8e7;--impact-border:#aeb9b5;--impact-solid:#647970}
+
+.legal-draft{padding:16px 18px;border:1px solid #e6d2ae;border-radius:9px;background:#fff5e5;font-size:13px;line-height:1.8}.method-section h3{margin-top:24px}.method-section a{overflow-wrap:anywhere}

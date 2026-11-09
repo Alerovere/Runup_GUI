@@ -20,26 +20,29 @@ class SiteAssetsTests(unittest.TestCase):
     def test_scientific_citations_and_funding_survive_on_the_shared_method_page(self):
         method=html.unescape((ROOT/'forecast_site/metodo.html').read_text())
         for citation in MODEL_CITATIONS.values():self.assertIn(citation,method)
-        for name in ('index.html','metodo.html'):
+        for name in ('index.html','metodo.html','disclaimer.html'):
             page=(ROOT/'forecast_site'/name).read_text()
             self.assertIn('101334860',page)
             self.assertIn('assets/eu-erc-horizon-europe.png',page)
             self.assertIn('non devono essere utilizzati per alcun tipo di previsione',page)
 
     def test_page_anchors_and_shared_method_links_resolve(self):
-        pages={name:Page((ROOT/'forecast_site'/name).read_text()) for name in ('index.html','metodo.html')}
+        pages={name:Page((ROOT/'forecast_site'/name).read_text()) for name in ('index.html','metodo.html','disclaimer.html')}
         for name,page in pages.items():
             self.assertEqual(len(page.ids),len(set(page.ids)),name)
             for href in page.links:
                 url=urlsplit(href)
-                if url.scheme or url.netloc or not url.fragment:continue
+                if url.scheme or url.netloc:continue
                 target=url.path or name
-                if target in pages:self.assertIn(url.fragment,pages[target].ids,href)
+                if target.endswith('.html'):
+                    self.assertIn(target,pages,href)
+                    if url.fragment:self.assertIn(url.fragment,pages[target].ids,href)
+            self.assertIn('disclaimer.html',page.links,name)
         self.assertNotIn('climate-summary',pages['index.html'].ids)
         self.assertNotIn('direction-summary',pages['index.html'].ids)
 
     def test_forecast_artifact_includes_the_new_method_page(self):
         workflow=(ROOT/'.github/workflows/local-forecast.yml').read_text()
-        self.assertIn('cp forecast_site/index.html forecast_site/metodo.html',workflow)
+        self.assertIn('cp forecast_site/index.html forecast_site/metodo.html forecast_site/disclaimer.html',workflow)
 
 if __name__=='__main__':unittest.main()

@@ -7,10 +7,10 @@
   <title>Onde a riva · Previsioni locali</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=20261106-filtrati">
+  <link rel="stylesheet" href="styles.css?v=20261109-testi">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script defer src="app.js?v=20261106-filtrati"></script>
+  <script defer src="app.js?v=20261109-testi"></script>
 </head>
 <body>
   <a class="skip" href="#main">Vai al contenuto</a>
@@ -22,7 +22,7 @@
     <aside id="experimental-disclaimer" class="experimental-disclaimer" aria-labelledby="experimental-title">
       <p class="eyebrow warning-label"><svg class="warning-icon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3 2 21h20L12 3Z"/><path d="M12 9v4.5"/><circle cx="12" cy="17" r=".8" fill="currentColor" stroke="none"/></svg><span>Attenzione</span></p>
       <h2 id="experimental-title">Prototipo sperimentale — non utilizzare per previsioni o decisioni gestionali</h2>
-      <p>Questo sito presenta elaborazioni sperimentali non validate per uso operativo. <strong>Dati, grafici, soglie e risultati non devono essere utilizzati per alcun tipo di previsione, allerta o scelta gestionale</strong>, comprese le decisioni sulla gestione degli stabilimenti balneari, sulla pianificazione comunale e sulla sicurezza delle persone. Per informazioni operative consultare i servizi ufficiali competenti.</p>
+      <p>Questo sito presenta elaborazioni sperimentali non validate per uso operativo. <strong>Dati, grafici, soglie e risultati non devono essere utilizzati per alcun tipo di previsione, allerta o scelta gestionale</strong>, comprese le decisioni sulla gestione degli stabilimenti balneari, sulla pianificazione comunale e sulla sicurezza delle persone. Per informazioni operative consultare i servizi ufficiali competenti. <a href="disclaimer.html">Leggi le avvertenze e le condizioni d’uso complete</a>.</p>
     </aside>
     <div id="notice" class="notice" role="status">Caricamento del bollettino…</div>
     <section id="home" hidden>
@@ -40,15 +40,15 @@
     </section>
     <section id="detail" hidden>
       <a href="./" id="back" class="back">← Tutte le località</a>
-      <div class="detail-heading"><div><p id="area" class="eyebrow"></p><h1 id="location-title"></h1><p id="period" class="muted"></p></div><a id="download" class="button" download>Scarica risultati CSV ↓</a></div>
+      <div class="detail-heading"><div><p id="area" class="eyebrow"></p><h1 id="location-title"></h1><p id="period" class="muted"></p></div><a id="download" class="button" download>Scarica tutti i calcoli (CSV) ↓</a></div>
       <div id="metrics" class="metrics"></div>
-      <section id="outlook-panel" class="panel outlook-panel impact-unavailable"><p class="eyebrow">IL CONFRONTO CON LE QUOTE A RIVA</p><h2 id="outlook-title">Tendenza a 4 giorni</h2><div id="outlook"></div></section>
-      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">L’ACQUA A RIVA</p><h2>Livello totale dell’acqua</h2></div><span id="twl-reference-label" class="small muted">metri rispetto al riferimento dichiarato</span></div><p class="chart-caption">Risultati dopo il filtro ±3σ: la linea verde mostra la media e le fasce la variabilità fra i percentili. I massimi dei singoli calcoli non sono mostrati. Le linee tratteggiate sono le quote delle strutture. <a href="metodo.html#colori">Come leggere il grafico ↗</a></p><div id="threshold-key" class="threshold-key"></div><div id="twl-chart" class="chart" aria-label="Previsione del livello totale dell’acqua"></div></section>
+      <section id="outlook-panel" class="panel outlook-panel impact-unavailable"><p class="eyebrow">IL CONFRONTO CON I CHIOSCHI</p><h2 id="outlook-title">Tendenza a 4 giorni</h2><div id="outlook"></div></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">L’ACQUA A RIVA</p><h2>A quale quota potrebbe arrivare l’acqua?</h2></div><span id="twl-reference-label" class="small muted">metri rispetto al riferimento dichiarato</span></div><p class="chart-caption">Il grafico combina il livello del mare con la risalita delle onde sulla spiaggia. La linea mostra la media dei calcoli; le fasce colorate mostrano quanto differiscono i risultati. Le linee tratteggiate indicano le quote associate alle strutture. Il grafico non indica la profondità o l’estensione di un allagamento. <a href="metodo.html#colori">Come leggere il grafico ↗</a></p><div id="threshold-key" class="threshold-key"></div><div id="twl-chart" class="chart" aria-label="Previsione del livello totale dell’acqua"></div></section>
       <div class="section-heading"><div><p class="eyebrow">UNO SGUARDO AI PROSSIMI GIORNI</p><h2>Cosa aspettarsi giorno per giorno</h2></div></div>
       <div id="daily" class="daily-grid"></div>
-      <section class="panel"><div class="panel-heading"><div><p class="eyebrow">LE QUOTE CHE CONTANO</p><h2>Quali strutture possono essere interessate</h2></div><span class="tag">Valori illustrativi</span></div><p class="chart-caption">Ogni scheda riunisce la quota della struttura, la percentuale dei risultati filtrati che la supera e le ore con P95 sopra quota e onde frontali. Le quote sono illustrative; l’estensione degli allagamenti non è simulata.</p><div id="thresholds"></div></section>
-      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">IL MARE AL LARGO</p><h2>Onde previste</h2></div><span class="small muted">Altezza, periodo e provenienza</span></div><p class="chart-caption">Hs descrive l’altezza rappresentativa delle onde più grandi; Tp il tempo caratteristico fra le creste. I grafici sono allineati sullo stesso asse del tempo.</p><div class="wave-direction-key"><span class="direction-badge direction-away">Verde · onde non frontali</span><span class="direction-badge direction-toward">Arancione · onde verso la costa</span><span class="direction-badge direction-unknown">Grigio · confronto non disponibile</span></div><div id="wave-series-key" class="wave-series-key" aria-label="Legenda delle onde"></div><p id="wave-history-note" class="small muted"></p><div id="wave-chart" class="chart" aria-label="Onde, provenienza e Marea più Storm surge sullo stesso asse temporale"></div><p id="sealevel-caption" class="chart-caption"></p></section>
-      <section class="panel chart-panel"><p class="eyebrow">MAREGGIATE E SERIE STORICA</p><h2>Quanto è rara un’altezza come questa?</h2><div id="extremes-summary"></div></section>
+      <section class="panel"><div class="panel-heading"><div><p class="eyebrow">LE QUOTE CHE CONTANO</p><h2>Quali strutture possono essere interessate</h2></div><span class="tag">Quote provvisorie</span></div><p class="chart-caption">Per ogni tipo di struttura mostriamo la quota usata nel confronto e gli orari in cui le stime più alte la superano, con onde provenienti dalle direzioni di esposizione della spiaggia. Le quote sono esempi da verificare sul posto: il superamento non dimostra che una struttura sarà allagata.</p><div id="thresholds"></div></section>
+      <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">IL MARE AL LARGO</p><h2>Onde previste</h2></div><span class="small muted">Altezza, tempo tra le onde e provenienza</span></div><p class="chart-caption">L’altezza significativa (Hs) rappresenta le onde più alte, senza indicare la singola onda massima. Il tempo tra le onde (Tp), espresso in secondi, descrive quanto sono distanziate le creste delle onde dominanti. Tutti i grafici seguono gli stessi orari.</p><div class="wave-direction-key"><span class="direction-badge direction-away">Verde · onde da altre direzioni</span><span class="direction-badge direction-toward">Arancione · onde verso la costa</span><span class="direction-badge direction-unknown">Grigio · confronto non disponibile</span></div><div id="wave-series-key" class="wave-series-key" aria-label="Legenda delle onde"></div><p id="wave-history-note" class="small muted"></p><div id="wave-chart" class="chart" aria-label="Onde, provenienza e Marea più Storm surge sullo stesso asse temporale"></div><p id="sealevel-caption" class="chart-caption"></p></section>
+      <section class="panel chart-panel"><p class="eyebrow">MAREGGIATE E SERIE STORICA</p><h2>Quanto sono insolite le onde previste?</h2><div id="extremes-summary"></div></section>
 
       <p class="technical-link"><a id="technical-link" href="metodo.html">Dati, metodo, riferimenti delle quote e limiti della stima ↗</a></p>
     </section>
@@ -65,7 +65,7 @@
       </div>
     </section>
   </main>
-  <footer><a class="footer-brand" href="./">ondeariva</a><span>Esplorazione scientifica · Prototipo con parametri provvisori</span><span id="updated"></span></footer>
+  <footer><a class="footer-brand" href="./">ondeariva</a><span>Esplorazione scientifica · Prototipo con parametri provvisori</span><a href="disclaimer.html">Avvertenze e responsabilità</a><span id="updated"></span></footer>
   <noscript>Attiva JavaScript per consultare località e grafici.</noscript>
 </body>
 </html>

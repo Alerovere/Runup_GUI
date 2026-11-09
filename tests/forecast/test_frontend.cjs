@@ -64,7 +64,7 @@ test('L’avviso direzionale si riferisce al picco Hs e non al picco TWL',()=>{
   assert.equal(result.status,false);
   assert.equal(result.peak.hs_m,2);
   assert.match(result.text,/Sud \(180°\)/);
-  assert.match(result.text,/Non arrivano frontalmente/);
+  assert.match(result.text,/direzione diversa da quelle a cui questa spiaggia è esposta/);
 });
 
 test('La frequenza storica distingue ore, campioni e altezze oltre tutta la serie',()=>{
@@ -231,8 +231,8 @@ test('Una piccola coda sopra quota non rende il bianco un falso “nessun modell
   const nodes={};context.document.getElementById=id=>(nodes[id]??={});
   context.structureLocation={thresholds:[fixedThreshold],wave_exposure:exposure};context.structureRows=[makeRow({twl_p95_m:1})];
   call('renderThresholds(structureLocation,structureRows)');
-  assert.match(nodes.thresholds.innerHTML,/impact-white/);assert.match(nodes.thresholds.innerHTML,/95° percentile non supera/);
-  assert.doesNotMatch(nodes.thresholds.innerHTML,/Finestre con|nessun risultato|quota non è superata dai modelli/i);
+  assert.match(nodes.thresholds.innerHTML,/impact-white/);assert.match(nodes.thresholds.innerHTML,/fascia delle stime non supera/);
+  assert.doesNotMatch(nodes.thresholds.innerHTML,/Orari del possibile|nessun risultato|quota non è superata dai modelli/i);
 });
 
 test('Le finestre richiedono P95 sopra quota e onde frontali, con separazione ai cambi di direzione',()=>{
@@ -251,7 +251,7 @@ test('Il calendario estivo continua a distinguere stagione ignota e non attiva',
   const nodes={};context.document.getElementById=id=>(nodes[id]??={});
   context.seasonLocation={thresholds:[{...fixedThreshold,season:'summer'}],wave_exposure:exposure};
   context.seasonRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:false,fraction:1}]})];
-  call('renderThresholds(seasonLocation,seasonRows)');assert.match(nodes.thresholds.innerHTML,/Fuori stagione/);assert.doesNotMatch(nodes.thresholds.innerHTML,/Finestre con/);
+  call('renderThresholds(seasonLocation,seasonRows)');assert.match(nodes.thresholds.innerHTML,/Fuori stagione/);assert.doesNotMatch(nodes.thresholds.innerHTML,/Orari del possibile/);
   context.seasonRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:null,fraction:.5}]})];
   call('renderThresholds(seasonLocation,seasonRows)');assert.match(nodes.thresholds.innerHTML,/Calendario estivo da definire/);assert.match(nodes.thresholds.innerHTML,/50%/);
 });
@@ -263,7 +263,7 @@ test('Il TWL non disegna estremi e non presenta statistiche vecchie come filtrat
   context.graphRows=[makeRow(),makeRow({statistics_method:null})];
   call("bulletin={mode:'copernicus'};renderCharts(graphLocation,graphRows)");
   assert.doesNotMatch(plots['twl-chart'].traces.map(t=>t.name).join(' '),/Massimo|Minimo/);
-  const mean=plots['twl-chart'].traces.find(t=>t.name==='Media dei risultati filtrati');
+  const mean=plots['twl-chart'].traces.find(t=>t.name==='Media dei calcoli');
   assert.deepEqual(Array.from(mean.y),[.7,null]);
   delete context.window.Plotly;delete context.Plotly;
 });
@@ -274,8 +274,8 @@ test('Onde, provenienza e livello marino conservano date e valori originali',()=
   context.waveLocation={thresholds:[],wave_exposure:exposure,sea_level_source:{mode:'constant_msl',offset_m:0},climatology:{status:'available',time_step_hours:1,p95_m:2,p99_m:3}};
   context.waveRows=[makeRow({direction_deg:85}),makeRow({tp_s:8}),makeRow({hs_m:0,direction_deg:90,tp_s:null})];
   call("bulletin={mode:'copernicus'};renderCharts(waveLocation,waveRows)");
-  const wave=plots['wave-chart'],away=wave.traces.find(t=>t.name==='Onde non frontali'),toward=wave.traces.find(t=>t.name==='Onde verso la costa');
-  const sea=wave.traces.find(t=>t.name==='Marea + Storm surge'),tp=wave.traces.find(t=>t.name==='Periodo (Tp)');
+  const wave=plots['wave-chart'],away=wave.traces.find(t=>t.name==='Onde da altre direzioni'),toward=wave.traces.find(t=>t.name==='Onde verso la costa');
+  const sea=wave.traces.find(t=>t.name==='Marea + Storm surge'),tp=wave.traces.find(t=>t.name==='Tempo tra le onde (Tp)');
   assert.equal(away.y[0],85);assert.equal(away.y[1],null);assert.equal(toward.y[1],180);assert.equal(toward.y[2],null);
   assert.deepEqual(Array.from(sea.y),[.15,.15,.15]);assert.equal(sea.x,wave.traces[0].x);assert.equal(wave.layout.xaxis.anchor,'y4');
   assert.deepEqual(Array.from(tp.y),[5,8,null]);assert.equal(tp.line.shape,'spline');assert.equal(tp.connectgaps,false);
