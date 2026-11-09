@@ -252,8 +252,6 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
     if provider not in ('copernicus', 'meteocean'):
         raise ValueError('Fornitore della previsione non supportato.')
     start = now.replace(minute=0, second=0, microsecond=0)
-    if provider == 'meteocean' and not demo:
-        start = start.replace(hour=0)
     bulletin = {'schema_version': 1, 'mode': 'demo' if demo else provider, 'generated_at': iso(now),
                 'processing_started_at': iso(now),
                 'ensemble_statistics': dict(STATISTICS_METADATA),
@@ -268,13 +266,14 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
                 'source': {'product_id': 'MEDSEA_ANALYSISFORECAST_WAV_006_017', 'doi': '10.48670/mds-00373',
                            'attribution': 'Generated using E.U. Copernicus Marine Service Information.'},
                 'locations': {}}
-    bulletin['update_schedule'] = {'hours_utc':[0], 'interval_hours':24}
+    bulletin['update_schedule'] = locations.get('update_schedule', {'hours_utc':[6], 'minute_utc':40, 'interval_hours':24})
     bulletin['stale_after_hours'] = 30
     prepared = {}
     if provider == 'meteocean' and not demo:
         from forecast_service.meteocean import fetch_meteocean
         from forecast_service.noaa_tide import fetch_tides
         settings = json.loads((root/'config/meteocean.json').read_text())
+        publication = datetime.strptime(settings['publication_time_utc'], '%H:%M')
         grid = json.loads((root/'config/noaa_tide_points.json').read_text())
         if not set(locations['locations']).issubset(settings['locations']) or not set(locations['locations']).issubset(grid['locations']):
             raise ValueError('Configurare i flussi MeteOcean e il nodo NOAA per ogni località.')
@@ -289,7 +288,8 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
         tides, tide_meta = (tide_fetcher or fetch_tides)(grid, start, common_hours, now=now)
         bulletin.update(source={'provider':'meteocean', 'name':'MeteOcean – Università di Genova',
                                 'url':'https://meteocean.science/', 'attribution':'Dati di onda e storm surge forniti da MeteOcean – DICCA, Università di Genova. Marea astronomica NOAA STOFS-2D-Global.'},
-                        wave_model={'publication_hours_utc':[], 'schedule_status':'publication_time_not_confirmed'},
+                        wave_model={'publication_hours_utc':[publication.hour], 'publication_minute_utc':publication.minute,
+                                    'schedule_status':settings['publication_schedule_status']},
                         water_level={'mode':'noaa_tide_meteocean_surge', 'description':'Marea NOAA + surge MeteOcean; riferimento medio del modello, raccordo locale provvisorio.'},
                         display_from=iso(start), display_to=iso(start+timedelta(hours=locations['forecast_hours'])))
     csvs = {}

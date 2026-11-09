@@ -9,8 +9,8 @@ on:
         options: [meteocean, copernicus, demo]
         default: meteocean
   schedule:
-    # UTC, daily acquisition. Provider files/model cycles are checked independently.
-    - cron: '0 0 * * *'
+    # UTC: MeteOcean publishes at 06:20; allow 20 minutes before acquisition.
+    - cron: '40 6 * * *'
 
 permissions:
   contents: read

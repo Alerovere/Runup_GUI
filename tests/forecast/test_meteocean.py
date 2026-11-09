@@ -58,9 +58,13 @@ class MeteOceanTests(unittest.TestCase):
         with patch('forecast_service.meteocean.fetch_meteocean',side_effect=fetch),patch.object(pipeline,'compute_runup',return_value={'Stockdon et al. (2006)':.8}):
             bulletin,files=pipeline.build_bulletin(provider='meteocean',now=NOW+timedelta(hours=14),tide_fetcher=tides)
         self.assertEqual(bulletin['mode'],'meteocean')
-        self.assertEqual(bulletin['display_to'],'2026-11-13T00:00:00Z')
+        self.assertEqual(bulletin['display_from'],'2026-11-09T14:00:00Z')
+        self.assertEqual(bulletin['display_to'],'2026-11-13T14:00:00Z')
+        self.assertEqual(bulletin['update_schedule'],{'hours_utc':[6],'minute_utc':40,'interval_hours':24})
+        self.assertEqual(bulletin['wave_model']['publication_hours_utc'],[6])
+        self.assertEqual(bulletin['wave_model']['publication_minute_utc'],20)
         self.assertEqual(bulletin['stale_after_hours'],30)
-        self.assertTrue(all(start==NOW for _,start in calls))
+        self.assertTrue(all(start==NOW+timedelta(hours=14) for _,start in calls))
         for loc in bulletin['locations'].values():
             self.assertAlmostEqual(loc['hourly'][0]['water_level_m'],.3)
             self.assertAlmostEqual(loc['hourly'][0]['twl_mean_m'],1.1)
@@ -79,3 +83,24 @@ class MeteOceanTests(unittest.TestCase):
         with patch('forecast_service.meteocean.fetch_meteocean',side_effect=fetch):
             with self.assertRaisesRegex(ValueError,'allineata'):
                 pipeline.build_bulletin(provider='meteocean',now=NOW,tide_fetcher=tides)
+
+
+class PublicationCoverageTests(unittest.TestCase):
+    def test_morning_acquisition_has_four_future_days_and_rejects_yesterdays_feed(self):
+        settings={'locations':{'site':{'waves_url':'waves','surge_url':'surge'}}}
+        def downloader(url):return (wave_csv() if url=='waves' else surge_csv()),{}
+        rows,_=fetch_meteocean(settings,'site',NOW+timedelta(hours=6),120,downloader=downloader)
+        self.assertEqual(len(rows),114)
+        self.assertEqual(rows[0]['time'],'2026-11-09T06:00:00Z')
+        self.assertEqual(rows[95]['time'],'2026-11-13T05:00:00Z')
+        def old(url):
+            text=wave_csv() if url=='waves' else surge_csv()
+            lines=text.splitlines();out=[]
+            for line in lines:
+                if line.startswith('time,'):out.append(line);continue
+                time,rest=line.split(',',1)
+                time=datetime.strptime(time,'%Y-%m-%d %H:%M:%S')-timedelta(days=1)
+                out.append(f'{time:%Y-%m-%d %H:%M:%S},'+rest)
+            return '\n'.join(out),{}
+        with self.assertRaisesRegex(ValueError,'Copertura'):
+            fetch_meteocean(settings,'site',NOW+timedelta(hours=6),120,downloader=old)

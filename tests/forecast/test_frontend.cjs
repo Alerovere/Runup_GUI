@@ -309,7 +309,7 @@ test('La prossima acquisizione MeteOcean è una data valida e il ritardo segue l
   call("bulletin={mode:'meteocean',generated_at:'2026-11-09T00:00Z',stale_after_hours:30,wave_model:{publication_hours_utc:[]},locations:{}}");
   call("setNotice('',null,Date.parse('2026-11-10T02:00Z'))");
   assert.match(nodes.notice.innerHTML,/MeteOcean/);assert.match(nodes.notice.innerHTML,/NOAA/);
-  assert.match(nodes.notice.innerHTML,/01:00/);assert.doesNotMatch(nodes.notice.innerHTML,/data non disponibile|Aggiornamento in ritardo|Corsa del modello Copernicus/);
+  assert.match(nodes.notice.innerHTML,/07:40/);assert.doesNotMatch(nodes.notice.innerHTML,/data non disponibile|Aggiornamento in ritardo|Corsa del modello Copernicus/);
   call("setNotice('',null,Date.parse('2026-11-10T07:00Z'))");
   assert.match(nodes.notice.innerHTML,/più di 30 ore/);
 });
@@ -336,4 +336,14 @@ test('Marea e surge sono separati con scala comune, somma e campioni mancanti co
   call("bulletin={mode:'copernicus'};renderCharts(separateLocation,[{...separateRows[0],tide_m:undefined,surge_m:undefined}])");
   assert.equal(plots['wave-chart'].layout.yaxis6,undefined);assert.equal(nodes['wave-chart'].style.height,'650px');
   delete context.window.Plotly;delete context.Plotly;
+});
+
+
+test('Pubblicazione 06:20 UTC e acquisizione 06:40 UTC restano distinte anche con ora legale',()=>{
+  call("bulletin={wave_model:{publication_hours_utc:[6],publication_minute_utc:20},update_schedule:{hours_utc:[6],minute_utc:40}}");
+  assert.equal(call("nextWavePublication(Date.parse('2026-11-09T06:19:00Z'))"),'2026-11-09T06:20:00.000Z');
+  assert.equal(call("nextSiteAcquisition(Date.parse('2026-11-09T06:20:00Z'))"),'2026-11-09T06:40:00.000Z');
+  assert.equal(call("nextSiteAcquisition(Date.parse('2026-11-09T06:40:00Z'))"),'2026-11-10T06:40:00.000Z');
+  assert.match(call("noticeDate(nextSiteAcquisition(Date.parse('2026-11-09T06:35:00Z')))"),/07:40/);
+  assert.match(call("noticeDate(nextSiteAcquisition(Date.parse('2026-07-09T06:35:00Z')))"),/08:40/);
 });

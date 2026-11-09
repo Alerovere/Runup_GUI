@@ -3,6 +3,8 @@
   "provider_url": "https://meteocean.science/",
   "metadata_confirmed_by_provider_via_user": true,
   "time_zone": "UTC",
+  "publication_time_utc": "06:20",
+  "publication_schedule_status": "provider_confirmed",
   "wave_height_unit": "m",
   "peak_period_unit": "s",
   "direction_convention": "WW3 nautical, from north clockwise",

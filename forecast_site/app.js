@@ -73,18 +73,28 @@ function noticeDate(value) {
   return new Date(value).toLocaleString('it-IT',{timeZone:'Europe/Rome',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit',hourCycle:'h23'});
 }
 
-function nextWavePublication(now=Date.now()) {
-  const configured=bulletin.wave_model?.publication_hours_utc;
-  const fallback=bulletin.source?.product_id==='MEDSEA_ANALYSISFORECAST_WAV_006_017'?[6,20]:[];
-  const hours=(configured||fallback).filter(h=>Number.isInteger(h)&&h>=0&&h<24).sort((a,b)=>a-b);
+function nextScheduledUtc(hours,minute,now) {
+  if (!Number.isInteger(minute) || minute<0 || minute>59) return null;
+  const validHours=hours.filter(h=>Number.isInteger(h)&&h>=0&&h<24).sort((a,b)=>a-b);
   const today=new Date(now);
   for (let day=0;day<2;day++) {
-    for (const hour of hours) {
-      const time=Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()+day,hour);
+    for (const hour of validHours) {
+      const time=Date.UTC(today.getUTCFullYear(),today.getUTCMonth(),today.getUTCDate()+day,hour,minute);
       if (time>now) return new Date(time).toISOString();
     }
   }
   return null;
+}
+
+function nextWavePublication(now=Date.now()) {
+  const configured=bulletin.wave_model?.publication_hours_utc;
+  const fallback=bulletin.source?.product_id==='MEDSEA_ANALYSISFORECAST_WAV_006_017'?[6,20]:[];
+  return nextScheduledUtc(configured||fallback,bulletin.wave_model?.publication_minute_utc??0,now);
+}
+
+function nextSiteAcquisition(now=Date.now()) {
+  const schedule=bulletin.update_schedule;
+  return nextScheduledUtc(schedule?.hours_utc||[6],schedule?(schedule.minute_utc??0):40,now);
 }
 
 function noticeWaveSource(location=null) {
@@ -105,9 +115,8 @@ function setNotice(extra='',location=null,now=Date.now()) {
   let updateText=next?` Prossima uscita prevista: <strong>${esc(noticeDate(next))}</strong> (ora italiana).`:' Orari italiani.';
   if (bulletin.mode==='meteocean') {
     sourceSummary='Onde e storm surge <a href="https://meteocean.science/" target="_blank" rel="noopener">MeteOcean – UniGE</a>; marea astronomica NOAA';
-    const day=new Date(now);let nextUpdate=Date.UTC(day.getUTCFullYear(),day.getUTCMonth(),day.getUTCDate(),0);
-    if(nextUpdate<=now) nextUpdate+=24*hourMs;
-    updateText=` Prossima acquisizione prevista: <strong>${esc(noticeDate(new Date(nextUpdate).toISOString()))}</strong> (ora italiana).`;
+    const nextUpdate=nextSiteAcquisition(now);
+    updateText=nextUpdate?` Prossima acquisizione prevista: <strong>${esc(noticeDate(nextUpdate))}</strong> (ora italiana).`:'';
   }
   const message=demo?`<strong>Modalità dimostrativa.</strong> Elaborazione del ${esc(noticeDate(bulletin.generated_at))}. Onde e livello del mare sintetici.`:`Elaborazione del <strong>${esc(noticeDate(bulletin.generated_at))}</strong>. ${sourceSummary}.${updateText}`;
   const staleAfter=Number.isFinite(bulletin.stale_after_hours)?bulletin.stale_after_hours:18;
