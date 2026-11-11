@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .streamlit/secrets.toml
 .DS_Store
+
+# Raster originali locali: pubblicare soltanto i derivati del preprocessing.
+/notebooks/dati originali/

@@ -15,18 +15,30 @@ import zlib
 import numpy as np
 
 MAX_CELLS = 1024 * 1024
+MAX_ORTHOPHOTO_CELLS = 4096 * 4096
 METHOD = 'connected_static_twl_filtered_p75_p95_v1'
 
 
-def png_bytes(rgba):
+def png_bytes(rgba, *, max_cells=MAX_CELLS):
     rgba = np.asarray(rgba, dtype=np.uint8)
     height, width, channels = rgba.shape
-    if channels != 4 or height * width > MAX_CELLS:
+    if channels != 4 or height * width > max_cells:
         raise ValueError('Dimensioni PNG non valide.')
     def chunk(kind, data):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind+data) & 0xffffffff)
     pixels = b''.join(b'\0'+row.tobytes() for row in rgba)
     return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 6, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')
+
+
+def orthophoto_bytes(path, grid_shape, mapping):
+    raw = Path(path).read_bytes()
+    shape = mapping.get('orthophoto_shape', grid_shape)
+    if len(raw) > 12*1024*1024 or raw[:8] != b'\x89PNG\r\n\x1a\n' or len(raw) < 24:
+        raise ValueError('Ortofoto preparata non valida o troppo grande.')
+    width, height = struct.unpack('>II', raw[16:24])
+    if not width or not height or max(width, height) > 4096 or width*height > MAX_ORTHOPHOTO_CELLS or [height, width] != list(shape):
+        raise ValueError('Ortofoto preparata non coerente con le dimensioni dichiarate.')
+    return raw
 
 
 def load_grid(path):
@@ -99,9 +111,7 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
         layers.append({'percentile': q, 'level_m': level, 'peak_time': peak['time'], 'image': 'data/'+filename, 'cells': int(mask.sum())})
     ortho = None
     if mapping.get('orthophoto_file'):
-        image = (Path(root)/mapping['orthophoto_file']).read_bytes()
-        if len(image) > 12*1024*1024 or image[:8] != b'\x89PNG\r\n\x1a\n' or len(image) < 24 or struct.unpack('>II', image[16:24]) != (z.shape[1], z.shape[0]):
-            raise ValueError('Ortofoto preparata non coerente con il DEM.')
+        image = orthophoto_bytes(Path(root)/mapping['orthophoto_file'], z.shape, mapping)
         filename = prefix+'-orthophoto.png'; assets[filename] = image; ortho = 'data/'+filename
     exposure = [is_exposed(r.get('direction_deg'), unit.get('wave_exposure')) if r.get('hs_m', 0) > 0 else None for r in rows]
     return {'status': 'available', 'method': METHOD, 'data_mode': bulletin['mode'], 'period_from': start.isoformat(), 'period_to': end.isoformat(),

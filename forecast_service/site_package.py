@@ -48,7 +48,7 @@ def write_site_package(output,payload,*,climatology=None,attachments=None,cartog
     expected=cartography_paths(payload['location'],slug)
     if set(cartography or {})!=set(expected):
         raise ValueError('Allegati cartografici e configurazione non coerenti.')
-    validate_cartography(cartography or {})
+    validate_cartography(cartography or {}, payload['location'])
     output=Path(output); output.parent.mkdir(parents=True,exist_ok=True)
     temporary=output.with_suffix('.zip.tmp')
     try:
@@ -108,7 +108,7 @@ def import_site_package(path,root,*,replace=False,allow_demo=False):
                 raw=archive.read(name)
                 target=Path(folder)/name; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(raw)
                 paths[name]=target; updates[destination]=raw
-            validate_cartography(paths)
+            validate_cartography(paths,local)
         if local.get('sea_level_reference'):
 
             ref=local['sea_level_reference']
@@ -163,14 +163,15 @@ def cartography_paths(location,slug):
     return paths
 
 
-def validate_cartography(paths):
+def validate_cartography(paths,location):
     from forecast_service.inundation import load_grid
-    import struct
+    from forecast_service.inundation import orthophoto_bytes
+    from forecast_service.sectors import mapping_entries
+    configurations=dict(mapping_entries(location))
     for name,path in paths.items():
         if name.endswith('/grid.npz'):
             z,_,_,_=load_grid(path)
             ortho=paths.get(name.replace('grid.npz','orthophoto.png'))
             if ortho:
-                raw=Path(ortho).read_bytes()
-                if len(raw)>12*1024*1024 or raw[:8]!=b'\x89PNG\r\n\x1a\n' or len(raw)<24 or struct.unpack('>II',raw[16:24])!=(z.shape[1],z.shape[0]):
-                    raise ValueError('Ortofoto preparata non coerente con la griglia.')
+                unit=name.split('/')[1]
+                orthophoto_bytes(ortho,z.shape,configurations[unit])

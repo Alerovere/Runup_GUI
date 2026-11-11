@@ -71,3 +71,23 @@ Prima dell’esportazione, la nuova sezione **Riferimento storico del livello ma
 Per un altro sito scegliere **Calcola da Copernicus**, indicare un anno completo disponibile e abilitare `CONSENSO_DOWNLOAD_SSH`. L’account è quello Copernicus Marine, distinto da CDS: le credenziali possono essere lette dai Secrets Colab `COPERNICUSMARINE_USERNAME` e `COPERNICUSMARINE_PASSWORD` oppure inserite tramite input protetto. Non sono scritte nei file esportati. È possibile anche importare un riferimento JSON precedentemente preparato. Il controllo verifica anno, punto richiesto, cella selezionata e completezza oraria; il riferimento non viene riutilizzato per una cella diversa.
 
 Il pacchetto salva `mean_reference_m` e `sea_level_reference`, inclusi anno, cella, versione del prodotto e hash della serie. La media resta fissa a ogni previsione. I grafici dichiarano **zero = media Copernicus 2025**, e non sostengono che questo coincida già con il livello medio mare locale misurato. Il raccordo alle quote delle strutture resta da verificare.
+
+## Transetti da GeoJSON e raster originali dell’intera area
+
+Per preparare i profili non serve più esportare prima un CSV di punti:
+
+1. Nella sezione 3 scegliere **GeoJSON + DEM**, indicare il file di linee e il DEM GeoTIFF, il campo identificativo dei transetti (inizialmente `TR_ID`) e il CRS del GeoJSON. Per GeoJSON standard è WGS84/EPSG:4326. Il CRS di lavoro dei profili resta proiettato in metri.
+2. Impostare `PASSO_CAMPIONAMENTO_M`: `0` usa il passo del DEM, un valore positivo sceglie il passo in metri. Le quote provengono dalle celle del DEM originale, indipendentemente dalla risoluzione dell’ortofoto. Eventuali Z nel GeoJSON non sono usate. NoData e punti esterni restano quote mancanti; non sono riempiti con zero.
+3. Verificare diagnostica, orientamento, grafici e selezione della battigia con Z_MIN/Z_MAX, come prima. Il metodo della regressione resta invariato. Le linee dovrebbero essere rettilinee; la distanza per il fit è quella euclidea dal primo punto a mare, come nel notebook di riferimento.
+4. Nella sezione 5A attivare `USA_AREE_GEOJSON` e caricare i poligoni. I campi iniziali sono `sector_id` (ID come `ponente`, `centro`, `levante`) e `name` (nome leggibile); si possono modificare. Ogni transetto incluso viene assegnato usando il centro del tratto di battigia selezionato. Confini ambigui o transetti fuori dalle aree richiedono una correzione o `ASSEGNAZIONI_MANUALI`. Le linee non vengono tagliate sui confini dei settori.
+5. Nella sezione 5B attivare `PREPARA_MAPPE_DA_AREE`, indicare l’ortofoto comune e i crediti. Il DEM dei profili viene riutilizzato se `FILE_DEM_MAPPE` è vuoto. Il notebook prepara ciascuna mappa usando il poligono con `MARGINE_CLIPPING_M` di margine (100 m iniziali, modificabili). Il margine serve per la connessione; il risultato visualizzato resta ritagliato al settore. I punti di avvio verso mare sono ricavati dai primi punti validi dei profili orientati; sono verificabili nell’anteprima e sostituibili con `PUNTI_MARE_MANUALI`.
+
+Il campo `RISOLUZIONE_ORTOFOTO_M` parte da **0,5 m/pixel** e usa **metri/pixel**, separatamente dal DEM: `0` mantiene le dimensioni della griglia; `0.5` significa 50 cm/pixel e `0.005` significa 5 mm/pixel. Si ricampiona lo sfondo con interpolazione bilineare. L’immagine pubblicata può avere una risoluzione diversa dalla griglia di calcolo ma la stessa estensione geografica. Il passo effettivo ai bordi del rettangolo è approssimato tramite distanze geodetiche; target e dimensioni sono registrati nei metadati.
+
+Per mantenere leggeri pacchetto e sito, un singolo ritaglio ortofoto deve restare entro 4096 pixel per asse e 12 MiB. Un’impostazione troppo fine interrompe la preparazione con un messaggio: non viene degradata silenziosamente. Le parti senza ortofoto restano trasparenti e mostrano OpenStreetMap. Le quote dei profili non vengono ricavate dall’ortofoto ricampionata.
+
+### Cartella locale degli originali
+
+Mettere i file sorgente in `notebooks/dati originali/`, per esempio DEM, ortofotomosaico completo, linee dei transetti e poligoni dei settori. La cartella è esclusa da Git tramite `.gitignore`: **non viene inclusa nel push né scaricata da GitHub/Colab**. Da Colab occorre caricare i file oppure leggerli da Drive; un percorso del Mac non è accessibile dal runtime Colab.
+
+Il pacchetto esporta le griglie e le ortofoto ritagliate/ricampionate, diagnostica e geometrie utili a documentare il setup; non include i GeoTIFF originali. Eseguire il controllo del riferimento verticale e compilare autore, data e licenza dei rilievi prima di abilitare le mappe. Le pendenze e i risultati devono essere ricontrollati dopo aver cambiato i sorgenti.

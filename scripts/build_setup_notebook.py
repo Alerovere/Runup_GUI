@@ -64,9 +64,9 @@ code('''#@title Installa le librerie
 INSTALLA_DIPENDENZE = True #@param {type:"boolean"}
 if INSTALLA_DIPENDENZE:
     import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1", "rasterio>=1.3,<2"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1", "rasterio>=1.3,<2", "shapely>=2,<3"])
 print("Ambiente pronto.")''',form=True,tags=('install-dependencies',))
-modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','mapping_setup.py','ensemble.py','LICENSE-wave-climate.txt']
+modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','mapping_setup.py','geospatial_setup.py','ensemble.py','LICENSE-wave-climate.txt']
 sources={'forecast_service/'+name:(ROOT/'forecast_service'/name).read_text() for name in modules}
 for reference_path in sorted(ROOT.glob('config/study_sites/*/sea_level_reference_*.json')):
     sources[str(reference_path.relative_to(ROOT))]=reference_path.read_text()
@@ -170,8 +170,10 @@ else:
     ax.set_title("Direzioni di provenienza che espongono la spiaggia")
     plt.show()
     print("Schema orientativo: non è una simulazione della propagazione verso riva.")''',form=True,tags=('wave-exposure',))
-md('''## 3. Carica i profili esportati da QGIS
-Usa il CSV del tuo notebook, con colonne predefinite `TR_ID`, `distance`, `SAMPLE_1`, `X`, `Y`. Puoi modificare i nomi sotto. **X e Y devono appartenere a un CRS proiettato con unità in metri**, non essere longitudine e latitudine. `distance` serve a ordinare i punti; la distanza della regressione viene ricalcolata da X/Y come nel notebook fornito.
+md('''## 3. Profili da GeoJSON + DEM oppure da CSV
+Puoi caricare **le linee dei transetti in GeoJSON e il DEM GeoTIFF dell’intera area**: il notebook estrae i punti e le quote dal raster senza preparare un CSV. Le quote eventualmente presenti nel GeoJSON vengono ignorate. Il passo automatico segue la dimensione del pixel DEM; puoi sceglierne uno in metri. Si campionano le celle originali, senza interpolare NoData. I transetti devono essere preferibilmente rettilinei e attraversare la battigia. Le linee non vengono tagliate sui confini dei settori, per non modificare il profilo o eliminare la prima cresta.
+
+In alternativa usa il CSV del tuo notebook, con colonne predefinite `TR_ID`, `distance`, `SAMPLE_1`, `X`, `Y`. Puoi modificare i nomi sotto. **X e Y devono appartenere a un CRS proiettato con unità in metri**, non essere longitudine e latitudine. `distance` serve a ordinare i punti; la distanza della regressione viene ricalcolata da X/Y come nel notebook fornito.
 
 In modalità demo vengono creati due transetti sintetici, uno con ordine inverso, con un abbassamento del terreno dietro la prima quota sopra `Z_MAX`: quel tratto deve rimanere escluso dalla stima.''')
 code('''#@title Colonne, coordinate e profili
@@ -181,6 +183,12 @@ COL_Z = "SAMPLE_1" #@param {type:"string"}
 COL_X = "X" #@param {type:"string"}
 COL_Y = "Y" #@param {type:"string"}
 CRS_PROFILI = "EPSG:32632" #@param {type:"string"}
+ORIGINE_PROFILI = "CSV esistente" #@param ["CSV esistente", "GeoJSON + DEM"]
+FILE_TRANSETTI_GEOJSON = "" #@param {type:"string"}
+FILE_DEM_PROFILI = "" #@param {type:"string"}
+COL_ID_GEOJSON = "TR_ID" #@param {type:"string"}
+CRS_GEOJSON_TRANSETTI = "EPSG:4326" #@param {type:"string"}
+PASSO_CAMPIONAMENTO_M = 0.0 #@param {type:"number"}
 FILE_PROFILI = "" #@param {type:"string"}
 SEPARATORE = "," #@param {type:"string"}
 DECIMALE = "." #@param {type:"string"}
@@ -189,6 +197,25 @@ RIFERIMENTO_QUOTE = "Livello medio mare, da verificare" #@param {type:"string"}
 crs = CRS.from_user_input(CRS_PROFILI)
 if not crs.is_projected or not all(abs(a.unit_conversion_factor-1)<1e-9 for a in crs.axis_info[:2]):
     raise ValueError("Usa coordinate X/Y in un CRS proiettato in metri.")
+def scegli_file(percorso, messaggio):
+    if percorso:
+        source = Path(percorso)
+    else:
+        print(messaggio)
+        from google.colab import files
+        uploaded = files.upload()
+        if len(uploaded) != 1:
+            raise ValueError("Seleziona un solo file per questo passaggio.")
+        name, content = next(iter(uploaded.items()))
+        source = WORK / Path(name).name
+        source.write_bytes(content)
+    if not source.is_file():
+        raise ValueError(f"File non trovato: {source}")
+    return source
+
+GEO_PREPROCESSING = None
+GEO_TRANSECTS_SOURCE = None
+AREAS_SOURCE = None
 if DEMO:
     to_xy = Transformer.from_crs(4326,crs,always_xy=True)
     x0,y0=to_xy.transform(LON_SITO,LAT_SITO)
@@ -204,6 +231,19 @@ if DEMO:
             demo_rows.append({COL_ID:name,COL_DIST:dist,COL_Z:z[i],COL_X:xy[i,0],COL_Y:xy[i,1]})
     profili=pd.DataFrame(demo_rows)
     PROFILE_SOURCE="profili_sintetici"
+elif ORIGINE_PROFILI == "GeoJSON + DEM":
+    from forecast_service.geospatial_setup import extract_dem_profiles
+    GEO_TRANSECTS_SOURCE = scegli_file(FILE_TRANSETTI_GEOJSON, "Carica il GeoJSON delle linee dei transetti")
+    dem_source = scegli_file(FILE_DEM_PROFILI, "Carica il DEM GeoTIFF dell’intera area")
+    FILE_DEM_PROFILI = str(dem_source)
+    profili, diagnostica_estrazione, GEO_PREPROCESSING = extract_dem_profiles(
+        dem_source, GEO_TRANSECTS_SOURCE, profile_crs=CRS_PROFILI,
+        geojson_crs=CRS_GEOJSON_TRANSETTI, id_field=COL_ID_GEOJSON, step_m=PASSO_CAMPIONAMENTO_M)
+    profili = profili.rename(columns={"TR_ID":COL_ID,"distance":COL_DIST,"SAMPLE_1":COL_Z,"X":COL_X,"Y":COL_Y})
+    diagnostica_estrazione.to_csv(WORK/"estrazione_transetti.csv", index=False)
+    display(diagnostica_estrazione)
+    print("Passo effettivo:", GEO_PREPROCESSING["step_m"], "m. Controlla quote mancanti e transetti curvi.")
+    PROFILE_SOURCE = f"{GEO_TRANSECTS_SOURCE.name} + {dem_source.name}"
 else:
     if not FILE_PROFILI:
         from google.colab import files
@@ -322,7 +362,14 @@ display(pd.DataFrame(thresholds)[["short_label","elevation_m","season"]])''',for
 md('''### 5A. Settori di spiaggia — facoltativi
 Lascia `SETTORI_SPIAGGIA = {}` per rappresentare la spiaggia intera. Altrimenti assegna tutti i transetti inclusi a un solo settore ciascuno. Le pendenze sono ricavate dai transetti con il metodo già usato. Onde, ERA5, marea e surge restano condivisi; soglie, esposizione e stagione si ereditano dal sito, salvo diversa indicazione.
 
-I settori di spiaggia sono distinti dai settori di provenienza delle onde. I confini non sono dedotti automaticamente dagli ID dei transetti.''')
+I settori di spiaggia sono distinti dai settori di provenienza delle onde. Puoi caricare un GeoJSON di poligoni per assegnare automaticamente i transetti: si usa il punto centrale della battigia selezionata per il fit. Un punto sul confine, in più aree o fuori da tutte le aree richiede di correggere i poligoni o un’assegnazione manuale esplicita. Le aree senza transetti validi sono segnalate. I confini non sono dedotti dall’ordine numerico degli ID.''')
+code('''#@title Confini dei settori da GeoJSON (facoltativi)
+USA_AREE_GEOJSON = False #@param {type:"boolean"}
+FILE_AREE_GEOJSON = "" #@param {type:"string"}
+COL_ID_AREE = "sector_id" #@param {type:"string"}
+COL_NOME_AREE = "name" #@param {type:"string"}
+CRS_GEOJSON_AREE = "EPSG:4326" #@param {type:"string"}
+print("Le aree saranno usate per assegnare i transetti dopo la verifica delle pendenze.")''',form=True)
 code('''import copy
 from forecast_service.sectors import resolve_sectors
 
@@ -342,6 +389,20 @@ def soglie_settore(quote):
 #               "wave_exposure": {"sectors_deg": [[120, 220]], "note": "Da rilievo"}}
 # }
 SETTORI_SPIAGGIA = {}
+ASSEGNAZIONI_MANUALI = {}  # es. {"12": "ponente"}, solo per casi da risolvere esplicitamente
+POLIGONI_SETTORI = {}
+if USA_AREE_GEOJSON:
+    from forecast_service.geospatial_setup import sectors_from_beachfaces
+    AREAS_SOURCE = scegli_file(FILE_AREE_GEOJSON, "Carica il GeoJSON dei poligoni dei settori")
+    SETTORI_SPIAGGIA, POLIGONI_SETTORI, assegnazioni = sectors_from_beachfaces(
+        AREAS_SOURCE, preparati, selezioni, scelti.transect_id,
+        profile_crs=CRS_PROFILI, geojson_crs=CRS_GEOJSON_AREE, id_field=COL_ID_AREE,
+        name_field=COL_NOME_AREE, x_col=COL_X, y_col=COL_Y, manual=ASSEGNAZIONI_MANUALI)
+    display(assegnazioni)
+    assegnazioni.to_csv(WORK/"assegnazioni_settori.csv", index=False)
+# Puoi aggiungere quote o esposizione specifiche dopo l’assegnazione automatica:
+# SETTORI_SPIAGGIA["ponente"]["thresholds"] = soglie_settore([0.7, 0.9, 1.1, 1.4])
+SECTOR_ANALYSIS_SIGNATURE = ANALYSIS_SIGNATURE
 preview_location = dict(SITE_INPUT, slopes=PENDENZE, roughness_m=float(RUGOSITA_M),
     transects=json.loads(scelti.to_json(orient="records")),
     wave_exposure=parse_exposure(SETTORI_PROVENIENZA, NOTE_ESPOSIZIONE), sectors=SETTORI_SPIAGGIA)
@@ -353,7 +414,7 @@ else:
 md('''### 5B. DEM, ortofotomosaico e crediti — facoltativi
 Lascia `CARTOGRAFIE = []` per non produrre mappe. Ogni voce può riferirsi alla spiaggia intera (`unit_id="whole"`) oppure a uno dei settori.
 
-Il DEM deve essere un GeoTIFF locale ritagliato, con quote in **metri**, e includere una fascia attorno all’area di interesse per verificare le connessioni. L’ortofotomosaico è opzionale, GeoTIFF georeferenziato a 8 bit (grigio/RGB/RGBA). Si esportano soltanto una griglia e un’immagine leggere, normalmente fino a 768 pixel per asse; gli originali restano fuori dalla repository.
+Puoi usare DEM e ortofotomosaico dell’intera area: attivando il preprocessing dalle aree, il notebook ritaglia un dominio locale per ciascun settore con margine in metri. Non serve preparare raster separati. Il DEM deve essere GeoTIFF con quote in **metri**. La connessione si calcola nel dominio con margine; solo la visualizzazione è limitata al poligono esatto. L’ortofotomosaico è opzionale, GeoTIFF georeferenziato a 8 bit (grigio/RGB/RGBA). Si esportano soltanto una griglia e un’immagine leggere, normalmente fino a 768 pixel per asse; gli originali restano fuori dalla repository.
 
 Indica un poligono GeoJSON e punti di partenza verso mare in WGS84 **[longitudine, latitudine]**. La connessione si calcola sull’intero DEM; il poligono ritaglia solo il risultato. I punti devono cadere su celle valide sufficientemente basse: NoData non è acqua e non viene riempito artificialmente.
 
@@ -369,6 +430,20 @@ if CARICA_RASTER_DAL_COMPUTER:
         destination = WORK / Path(filename).name
         destination.write_bytes(content)
         print(destination)''',form=True)
+code('''#@title Mappe automatiche dai poligoni e dai raster dell’intera area
+PREPARA_MAPPE_DA_AREE = False #@param {type:"boolean"}
+FILE_DEM_MAPPE = "" #@param {type:"string"}
+FILE_ORTOFOTO_COMUNE = "" #@param {type:"string"}
+CREDITI_RILIEVI = "" #@param {type:"string"}
+DATA_RILIEVI = "" #@param {type:"string"}
+LICENZA_RILIEVI = "" #@param {type:"string"}
+RIFERIMENTO_VERTICALE_MAPPA = "" #@param {type:"string"}
+CORREZIONE_DEM_MAPPA_M = 0.0 #@param {type:"number"}
+RACCORDO_VERTICALE_CONFERMATO = False #@param {type:"boolean"}
+MARGINE_CLIPPING_M = 100.0 #@param {type:"number"}
+RISOLUZIONE_ORTOFOTO_M = 0.5 #@param {type:"number"}
+print("DEM mappe vuoto: si riusa quello dei profili. Ortofoto vuota: sfondo OpenStreetMap.")
+print("Ortofoto: passo in METRI/pixel. 0 = dimensioni della griglia; 0.5 = 50 cm; 0.005 = 5 mm. Il DEM dei profili resta alla risoluzione originale.")''',form=True)
 code('''from forecast_service.mapping_setup import prepare_mapping
 # Aggiungi una voce per ogni unità con cartografia, usando geometrie reali.
 # CARTOGRAFIE = [{
@@ -384,6 +459,24 @@ code('''from forecast_service.mapping_setup import prepare_mapping
 #   "max_dimension": 768
 # }]
 CARTOGRAFIE = []
+PUNTI_MARE_MANUALI = {}  # facoltativo: {"ponente": [[lon, lat], ...]}
+if PREPARA_MAPPE_DA_AREE:
+    if not POLIGONI_SETTORI:
+        raise ValueError("Prima carica e verifica i poligoni e l’assegnazione ai settori nella sezione 5A.")
+    dem_mappe = scegli_file(FILE_DEM_MAPPE or FILE_DEM_PROFILI, "Carica il DEM per le mappe")
+    to_wgs = Transformer.from_crs(CRS_PROFILI, 4326, always_xy=True)
+    for unit, polygon in POLIGONI_SETTORI.items():
+        seeds = PUNTI_MARE_MANUALI.get(unit)
+        if seeds is None:
+            seeds = [list(to_wgs.transform(float(preparati[key][COL_X].iloc[0]), float(preparati[key][COL_Y].iloc[0])))
+                     for key in SETTORI_SPIAGGIA[unit]["transect_ids"]]
+        CARTOGRAFIE.append(dict(unit_id=unit, dem_path=str(dem_mappe),
+            orthophoto_path=FILE_ORTOFOTO_COMUNE or None, display_polygon=polygon, seed_points=seeds,
+            survey_credit=CREDITI_RILIEVI, survey_date=DATA_RILIEVI, license=LICENZA_RILIEVI,
+            vertical_reference=RIFERIMENTO_VERTICALE_MAPPA, dem_offset_m=CORREZIONE_DEM_MAPPA_M,
+            vertical_alignment_confirmed=RACCORDO_VERTICALE_CONFERMATO,
+            clip_to_polygon=True, clip_buffer_m=MARGINE_CLIPPING_M, orthophoto_resolution_m=RISOLUZIONE_ORTOFOTO_M or None))
+MAP_ANALYSIS_SIGNATURE = ANALYSIS_SIGNATURE
 MAPPING_CONFIGS = {}; CARTOGRAPHY_ASSETS = {}
 for spec in CARTOGRAFIE:
     unit = spec.get("unit_id", "whole")
@@ -634,6 +727,8 @@ location=dict(SITE_INPUT,slopes=PENDENZE,roughness_m=float(RUGOSITA_M),parameter
 if SETTORI_SPIAGGIA:
     location["sectors"] = copy.deepcopy(SETTORI_SPIAGGIA)
 resolve_sectors(location, thresholds)
+if SECTOR_ANALYSIS_SIGNATURE != ANALYSIS_SIGNATURE or (MAPPING_CONFIGS and MAP_ANALYSIS_SIGNATURE != ANALYSIS_SIGNATURE):
+    raise ValueError("Profili cambiati: riesegui assegnazione dei settori e preparazione delle mappe.")
 if CARTOGRAPHY_SIGNATURE != json.dumps(CARTOGRAFIE, sort_keys=True):
     raise ValueError("Cartografia cambiata: riesegui la preparazione prima di esportare.")
 for unit, metadata in MAPPING_CONFIGS.items():
@@ -655,7 +750,7 @@ payload=dict(schema_version=1,slug=ID_SITO,data_mode="demo" if DEMO else "study"
         profile_sha256=hashlib.sha256((WORK/"profili_normalizzati.csv").read_bytes()).hexdigest(),
         profile_data_mode=PROFILE_DATA_MODE,climate_data_mode=CLIMATE_DATA_MODE if CLIMATE else None,
         sea_level_reference_year=SEA_LEVEL_REFERENCE["year"] if SEA_LEVEL_REFERENCE else None,
-        profile_crs=crs.to_string(),vertical_reference=RIFERIMENTO_QUOTE,z_correction_m=CORREZIONE_QUOTE_DEM_M,
+        geospatial_preprocessing=GEO_PREPROCESSING,profile_crs=crs.to_string(),vertical_reference=RIFERIMENTO_QUOTE,z_correction_m=CORREZIONE_QUOTE_DEM_M,
         excluded_transects=sorted(excluded),slope_sampling=MODALITA_PENDENZE,z_min_m=Z_MIN,z_max_m=Z_MAX))
 display(pd.DataFrame([{"località":NOME_SITO,"modalità":payload["data_mode"],"transetti inclusi":len(scelti),"pendenze":PENDENZE,"ERA5 o riferimento":CLIMATE["source"] if CLIMATE else "Non configurato","esposizione":location["wave_exposure"]["sectors_deg"] if location["wave_exposure"] else "Da definire","stagione estiva":f"{INIZIO_ESTATE} / {FINE_ESTATE}" if INIZIO_ESTATE else "Da definire"}]))
 print("Le soglie e il raccordo delle quote restano da validare, anche con profili misurati.")''',form=True)
@@ -665,6 +760,10 @@ if ESPORTA_PACCHETTO:
     attachments={name:WORK/name for name in ["pendenze_transetti.csv","profili_normalizzati.csv","profilo_selezionato.png"]}
     for name in ["climatologia.png","massimi_annuali.csv","estremi_settoriali.png"]:
         if CLIMATE is not None and (WORK/name).exists(): attachments[name]=WORK/name
+    for name in ["estrazione_transetti.csv", "assegnazioni_settori.csv"]:
+        if (WORK/name).exists(): attachments[name]=WORK/name
+    if GEO_TRANSECTS_SOURCE: attachments["transetti.geojson"]=GEO_TRANSECTS_SOURCE
+    if AREAS_SOURCE: attachments["settori.geojson"]=AREAS_SOURCE
     output=WORK/f"{ID_SITO}_{'DEMO' if DEMO else 'studio'}.zip"
     write_site_package(output,payload,climatology=CLIMATE,attachments=attachments,cartography=CARTOGRAPHY_ASSETS)
     print("Pacchetto creato:",output)
