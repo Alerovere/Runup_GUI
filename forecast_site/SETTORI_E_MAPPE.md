@@ -2,46 +2,23 @@
 
 L’app Streamlit resta separata. Queste opzioni riguardano il notebook di setup e il portale statico. Non occorrono nuovi account o servizi web.
 
-## 1. Settori nel notebook Colab
+## 1. Un’area, eventuali settori costieri
 
-Aprire la versione aggiornata di `notebooks/Definisci_siti_studio.ipynb`, caricare i profili e verificare le pendenze come prima. La sezione **5A** contiene `SETTORI_SPIAGGIA`:
+Per il percorso principale del notebook servono DEM, ortofotomosaico e GeoJSON delle linee dei transetti. I poligoni GeoJSON dei **settori costieri** sono facoltativi. Senza poligoni la spiaggia intera rimane rappresentata.
 
-```python
-SETTORI_SPIAGGIA = {}
-```
+Le direzioni di esposizione, le previsioni di onda/surge/marea e il riferimento storico ERA5 sono comuni all’area. Ogni settore costiero ha i propri transetti e le proprie strutture esposte, anche con nomi, quote ed elenchi diversi. Un’esposizione diversa nel singolo settore costiero viene rifiutata dalla configurazione. I settori statistici di provenienza ERA5 non sono settori costieri.
 
-Lasciandolo vuoto si mantiene la spiaggia intera. Per suddividere un sito, aggiungere una voce per ogni settore con `name` e `transect_ids`. Gli identificativi sono quelli della tabella dei transetti inclusi, trattati come stringhe. Ogni transetto incluso deve essere assegnato una volta: duplicati, ID sconosciuti e transetti dimenticati impediscono l’esportazione. Non si deducono settori dal loro ordine numerico.
+I transetti sono assegnati con i poligoni usando il centro della battigia selezionata per il fit. I casi ambigui richiedono una scelta esplicita. Il filtro ±3σ e i percentili sono calcolati per settore costiero e ora, mantenendo le formule scientifiche. È possibile non configurare strutture esposte, continuando a calcolare runup, TWL e mappe.
 
-```python
-# Esempio di formato per un sito con quattro transetti: non è una suddivisione reale di Borghetto.
-SETTORI_SPIAGGIA = {
-    "ponente": {"name": "Ponente", "transect_ids": ["1", "2"]},
-    "levante": {"name": "Levante", "transect_ids": ["3", "4"],
-                "thresholds": soglie_settore([0.65, 0.85, 1.05, 1.35])},
-}
-```
+## 2. File, strutture e ritagli nel notebook
 
-Ogni settore usa le pendenze misurate dei propri transetti, deduplicando valori identici. Non applica il campionamento sintetico minimo–massimo del riepilogo della spiaggia. Può avere `wave_exposure`, `summer_season`, `thresholds` e `notes` propri; in loro assenza eredita quelli del sito. Non cambiano le formule né le citazioni. Il filtro ±3σ e i percentili sono calcolati per ora e settore. I percentili non sono probabilità calibrate.
+Il caricamento dei sorgenti è unico. Nel passaggio delle strutture compare una scheda per ogni settore costiero, oppure una sola scheda per la spiaggia intera: modificare nome, quota e stagione delle strutture, deselezionare le assenti o aggiungerne altre. Le quattro voci iniziali sono esempi da validare. La tendenza del portale dichiara la struttura di riferimento effettivamente utilizzata; non presuppone che siano presenti chioschi in tutti i settori costieri.
 
-I download di onde, surge e marea rimangono uno per località; ERA5 resta condiviso. Il portale offre il selettore del tratto, un riepilogo dell’intera spiaggia e un CSV per settore. Località senza settori e pacchetti precedenti restano validi. Lo script locale `scripts/setup_location.py` accetta anche `--sectors-json` per una nuova bozza.
+I raster completi possono risiedere in `notebooks/dati originali/`, esclusa da Git. Il preprocessing prepara un dominio DEM con margine e ritaglia le immagini al poligono del settore costiero. In assenza di poligoni usa l’estensione del DEM. I punti di avvio verso mare derivano dai profili orientati e sono modificabili. Compilare crediti, data e licenza, e confermare il raccordo delle quote con lo zero del TWL.
 
-## 2. DEM e ortofotomosaico nel notebook
+La risoluzione dell’ortofoto pubblicata parte da **0,5 m/pixel**, separatamente dal DEM originale dei profili. La griglia DEM della mappa rimane leggera (massimo 1024 pixel per asse). Il PNG ortofoto, allineato in EPSG:3857, può arrivare a 4096 pixel per asse e 12 MiB. I limiti producono un errore esplicito; non viene alterato silenziosamente il passo richiesto. Le zone esterne o non coperte restano trasparenti e mostrano OpenStreetMap.
 
-La sezione **5B** contiene `CARTOGRAFIE = []`: vuoto significa nessuna mappa. Una voce può riguardare `whole` (spiaggia intera) o l’ID di un settore, anche soltanto uno dei settori configurati.
-
-In alternativa ai profili CSV, il notebook può estrarre i profili dalle linee GeoJSON e dal DEM originale dell’intera area, e assegnarli ai settori caricati come poligoni GeoJSON. Vedi anche `notebooks/README.md`.
-
-Occorrono:
-
-- DEM GeoTIFF a una banda, georeferenziato, con quote in metri, anche dell’intera area. Attivare `clip_to_polygon` oppure il flusso automatico dalle aree: si prepara un dominio locale con margine prima del calcolo. Il limite di 0,2° per asse si applica al dominio preparato, non al raster sorgente.
-- Ortofotomosaico GeoTIFF facoltativo, georeferenziato a 8 bit, grigio/RGB/RGBA. L’ortofoto è lo sfondo, non contiene le quote per il calcolo.
-- Poligono GeoJSON del settore e punti di avvio verso mare, in WGS84 `[longitudine, latitudine]`. Nel flusso automatico i punti sono ricavati dai profili orientati; si possono correggere nell’anteprima. I punti devono ricadere su celle valide e sufficientemente basse del DEM. NoData rimane una barriera; il mare non viene inventato.
-- Crediti del DEM e dell’ortofoto, data del rilievo, licenza di pubblicazione e riferimento verticale. Se diversi, indicare entrambi gli autori/date nel testo dei crediti.
-- Raccordo verificato tra zero del DEM e zero del TWL. `dem_offset_m` viene **sommato** al raster una volta sola; non è automaticamente la correzione dei profili. Confermare `vertical_alignment_confirmed=True` solo dopo questa verifica.
-
-Il notebook mostra un esempio completo commentato di `CARTOGRAFIE`. I file possono essere caricati dal computer oppure letti da Drive. Installa Rasterio soltanto nel setup; la produzione usa le griglie già preparate e NumPy.
-
-Gli originali non entrano nel pacchetto: si esportano `grid.npz` e, se presente, `orthophoto.png`, allineati in EPSG:3857 (la proiezione della mappa web, con estensione riportata in WGS84). La griglia DEM preparata ha normalmente fino a 768 pixel per asse, massimo 1024. L’ortofoto può usare un passo indipendente in metri/pixel, fino a 4096 pixel per asse e 12 MiB: non viene ridotta silenziosamente se il passo richiesto produce un file troppo grande. Questa riduzione e il ricampionamento al vicino più prossimo possono alterare muri e varchi: controllare il risultato; non sono sostituti di un rilievo adeguato. Preferire un terreno depurato dagli artefatti, con rappresentazione verificata delle opere: un DSM con vegetazione o edifici non equivale automaticamente a un DTM idraulicamente corretto.
+Istruzioni dettagliate, ordine dei passaggi e dati richiesti: `notebooks/README.md`. Il notebook non richiede di preparare un CSV dei profili né di attivare separatamente le mappe dopo aver caricato i raster.
 
 ## 3. Esportazione, importazione e pubblicazione
 
@@ -64,3 +41,9 @@ Si propaga sul DEM un livello uniforme dalle celle di avvio verso mare, attraver
 È un’**estensione statica potenziale**, non una simulazione dinamica: il runup è intermittente. Non fornisce durata, profondità effettiva, velocità, portate, infiltrazione o sormonto delle opere. Un bacino connesso dopo il superamento di una cresta può essere sovrastimato dal riempimento statico. Le ore con onde non frontali o direzione sconosciuta sono indicate; non si applica una trasformazione delle onde verso riva.
 
 Dati mancanti o un errore della cartografia rendono indisponibile la sola mappa, con motivazione visibile, senza impedire i grafici. Nessuna mappa viene prodotta con copertura inferiore alle 96 ore o statistiche obsolete. Rimangono tutte le avvertenze sperimentali e le condizioni d’uso del portale.
+
+## Quote delle strutture campionate dal DEM
+
+Il notebook accetta un GeoJSON facoltativo di punti con campo `struttura`. Per ogni settore costiero e tipo di struttura campiona il DEM originale e propone la media delle quote valide. Senza suddivisione, il raggruppamento riguarda la spiaggia intera. Minimo, massimo, numero di punti e osservazioni escluse restano nella diagnostica. Il modulo permette di modificare la proposta, conservando l’origine della quota e la media iniziale nel pacchetto.
+
+I punti devono identificare la quota da confrontare con l’acqua (per esempio terreno o accesso): quote di tetti lette da un DSM non equivalgono alle quote del terreno. La media non è la quota del punto più basso, né una probabilità di interessamento. Vedi `notebooks/README.md` per formato, attività stagionale, casi ambigui e controllo delle correzioni verticali.

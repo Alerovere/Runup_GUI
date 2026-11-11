@@ -24,7 +24,7 @@ def validate_payload(payload):
     validate_exposure(location.get('wave_exposure'))
     if not location.get('slopes') or any(not isinstance(s,(int,float)) or not 0<s<1 for s in location['slopes']):
         raise ValueError('Pendenze non valide.')
-    if not payload.get('thresholds'):
+    if not isinstance(payload.get('thresholds'), list):
         raise ValueError('Soglie mancanti.')
     if location.get('climatology_file') not in (None,f'config/climatology/{slug}.json'):
         raise ValueError('Percorso climatologico non valido nel pacchetto.')

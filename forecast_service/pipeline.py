@@ -71,7 +71,7 @@ def load_configuration(root=ROOT):
         if len(set(ids)) != len(ids):
             raise ValueError(f'Identificativi soglia duplicati: {slug}')
         heights = [t['elevation_m'] for t in thresholds]
-        if not heights or any(not math.isfinite(h) for h in heights) or heights != sorted(set(heights)):
+        if any(not math.isfinite(h) for h in heights) or heights != sorted(heights):
             raise ValueError(f'Soglie non valide: {slug}')
         if any(t['season'] not in ('summer', 'all_year') for t in thresholds):
             raise ValueError(f'Stagionalità non valida: {slug}')

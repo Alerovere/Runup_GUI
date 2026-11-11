@@ -79,15 +79,19 @@ class SectorTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Ogni transetto'):
                 resolve_sectors(broken, thresholds)
 
-    def test_sector_thresholds_and_exposure_override_parent(self):
+    def test_only_structures_change_and_exposure_is_common_to_area(self):
         with tempfile.TemporaryDirectory() as folder:
             locations, impacts = config(Path(folder)); loc = locations['locations']['venezia']; thresholds = impacts['locations']['venezia']['thresholds']
             custom = copy.deepcopy(thresholds); custom[2]['elevation_m'] = 1.2
-            loc['sectors']['est'].update(thresholds=custom, wave_exposure={'sectors_deg': [[70, 130]]})
+            loc['wave_exposure']={'sectors_deg': [[70, 130]]}
+            loc['sectors']['est'].update(thresholds=custom)
             units = resolve_sectors(loc, thresholds)
             self.assertEqual(units['est']['thresholds'][2]['elevation_m'], 1.2)
             self.assertEqual(units['ovest']['thresholds'][2]['elevation_m'], 1.1)
-            self.assertEqual(units['est']['wave_exposure']['sectors_deg'], [[70, 130]])
+            self.assertEqual(units['est']['wave_exposure'], units['ovest']['wave_exposure'])
+            loc['sectors']['est']['wave_exposure']={'sectors_deg': [[140, 200]]}
+            with self.assertRaisesRegex(ValueError,'comune all’area'):
+                resolve_sectors(loc,thresholds)
 
 
 class MapTests(unittest.TestCase):

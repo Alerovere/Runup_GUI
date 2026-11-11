@@ -11,7 +11,7 @@ def saved_form_values(previous_cells):
         if cell.get('cell_type') != 'code':
             continue
         for line in ''.join(cell['source']).splitlines():
-            if '#@param' not in line:
+            if '#@param' not in line and line.split('=',1)[0].strip() not in {'QUOTA_OMBRELLONI_M','QUOTA_STRUTTURE_STAGIONALI_M','QUOTA_CHIOSCHI_M','QUOTA_PASSEGGIATA_M'}:
                 continue
             try:
                 node = ast.parse(line.split('#@param', 1)[0].strip()).body[0]
@@ -51,7 +51,17 @@ def code(text, *, form=False, tags=()):
 
 md('''# Onde a riva — Definizione dei siti di studio
 
-Un sito alla volta: scegli il punto costiero e quello offshore, carica i profili QGIS, verifica la pendenza della battigia, prepara ERA5 ed esporta un pacchetto per il portale.
+**Un’area di studio, con eventuali settori costieri.**
+
+Input dell’area: **DEM, ortofotomosaico e GeoJSON dei transetti**. Puoi aggiungere un GeoJSON facoltativo dei **punti delle strutture**, con campo `struttura`, per proporre quote medie dal DEM. Il GeoJSON dei poligoni dei **settori costieri è facoltativo**: senza poligoni si rappresenta la spiaggia intera. Non occorre preparare CSV di punti o raster ritagliati.
+
+| Comuni all’area | Specifici del settore costiero |
+|---|---|
+| DEM e ortofoto sorgenti; direzioni di esposizione | Transetti assegnati e relative pendenze |
+| Punto di previsione di onde, surge e marea | Strutture esposte presenti e loro quote |
+| Punto e serie storica ERA5 | Risultati del runup/TWL e ritagli della mappa |
+
+Il percorso è unico: file → profili e pendenze → settori costieri → strutture esposte → ritagli → ERA5 comune → esportazione. I dati di previsione vengono scaricati dal servizio giornaliero, non moltiplicati per settore costiero.
 
 **Il notebook è autosufficiente:** le funzioni del progetto sono incluse nella cella tecnica; non occorre clonare GitHub o pubblicare il sito. Parti in modalità dimostrativa per vedere tutti i passaggi senza credenziali. Per i tuoi dati disattiva `DEMO` e usa le celle in ordine.
 
@@ -64,9 +74,9 @@ code('''#@title Installa le librerie
 INSTALLA_DIPENDENZE = True #@param {type:"boolean"}
 if INSTALLA_DIPENDENZE:
     import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1", "rasterio>=1.3,<2", "shapely>=2,<3"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1", "rasterio>=1.3,<2", "shapely>=2,<3", "ipywidgets>=8,<9"])
 print("Ambiente pronto.")''',form=True,tags=('install-dependencies',))
-modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','mapping_setup.py','geospatial_setup.py','ensemble.py','LICENSE-wave-climate.txt']
+modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','mapping_setup.py','geospatial_setup.py','structure_forms.py','structure_points.py','demo_survey.py','ensemble.py','LICENSE-wave-climate.txt']
 sources={'forecast_service/'+name:(ROOT/'forecast_service'/name).read_text() for name in modules}
 for reference_path in sorted(ROOT.glob('config/study_sites/*/sea_level_reference_*.json')):
     sources[str(reference_path.relative_to(ROOT))]=reference_path.read_text()
@@ -112,7 +122,7 @@ BASE.mkdir(parents=True, exist_ok=True)
 print("Modalità:", "DIMOSTRATIVA — profili e onde sintetici" if DEMO else "SITO DI STUDIO — dati dell’utente")
 print("Cartella:", BASE)
 print("La cartella del runtime è temporanea. Per conservare la cache usa Drive oppure scarica il pacchetto finale.")''',form=True)
-md('''## 2. Definisci il sito
+md('''## 2. Area di studio e dati marini comuni
 Le coordinate sono in gradi WGS84. Il punto sulla mappa identifica il sito; quello offshore serve a scaricare onde Copernicus ed ERA5. La cella marina ERA5 verrà verificata durante il download. Il punto del livello marino può essere distinto da quello delle onde.
 
 I valori iniziali sono quelli provvisori di Borghetto; possono essere sostituiti liberamente. Il campo `ID_SITO` deve usare lettere minuscole, numeri e trattini.''')
@@ -145,12 +155,12 @@ folium.LatLngPopup().add_to(MAPPA)
 display(MAPPA)
 print("Clicca sulla mappa per leggere coordinate, poi riportale nei campi e riesegui questa cella.")''',form=True)
 
-md('''### Esposizione della spiaggia alle onde
+md('''### Direzioni di esposizione — comuni all’intera area
 Indica le **direzioni da cui provengono le onde**, non quelle verso cui si muovono: 0° = Nord, 90° = Est, 180° = Sud, 270° = Ovest, in senso orario rispetto al Nord geografico. I settori devono riferirsi al punto offshore scelto e alla spiaggia rappresentata, tenendo conto di costa, promontori e opere.
 
 Scrivi coppie `da,a`, separate da `;` per più settori. Esempi solo di formato: `90,180` comprende Est→Sud; `315,45` attraversa il Nord; `0,360` include tutte le direzioni. Gli estremi sono inclusi. **Lascia vuoto finché non hai definito l’esposizione del sito**: nessun settore di esempio viene applicato automaticamente.
 
-Il portale avverte quando la direzione al largo è fuori dai settori indicati. Questa verifica non simula rifrazione, diffrazione o riparo e non azzera né corregge automaticamente onde, runup o TWL. Anche il confronto storico ERA5 resta riferito a tutte le direzioni.''')
+Questi intervalli di provenienza sono comuni a tutti i settori costieri: non sono poligoni della spiaggia. Il portale avverte quando la direzione al largo è fuori dagli intervalli indicati. Questa verifica non simula rifrazione, diffrazione o riparo e non azzera né corregge automaticamente onde, runup o TWL. Anche il confronto storico ERA5 resta riferito a tutte le direzioni.''')
 code('''#@title Settori di provenienza delle onde che espongono la spiaggia
 SETTORI_PROVENIENZA = "" #@param {type:"string"}
 NOTE_ESPOSIZIONE = "" #@param {type:"string"}
@@ -170,99 +180,42 @@ else:
     ax.set_title("Direzioni di provenienza che espongono la spiaggia")
     plt.show()
     print("Schema orientativo: non è una simulazione della propagazione verso riva.")''',form=True,tags=('wave-exposure',))
-md('''## 3. Profili da GeoJSON + DEM oppure da CSV
-Puoi caricare **le linee dei transetti in GeoJSON e il DEM GeoTIFF dell’intera area**: il notebook estrae i punti e le quote dal raster senza preparare un CSV. Le quote eventualmente presenti nel GeoJSON vengono ignorate. Il passo automatico segue la dimensione del pixel DEM; puoi sceglierne uno in metri. Si campionano le celle originali, senza interpolare NoData. I transetti devono essere preferibilmente rettilinei e attraversare la battigia. Le linee non vengono tagliate sui confini dei settori, per non modificare il profilo o eliminare la prima cresta.
+md('''### Stagione e parametri di calcolo — comuni all’area
+Stagione, rugosità e raccordo del livello marino si impostano una volta. Le strutture esposte saranno definite nel passaggio successivo, separatamente per ogni settore costiero. Indica inizio/fine della stagione in formato `MM-GG`; lascia entrambi vuoti se ancora sconosciuti. La correzione del livello marino raccorda il riferimento del modello a quello locale; non va usata per correggere automaticamente il DEM.''')
+code('''#@title Stagione, metodi e riferimento delle quote
+INIZIO_ESTATE = "" #@param {type:"string"}
+FINE_ESTATE = "" #@param {type:"string"}
+QUOTA_OMBRELLONI_M = '''+repr(form_values.get('QUOTA_OMBRELLONI_M',0.7))+'''
+QUOTA_STRUTTURE_STAGIONALI_M = '''+repr(form_values.get('QUOTA_STRUTTURE_STAGIONALI_M',0.9))+'''
+QUOTA_CHIOSCHI_M = '''+repr(form_values.get('QUOTA_CHIOSCHI_M',1.1))+'''
+QUOTA_PASSEGGIATA_M = '''+repr(form_values.get('QUOTA_PASSEGGIATA_M',1.4))+'''
+RUGOSITA_M = 0.001 #@param {type:"number"}
+OFFSET_LIVELLO_M = 0.0 #@param {type:"number"}
+NOTE_SITO = "Parametri di studio; quote e raccordo verticale da validare." #@param {type:"string"}
+import datetime as dt
+if bool(INIZIO_ESTATE)!=bool(FINE_ESTATE):
+    raise ValueError("Indica entrambe le date estive oppure nessuna.")
+for value in (INIZIO_ESTATE,FINE_ESTATE):
+    if value: dt.datetime.strptime("2000-"+value,"%Y-%m-%d")
+heights=[QUOTA_OMBRELLONI_M,QUOTA_STRUTTURE_STAGIONALI_M,QUOTA_CHIOSCHI_M,QUOTA_PASSEGGIATA_M]
+if not np.isfinite(heights).all() or heights!=sorted(set(heights)):
+    raise ValueError("Le quattro quote devono essere finite e strettamente crescenti.")
+if not np.isfinite([RUGOSITA_M,OFFSET_LIVELLO_M]).all() or RUGOSITA_M<0:
+    raise ValueError("Rugosità o correzione del livello non valide.")
+thresholds=[]
+for identifier,height,label,season in zip(
+    ["prima_fila_ombrelloni","strutture_turistiche_stagionali","strutture_turistiche_fisse","infrastrutture_fisse"],heights,
+    ["Prima fila di ombrelloni","Strutture turistiche stagionali","Chioschi e strutture fisse","Passeggiata a mare"],
+    ["summer","summer","all_year","all_year"]):
+    thresholds.append(dict(id=identifier,elevation_m=float(height),short_label=label,description="Possibile interessamento: "+label.lower(),season=season))
+print("I valori iniziali delle strutture vengono proposti nel modulo successivo, dove possono variare per settore costiero.")''',form=True)
+md('''## 3. Carica una sola volta i file dell’area
+Servono **DEM GeoTIFF**, **ortofotomosaico GeoTIFF** e **GeoJSON delle linee dei transetti**. Il GeoJSON dei **poligoni dei settori costieri** è facoltativo: indica un percorso oppure attiva la casella per caricarlo dal computer. Senza poligoni, tutti i transetti appartengono alla spiaggia intera. È facoltativo anche il GeoJSON dei punti delle strutture: campo testuale `struttura`; punti sul terreno alla base o sulla quota di accesso da confrontare con l’acqua, non sui tetti.
 
-In alternativa usa il CSV del tuo notebook, con colonne predefinite `TR_ID`, `distance`, `SAMPLE_1`, `X`, `Y`. Puoi modificare i nomi sotto. **X e Y devono appartenere a un CRS proiettato con unità in metri**, non essere longitudine e latitudine. `distance` serve a ordinare i punti; la distanza della regressione viene ricalcolata da X/Y come nel notebook fornito.
+Puoi usare i sorgenti completi: il preprocessing estrae i profili e prepara i ritagli. I percorsi possono essere locali (se esegui Python sul Mac) oppure di Drive/Colab. `notebooks/dati originali/` è esclusa da Git e non viene trasferita automaticamente su Colab.
 
-In modalità demo vengono creati due transetti sintetici, uno con ordine inverso, con un abbassamento del terreno dietro la prima quota sopra `Z_MAX`: quel tratto deve rimanere escluso dalla stima.''')
-code('''#@title Colonne, coordinate e profili
-COL_ID = "TR_ID" #@param {type:"string"}
-COL_DIST = "distance" #@param {type:"string"}
-COL_Z = "SAMPLE_1" #@param {type:"string"}
-COL_X = "X" #@param {type:"string"}
-COL_Y = "Y" #@param {type:"string"}
-CRS_PROFILI = "EPSG:32632" #@param {type:"string"}
-ORIGINE_PROFILI = "CSV esistente" #@param ["CSV esistente", "GeoJSON + DEM"]
-FILE_TRANSETTI_GEOJSON = "" #@param {type:"string"}
-FILE_DEM_PROFILI = "" #@param {type:"string"}
-COL_ID_GEOJSON = "TR_ID" #@param {type:"string"}
-CRS_GEOJSON_TRANSETTI = "EPSG:4326" #@param {type:"string"}
-PASSO_CAMPIONAMENTO_M = 0.0 #@param {type:"number"}
-FILE_PROFILI = "" #@param {type:"string"}
-SEPARATORE = "," #@param {type:"string"}
-DECIMALE = "." #@param {type:"string"}
-CORREZIONE_QUOTE_DEM_M = 0.0 #@param {type:"number"}
-RIFERIMENTO_QUOTE = "Livello medio mare, da verificare" #@param {type:"string"}
-crs = CRS.from_user_input(CRS_PROFILI)
-if not crs.is_projected or not all(abs(a.unit_conversion_factor-1)<1e-9 for a in crs.axis_info[:2]):
-    raise ValueError("Usa coordinate X/Y in un CRS proiettato in metri.")
-def scegli_file(percorso, messaggio):
-    if percorso:
-        source = Path(percorso)
-    else:
-        print(messaggio)
-        from google.colab import files
-        uploaded = files.upload()
-        if len(uploaded) != 1:
-            raise ValueError("Seleziona un solo file per questo passaggio.")
-        name, content = next(iter(uploaded.items()))
-        source = WORK / Path(name).name
-        source.write_bytes(content)
-    if not source.is_file():
-        raise ValueError(f"File non trovato: {source}")
-    return source
-
-GEO_PREPROCESSING = None
-GEO_TRANSECTS_SOURCE = None
-AREAS_SOURCE = None
-if DEMO:
-    to_xy = Transformer.from_crs(4326,crs,always_xy=True)
-    x0,y0=to_xy.transform(LON_SITO,LAT_SITO)
-    demo_rows=[]
-    for name,beta,reverse in [("T1",.045,False),("T2",.065,True)]:
-        d=np.arange(45)*2.0
-        z=beta*d-.3
-        z[(d>=40)&(d<=56)]=.4
-        xy=np.column_stack([x0+.6*d,y0+.8*d+(10 if name=="T2" else 0)])
-        if reverse:
-            z=z[::-1]; xy=xy[::-1]
-        for i,dist in enumerate(d):
-            demo_rows.append({COL_ID:name,COL_DIST:dist,COL_Z:z[i],COL_X:xy[i,0],COL_Y:xy[i,1]})
-    profili=pd.DataFrame(demo_rows)
-    PROFILE_SOURCE="profili_sintetici"
-elif ORIGINE_PROFILI == "GeoJSON + DEM":
-    from forecast_service.geospatial_setup import extract_dem_profiles
-    GEO_TRANSECTS_SOURCE = scegli_file(FILE_TRANSETTI_GEOJSON, "Carica il GeoJSON delle linee dei transetti")
-    dem_source = scegli_file(FILE_DEM_PROFILI, "Carica il DEM GeoTIFF dell’intera area")
-    FILE_DEM_PROFILI = str(dem_source)
-    profili, diagnostica_estrazione, GEO_PREPROCESSING = extract_dem_profiles(
-        dem_source, GEO_TRANSECTS_SOURCE, profile_crs=CRS_PROFILI,
-        geojson_crs=CRS_GEOJSON_TRANSETTI, id_field=COL_ID_GEOJSON, step_m=PASSO_CAMPIONAMENTO_M)
-    profili = profili.rename(columns={"TR_ID":COL_ID,"distance":COL_DIST,"SAMPLE_1":COL_Z,"X":COL_X,"Y":COL_Y})
-    diagnostica_estrazione.to_csv(WORK/"estrazione_transetti.csv", index=False)
-    display(diagnostica_estrazione)
-    print("Passo effettivo:", GEO_PREPROCESSING["step_m"], "m. Controlla quote mancanti e transetti curvi.")
-    PROFILE_SOURCE = f"{GEO_TRANSECTS_SOURCE.name} + {dem_source.name}"
-else:
-    if not FILE_PROFILI:
-        from google.colab import files
-        uploaded=files.upload()
-        if len(uploaded)!=1:
-            raise ValueError("Carica un solo CSV di profili.")
-        name,content=next(iter(uploaded.items()))
-        source=WORK/Path(name).name
-        source.write_bytes(content)
-    else:
-        source=Path(FILE_PROFILI)
-    profili=pd.read_csv(source,sep=SEPARATORE,decimal=DECIMALE)
-    PROFILE_SOURCE=source.name
-if len({COL_ID,COL_DIST,COL_Z,COL_X,COL_Y})!=5:
-    raise ValueError("I nomi delle cinque colonne devono essere distinti.")
-PROFILE_DATA_MODE="demo" if DEMO else "study"
-profili[COL_Z]=pd.to_numeric(profili[COL_Z],errors="raise")+CORREZIONE_QUOTE_DEM_M
-print(f"{len(profili)} punti, {profili[COL_ID].nunique()} transetti. Fonte: {PROFILE_SOURCE}")
-display(profili.head())''',form=True)
+Quote del DEM in metri, CRS dichiarato e GeoJSON standard in WGS84; i nomi dei campi identificativi sono configurabili. `PASSO_CAMPIONAMENTO_M=0` segue il pixel DEM. L’ortofoto non entra nel calcolo della pendenza.''')
+code('#@title File dell’area di studio\nFILE_DEM_PROFILI = "" #@param {type:"string"}\nFILE_ORTOFOTO_COMUNE = "" #@param {type:"string"}\nFILE_TRANSETTI_GEOJSON = "" #@param {type:"string"}\nFILE_AREE_GEOJSON = "" #@param {type:"string"}\nFILE_PUNTI_STRUTTURE = "" #@param {type:"string"}\nUSA_PUNTI_STRUTTURE = False #@param {type:"boolean"}\nCOL_STRUTTURA = "struttura" #@param {type:"string"}\nCRS_GEOJSON_STRUTTURE = "EPSG:4326" #@param {type:"string"}\nUSA_AREE_GEOJSON = False #@param {type:"boolean"}\nCRS_PROFILI = "EPSG:32632" #@param {type:"string"}\nCOL_ID_GEOJSON = "TR_ID" #@param {type:"string"}\nCOL_ID_AREE = "sector_id" #@param {type:"string"}\nCOL_NOME_AREE = "name" #@param {type:"string"}\nCRS_GEOJSON_TRANSETTI = "EPSG:4326" #@param {type:"string"}\nCRS_GEOJSON_AREE = "EPSG:4326" #@param {type:"string"}\nPASSO_CAMPIONAMENTO_M = 0.0 #@param {type:"number"}\nCORREZIONE_QUOTE_DEM_M = 0.0 #@param {type:"number"}\nRIFERIMENTO_QUOTE = "Livello medio mare, da verificare" #@param {type:"string"}\nCOL_ID, COL_DIST, COL_Z, COL_X, COL_Y = "TR_ID", "distance", "SAMPLE_1", "X", "Y"\ncrs = CRS.from_user_input(CRS_PROFILI)\nif not crs.is_projected or not all(abs(a.unit_conversion_factor-1)<1e-9 for a in crs.axis_info[:2]):\n    raise ValueError("Usa un CRS di lavoro proiettato in metri.")\n\ndef scegli_file(percorso, messaggio):\n    if percorso:\n        source = Path(percorso)\n    else:\n        print(messaggio)\n        from google.colab import files\n        uploaded = files.upload()\n        if len(uploaded) != 1:\n            raise ValueError("Seleziona un solo file per questo passaggio.")\n        name, content = next(iter(uploaded.items()))\n        source = WORK / Path(name).name\n        source.write_bytes(content)\n    if not source.is_file():\n        raise ValueError(f"File non trovato: {source}")\n    return source\n\nAREAS_SOURCE = None\nSTRUCTURES_SOURCE = None\nif DEMO:\n    from forecast_service.demo_survey import create_demo_survey\n    DEM_SOURCE, ORTHO_SOURCE, GEO_TRANSECTS_SOURCE = create_demo_survey(WORK/"input_DEMO", LAT_SITO, LON_SITO, CRS_PROFILI)\n    print("DEM, immagine e transetti sintetici: nessun rilievo reale.")\nelse:\n    DEM_SOURCE = scegli_file(FILE_DEM_PROFILI, "1/3 · Carica il DEM GeoTIFF dell’intera area")\n    ORTHO_SOURCE = scegli_file(FILE_ORTOFOTO_COMUNE, "2/3 · Carica l’ortofotomosaico GeoTIFF dell’intera area")\n    GEO_TRANSECTS_SOURCE = scegli_file(FILE_TRANSETTI_GEOJSON, "3/3 · Carica il GeoJSON delle linee dei transetti")\n    if USA_AREE_GEOJSON or FILE_AREE_GEOJSON:\n        AREAS_SOURCE = scegli_file(FILE_AREE_GEOJSON, "Facoltativo · Carica i poligoni dei settori costieri")\n    if USA_PUNTI_STRUTTURE or FILE_PUNTI_STRUTTURE:\n        STRUCTURES_SOURCE = scegli_file(FILE_PUNTI_STRUTTURE, "Facoltativo · Carica il GeoJSON dei punti delle strutture")\n# Le quote sono sempre estratte dal DEM, mai dalle Z del GeoJSON o dall’ortofoto.\nfrom forecast_service.geospatial_setup import extract_dem_profiles\nprofili, diagnostica_estrazione, GEO_PREPROCESSING = extract_dem_profiles(\n    DEM_SOURCE, GEO_TRANSECTS_SOURCE, profile_crs=CRS_PROFILI,\n    geojson_crs="EPSG:4326" if DEMO else CRS_GEOJSON_TRANSETTI,\n    id_field="TR_ID" if DEMO else COL_ID_GEOJSON, step_m=PASSO_CAMPIONAMENTO_M)\nprofili[COL_Z] += CORREZIONE_QUOTE_DEM_M\nPROFILE_SOURCE = f"{GEO_TRANSECTS_SOURCE.name} + {DEM_SOURCE.name}"\nPROFILE_DATA_MODE = "demo" if DEMO else "study"\ndiagnostica_estrazione.to_csv(WORK/"estrazione_transetti.csv", index=False)\ndisplay(diagnostica_estrazione)\nprint("Passo dei profili:", GEO_PREPROCESSING["step_m"], "m. I dati completi restano sorgenti locali.")\n',form=True,tags=('area-inputs',))
 md('''## 4. Calcola la pendenza come nel notebook di riferimento
 La procedura:
 1. elimina le sole quote mancanti e ordina per `distance`;
@@ -291,6 +244,7 @@ if validi.orientation_ambiguous.any():
 code('''#@title Verifica un transetto nel grafico
 ID_TRANSETTO_DA_VEDERE = "" #@param {type:"string"}
 identifier=ID_TRANSETTO_DA_VEDERE or str(validi.iloc[0].transect_id)
+if DEMO and identifier not in preparati: identifier=str(validi.iloc[0].transect_id)
 if identifier not in preparati:
     raise ValueError("Transetto non valido o inesistente; scegli un ID dalla tabella.")
 p=preparati[identifier]; sel=selezioni[identifier]
@@ -330,110 +284,31 @@ else:
 SELECTION_ANALYSIS_SIGNATURE=ANALYSIS_SIGNATURE
 print("Pendenze da usare nel portale:",PENDENZE)
 print("Gli eventuali valori identici sono deduplicati; gli scenari del portale non pesano i transetti per lunghezza di costa.")''',form=True)
-md('''## 5. Stagioni, strutture e riferimento delle quote
-Le quote seguenti sono **esempi da definire per il sito**, come nella prima versione del portale. Indica inizio/fine della stagione in formato `MM-GG`; lascia entrambi vuoti se ancora sconosciuti. La correzione del livello marino raccorda il riferimento del modello a quello locale; non va usata per correggere automaticamente il DEM.''')
-code('''#@title Configurazione delle soglie
-INIZIO_ESTATE = "" #@param {type:"string"}
-FINE_ESTATE = "" #@param {type:"string"}
-QUOTA_OMBRELLONI_M = 0.7 #@param {type:"number"}
-QUOTA_STRUTTURE_STAGIONALI_M = 0.9 #@param {type:"number"}
-QUOTA_CHIOSCHI_M = 1.1 #@param {type:"number"}
-QUOTA_PASSEGGIATA_M = 1.4 #@param {type:"number"}
-RUGOSITA_M = 0.001 #@param {type:"number"}
-OFFSET_LIVELLO_M = 0.0 #@param {type:"number"}
-NOTE_SITO = "Parametri di studio; quote e raccordo verticale da validare." #@param {type:"string"}
-import datetime as dt
-if bool(INIZIO_ESTATE)!=bool(FINE_ESTATE):
-    raise ValueError("Indica entrambe le date estive oppure nessuna.")
-for value in (INIZIO_ESTATE,FINE_ESTATE):
-    if value: dt.datetime.strptime("2000-"+value,"%Y-%m-%d")
-heights=[QUOTA_OMBRELLONI_M,QUOTA_STRUTTURE_STAGIONALI_M,QUOTA_CHIOSCHI_M,QUOTA_PASSEGGIATA_M]
-if not np.isfinite(heights).all() or heights!=sorted(set(heights)):
-    raise ValueError("Le quattro quote devono essere finite e strettamente crescenti.")
-if not np.isfinite([RUGOSITA_M,OFFSET_LIVELLO_M]).all() or RUGOSITA_M<0:
-    raise ValueError("Rugosità o correzione del livello non valide.")
-thresholds=[]
-for identifier,height,label,season in zip(
-    ["prima_fila_ombrelloni","strutture_turistiche_stagionali","strutture_turistiche_fisse","infrastrutture_fisse"],heights,
-    ["Prima fila di ombrelloni","Strutture turistiche stagionali","Chioschi e strutture fisse","Passeggiata a mare"],
-    ["summer","summer","all_year","all_year"]):
-    thresholds.append(dict(id=identifier,elevation_m=float(height),short_label=label,description="Possibile interessamento: "+label.lower(),season=season))
-display(pd.DataFrame(thresholds)[["short_label","elevation_m","season"]])''',form=True)
-md('''### 5A. Settori di spiaggia — facoltativi
-Lascia `SETTORI_SPIAGGIA = {}` per rappresentare la spiaggia intera. Altrimenti assegna tutti i transetti inclusi a un solo settore ciascuno. Le pendenze sono ricavate dai transetti con il metodo già usato. Onde, ERA5, marea e surge restano condivisi; soglie, esposizione e stagione si ereditano dal sito, salvo diversa indicazione.
+md('''## 5. Settori costieri — facoltativi
+Con i poligoni, ogni transetto incluso viene assegnato al settore costiero che contiene il centro della battigia usata per il fit. Nei casi ambigui si corregge il GeoJSON o si indica un’assegnazione manuale. Le linee non vengono tagliate sui confini. Senza poligoni si usa tutta la spiaggia, con estensione cartografica pari al DEM.
 
-I settori di spiaggia sono distinti dai settori di provenienza delle onde. Puoi caricare un GeoJSON di poligoni per assegnare automaticamente i transetti: si usa il punto centrale della battigia selezionata per il fit. Un punto sul confine, in più aree o fuori da tutte le aree richiede di correggere i poligoni o un’assegnazione manuale esplicita. Le aree senza transetti validi sono segnalate. I confini non sono dedotti dall’ordine numerico degli ID.''')
-code('''#@title Confini dei settori da GeoJSON (facoltativi)
-USA_AREE_GEOJSON = False #@param {type:"boolean"}
-FILE_AREE_GEOJSON = "" #@param {type:"string"}
-COL_ID_AREE = "sector_id" #@param {type:"string"}
-COL_NOME_AREE = "name" #@param {type:"string"}
-CRS_GEOJSON_AREE = "EPSG:4326" #@param {type:"string"}
-print("Le aree saranno usate per assegnare i transetti dopo la verifica delle pendenze.")''',form=True)
-code('''import copy
-from forecast_service.sectors import resolve_sectors
+I settori costieri **non hanno esposizioni, punti di previsione o dati storici separati**. Cambiano transetti, strutture esposte, quote e risultati.''')
+code('#@title Assegna i transetti ai settori costieri\nimport copy\nfrom forecast_service.sectors import resolve_sectors\nfrom forecast_service.geospatial_setup import sectors_from_beachfaces, reproject_geometry\nSETTORI_SPIAGGIA = {}\nASSEGNAZIONI_MANUALI = {}  # Solo per casi ambigui, es. {"12": "ponente"}.\nif AREAS_SOURCE:\n    SETTORI_SPIAGGIA, POLIGONI_SETTORI, assegnazioni = sectors_from_beachfaces(\n        AREAS_SOURCE, preparati, selezioni, scelti.transect_id,\n        profile_crs=CRS_PROFILI, geojson_crs=CRS_GEOJSON_AREE,\n        id_field=COL_ID_AREE, name_field=COL_NOME_AREE,\n        x_col=COL_X, y_col=COL_Y, manual=ASSEGNAZIONI_MANUALI)\n    display(assegnazioni)\n    assegnazioni.to_csv(WORK/"assegnazioni_settori.csv", index=False)\n    UNITA_COSTIERE = {key:value["name"] for key,value in SETTORI_SPIAGGIA.items()}\nelse:\n    import rasterio\n    from shapely.geometry import box, mapping\n    with rasterio.open(DEM_SOURCE) as source_dem:\n        POLIGONI_SETTORI = {"whole": mapping(reproject_geometry(box(*source_dem.bounds), source_dem.crs, "EPSG:4326"))}\n    UNITA_COSTIERE = {"whole": NOME_SITO + " · spiaggia intera"}\n    print("Nessun settore costiero: tutti i transetti e la spiaggia intera restano rappresentati.")\nSECTOR_ANALYSIS_SIGNATURE = ANALYSIS_SIGNATURE\npreview_location = dict(SITE_INPUT, slopes=PENDENZE, roughness_m=float(RUGOSITA_M),\n    transects=json.loads(scelti.to_json(orient="records")), wave_exposure=ESPOSIZIONE, sectors=SETTORI_SPIAGGIA)\nresolve_sectors(preview_location, thresholds)\n',tags=('coastal-sectors',))
+md('''## 6. Strutture esposte — una scheda per settore costiero
+Qui definisci **quali strutture sono presenti**, il loro nome, la quota e l’attività estiva o annuale. Deseleziona quelle assenti e usa “Aggiungi struttura” per altre strutture. Gli elenchi possono essere diversi tra settori costieri. Se la spiaggia non è suddivisa, compare una sola scheda.
 
-def soglie_settore(quote):
-    if len(quote) != len(thresholds):
-        raise ValueError("Indicare una quota per ciascuna soglia del sito.")
-    result = copy.deepcopy(thresholds)
-    for threshold, value in zip(result, quote):
-        threshold["elevation_m"] = float(value)
-    return result
+Con un GeoJSON dei punti, il modulo parte soltanto dalle strutture mappate in ogni settore costiero e dalla media delle quote valide lette dal DEM originale. Minimo, massimo e numero di punti restano visibili; la media non rappresenta la quota del primo punto che potrebbe essere raggiunto. Senza punti, le quattro strutture iniziali restano esempi da verificare, non vincoli. Le quote devono usare lo stesso riferimento verticale del TWL. Dopo le modifiche esegui la cella di verifica; l’esportazione legge nuovamente il modulo aggiornato.''')
+code('#@title Quote delle strutture dai punti sul DEM (facoltativo)\nESCLUDI_PUNTI_STRUTTURE_NON_VALIDI = False #@param {type:"boolean"}\nPROPOSTE_STRUTTURE = None\nSTRUCTURE_POINT_META = None\nif STRUCTURES_SOURCE:\n    from forecast_service.structure_points import thresholds_from_structure_points\n    PROPOSTE_STRUTTURE, PUNTI_STRUTTURE_REPORT, STRUTTURE_QUOTE_RIEPILOGO, STRUCTURE_POINT_META = thresholds_from_structure_points(\n        DEM_SOURCE, STRUCTURES_SOURCE, POLIGONI_SETTORI,\n        geojson_crs=CRS_GEOJSON_STRUTTURE, label_field=COL_STRUTTURA,\n        elevation_correction_m=CORREZIONE_QUOTE_DEM_M)\n    PUNTI_STRUTTURE_REPORT.to_csv(WORK/"quote_strutture_punti.csv", index=False)\n    STRUTTURE_QUOTE_RIEPILOGO.to_csv(WORK/"quote_strutture_riepilogo.csv", index=False)\n    display(STRUTTURE_QUOTE_RIEPILOGO[["sector_id", "structure", "mean_elevation_m", "min_elevation_m", "max_elevation_m", "n_valid", "n_excluded"]].rename(columns={"sector_id":"Settore costiero", "structure":"Struttura", "mean_elevation_m":"Quota media (m)", "min_elevation_m":"Quota minima (m)", "max_elevation_m":"Quota massima (m)", "n_valid":"Punti validi", "n_excluded":"Punti esclusi"}))\n    invalidi = PUNTI_STRUTTURE_REPORT[PUNTI_STRUTTURE_REPORT.status != "valid"]\n    if len(invalidi):\n        display(invalidi[["point_index", "feature_id", "structure", "sector_id", "status", "reason"]])\n        if not ESCLUDI_PUNTI_STRUTTURE_NON_VALIDI:\n            raise ValueError("Ci sono punti senza quota valida o con assegnazione ambigua: correggi il GeoJSON oppure conferma esplicitamente l’esclusione con la casella sopra e riesegui.")\n    print("Quote proposte: media aritmetica dei punti validi per struttura e settore costiero.")\n    print("Correzione verticale del DEM applicata:", CORREZIONE_QUOTE_DEM_M, "m; la stessa dovrà essere usata per il DEM della mappa.")\n    print("Per i punti senza campo stagione è proposta l’attività annuale: verifica e modifica nel modulo.")\nelse:\n    print("Nessun GeoJSON dei punti: compila manualmente le strutture come prima.")\n',form=True,tags=('structure-points',))
+code('#@title Compila le strutture esposte\nfrom forecast_service.structure_forms import StructureEditor\ntry:\n    from google.colab import output as colab_output\n    colab_output.enable_custom_widget_manager()\nexcept ImportError:\n    pass\nSTRUTTURE_EDITOR = StructureEditor(UNITA_COSTIERE, thresholds, by_unit=PROPOSTE_STRUTTURE)\ndisplay(STRUTTURE_EDITOR.view)',tags=('exposed-structures',))
+code('''#@title Verifica le strutture per ciascun settore costiero
+STRUTTURE_PER_UNITA = STRUTTURE_EDITOR.read()
+for key, values in STRUTTURE_PER_UNITA.items():
+    print(UNITA_COSTIERE[key])
+    display(pd.DataFrame(values, columns=["short_label", "elevation_m", "season"])[["short_label", "elevation_m", "season"]])
+    if key != "whole": SETTORI_SPIAGGIA[key]["thresholds"] = values
+thresholds = STRUTTURE_PER_UNITA.get("whole", next(iter(STRUTTURE_PER_UNITA.values())))''',tags=('validate-structures',))
+md('''## 7. Ritagli, crediti e mappe dei quattro giorni
+I raster sono già stati caricati: non occorre selezionarli di nuovo. Il preprocessing usa i poligoni dei settori costieri oppure la spiaggia intera, mantenendo un margine per il calcolo della connessione. Il PNG dell’ortofoto è ritagliato al poligono e ricampionato a **0,5 m/pixel**; fuori dal ritaglio rimane OpenStreetMap.
 
-# Adatta ai tuoi transetti reali; tutti gli ID inclusi devono essere assegnati.
-# SETTORI_SPIAGGIA = {
-#   "ponente": {"name": "Spiaggia di Ponente", "transect_ids": ["1", "2"]},
-#   "levante": {"name": "Spiaggia di Levante", "transect_ids": ["3", "4"],
-#               "thresholds": soglie_settore([0.65, 0.85, 1.05, 1.35]),
-#               "wave_exposure": {"sectors_deg": [[120, 220]], "note": "Da rilievo"}}
-# }
-SETTORI_SPIAGGIA = {}
-ASSEGNAZIONI_MANUALI = {}  # es. {"12": "ponente"}, solo per casi da risolvere esplicitamente
-POLIGONI_SETTORI = {}
-if USA_AREE_GEOJSON:
-    from forecast_service.geospatial_setup import sectors_from_beachfaces
-    AREAS_SOURCE = scegli_file(FILE_AREE_GEOJSON, "Carica il GeoJSON dei poligoni dei settori")
-    SETTORI_SPIAGGIA, POLIGONI_SETTORI, assegnazioni = sectors_from_beachfaces(
-        AREAS_SOURCE, preparati, selezioni, scelti.transect_id,
-        profile_crs=CRS_PROFILI, geojson_crs=CRS_GEOJSON_AREE, id_field=COL_ID_AREE,
-        name_field=COL_NOME_AREE, x_col=COL_X, y_col=COL_Y, manual=ASSEGNAZIONI_MANUALI)
-    display(assegnazioni)
-    assegnazioni.to_csv(WORK/"assegnazioni_settori.csv", index=False)
-# Puoi aggiungere quote o esposizione specifiche dopo l’assegnazione automatica:
-# SETTORI_SPIAGGIA["ponente"]["thresholds"] = soglie_settore([0.7, 0.9, 1.1, 1.4])
-SECTOR_ANALYSIS_SIGNATURE = ANALYSIS_SIGNATURE
-preview_location = dict(SITE_INPUT, slopes=PENDENZE, roughness_m=float(RUGOSITA_M),
-    transects=json.loads(scelti.to_json(orient="records")),
-    wave_exposure=parse_exposure(SETTORI_PROVENIENZA, NOTE_ESPOSIZIONE), sectors=SETTORI_SPIAGGIA)
-settori_risolti = resolve_sectors(preview_location, thresholds)
-if settori_risolti:
-    display(pd.DataFrame([{"settore":key,"nome":value["name"],"transetti":value["transect_ids"],"pendenze":value["slopes"]} for key,value in settori_risolti.items()]))
-else:
-    print("Spiaggia unica, senza suddivisioni.")''',tags=('beach-sectors',))
-md('''### 5B. DEM, ortofotomosaico e crediti — facoltativi
-Lascia `CARTOGRAFIE = []` per non produrre mappe. Ogni voce può riferirsi alla spiaggia intera (`unit_id="whole"`) oppure a uno dei settori.
+Compila autore/ente, data, licenza e riferimento delle quote. Conferma il raccordo verticale solo dopo averlo verificato. `CORREZIONE_DEM_MAPPA_M` si somma al DEM cartografico, indipendentemente dalla correzione dei profili. Gli originali non vengono modificati né inclusi nel pacchetto.
 
-Puoi usare DEM e ortofotomosaico dell’intera area: attivando il preprocessing dalle aree, il notebook ritaglia un dominio locale per ciascun settore con margine in metri. Non serve preparare raster separati. Il DEM deve essere GeoTIFF con quote in **metri**. La connessione si calcola nel dominio con margine; solo la visualizzazione è limitata al poligono esatto. L’ortofotomosaico è opzionale, GeoTIFF georeferenziato a 8 bit (grigio/RGB/RGBA). Si esportano soltanto una griglia e un’immagine leggere, normalmente fino a 768 pixel per asse; gli originali restano fuori dalla repository.
-
-Indica un poligono GeoJSON e punti di partenza verso mare in WGS84 **[longitudine, latitudine]**. La connessione si calcola sull’intero DEM; il poligono ritaglia solo il risultato. I punti devono cadere su celle valide sufficientemente basse: NoData non è acqua e non viene riempito artificialmente.
-
-Compila **autore/ente del rilievo, data, licenza e riferimento verticale**, distinguendo DEM e ortofoto se hanno autori diversi. Conferma `vertical_alignment_confirmed=True` solo dopo aver raccordato lo zero delle quote al TWL. `dem_offset_m` si somma al DEM una sola volta, indipendentemente dalla correzione dei profili. La griglia ridotta può perdere muri e varchi stretti: controlla l’anteprima e, se necessario, riduci l’area o usa fino a 1024 pixel.
-
-Le estensioni usano le quote orarie P75 e P95 più alte nelle 96 ore: non sono probabilità né una simulazione dinamica di allagamento.''')
-code('''#@title Carica i raster dal computer (facoltativo)
-CARICA_RASTER_DAL_COMPUTER = False #@param {type:"boolean"}
-if CARICA_RASTER_DAL_COMPUTER:
-    from google.colab import files
-    uploads = files.upload()
-    for filename, content in uploads.items():
-        destination = WORK / Path(filename).name
-        destination.write_bytes(content)
-        print(destination)''',form=True)
-code('''#@title Mappe automatiche dai poligoni e dai raster dell’intera area
-PREPARA_MAPPE_DA_AREE = False #@param {type:"boolean"}
-FILE_DEM_MAPPE = "" #@param {type:"string"}
-FILE_ORTOFOTO_COMUNE = "" #@param {type:"string"}
+La mappa online rappresenterà le estensioni potenziali nelle 96 ore dell’elaborazione. Qui controlli soltanto terreno, maschera e punti di avvio, non una previsione.''')
+code('''#@title Rilievo, riferimento verticale e risoluzione della mappa
 CREDITI_RILIEVI = "" #@param {type:"string"}
 DATA_RILIEVI = "" #@param {type:"string"}
 LICENZA_RILIEVI = "" #@param {type:"string"}
@@ -441,66 +316,16 @@ RIFERIMENTO_VERTICALE_MAPPA = "" #@param {type:"string"}
 CORREZIONE_DEM_MAPPA_M = 0.0 #@param {type:"number"}
 RACCORDO_VERTICALE_CONFERMATO = False #@param {type:"boolean"}
 MARGINE_CLIPPING_M = 100.0 #@param {type:"number"}
-RISOLUZIONE_ORTOFOTO_M = 0.5 #@param {type:"number"}
-print("DEM mappe vuoto: si riusa quello dei profili. Ortofoto vuota: sfondo OpenStreetMap.")
-print("Ortofoto: passo in METRI/pixel. 0 = dimensioni della griglia; 0.5 = 50 cm; 0.005 = 5 mm. Il DEM dei profili resta alla risoluzione originale.")''',form=True)
-code('''from forecast_service.mapping_setup import prepare_mapping
-# Aggiungi una voce per ogni unità con cartografia, usando geometrie reali.
-# CARTOGRAFIE = [{
-#   "unit_id": "ponente",  # oppure "whole"
-#   "dem_path": str(WORK / "dem.tif"),
-#   "orthophoto_path": str(WORK / "ortofotomosaico.tif"),  # oppure None
-#   "display_polygon": {"type": "Polygon", "coordinates": [...]},
-#   "seed_points": [[LONGITUDINE, LATITUDINE]],
-#   "survey_credit": "DEM: autore / ente. Ortofoto: autore / ente.",
-#   "survey_date": "AAAA-MM-GG", "license": "Licenza / attribuzione del rilievo",
-#   "vertical_reference": "DEM raccordato allo zero del TWL",
-#   "dem_offset_m": 0.0, "vertical_alignment_confirmed": True,
-#   "max_dimension": 768
-# }]
-CARTOGRAFIE = []
-PUNTI_MARE_MANUALI = {}  # facoltativo: {"ponente": [[lon, lat], ...]}
-if PREPARA_MAPPE_DA_AREE:
-    if not POLIGONI_SETTORI:
-        raise ValueError("Prima carica e verifica i poligoni e l’assegnazione ai settori nella sezione 5A.")
-    dem_mappe = scegli_file(FILE_DEM_MAPPE or FILE_DEM_PROFILI, "Carica il DEM per le mappe")
-    to_wgs = Transformer.from_crs(CRS_PROFILI, 4326, always_xy=True)
-    for unit, polygon in POLIGONI_SETTORI.items():
-        seeds = PUNTI_MARE_MANUALI.get(unit)
-        if seeds is None:
-            seeds = [list(to_wgs.transform(float(preparati[key][COL_X].iloc[0]), float(preparati[key][COL_Y].iloc[0])))
-                     for key in SETTORI_SPIAGGIA[unit]["transect_ids"]]
-        CARTOGRAFIE.append(dict(unit_id=unit, dem_path=str(dem_mappe),
-            orthophoto_path=FILE_ORTOFOTO_COMUNE or None, display_polygon=polygon, seed_points=seeds,
-            survey_credit=CREDITI_RILIEVI, survey_date=DATA_RILIEVI, license=LICENZA_RILIEVI,
-            vertical_reference=RIFERIMENTO_VERTICALE_MAPPA, dem_offset_m=CORREZIONE_DEM_MAPPA_M,
-            vertical_alignment_confirmed=RACCORDO_VERTICALE_CONFERMATO,
-            clip_to_polygon=True, clip_buffer_m=MARGINE_CLIPPING_M, orthophoto_resolution_m=RISOLUZIONE_ORTOFOTO_M or None))
-MAP_ANALYSIS_SIGNATURE = ANALYSIS_SIGNATURE
-MAPPING_CONFIGS = {}; CARTOGRAPHY_ASSETS = {}
-for spec in CARTOGRAFIE:
-    unit = spec.get("unit_id", "whole")
-    if unit in MAPPING_CONFIGS or unit != "whole" and unit not in SETTORI_SPIAGGIA:
-        raise ValueError("Unità cartografica duplicata o non definita.")
-    metadata, assets = prepare_mapping(output=WORK/"cartography"/unit, slug=ID_SITO, **spec)
-    MAPPING_CONFIGS[unit] = metadata; CARTOGRAPHY_ASSETS.update(assets)
-    from forecast_service.inundation import load_grid
-    grid, seeds, mask, bounds = load_grid(assets[f"cartography/{unit}/grid.npz"])
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.imshow(np.where(mask, grid, np.nan), cmap="terrain")
-    yy, xx = np.nonzero(seeds); ax.scatter(xx, yy, color="red", label="Avvio verso mare")
-    ax.set_title(f"{unit}: DEM e area visualizzata (non previsione)"); ax.legend(); display(fig); plt.close(fig)
-CARTOGRAPHY_SIGNATURE = json.dumps(CARTOGRAFIE, sort_keys=True)
-print("Mappe predisposte:", list(MAPPING_CONFIGS) or "nessuna")''',tags=('survey-cartography',))
-
-md('''## 6. ERA5 — scarica una volta o riusa il tuo CSV
+RISOLUZIONE_ORTOFOTO_M = 0.5 #@param {type:"number"}''',form=True)
+code('#@title Prepara i ritagli per il sito\nfrom forecast_service.mapping_setup import prepare_mapping\nif STRUCTURE_POINT_META and not np.isclose(CORREZIONE_DEM_MAPPA_M, STRUCTURE_POINT_META["elevation_correction_m"], rtol=0, atol=1e-9):\n    raise ValueError("Punti delle strutture e mappa usano lo stesso DEM: verificare e uniformare la correzione verticale prima di preparare i ritagli.")\nPUNTI_MARE_MANUALI = {}  # Facoltativo: {"ponente": [[lon, lat], ...]}.\nto_wgs = Transformer.from_crs(CRS_PROFILI, 4326, always_xy=True)\nCARTOGRAFIE = []\nfor unit, polygon in POLIGONI_SETTORI.items():\n    ids = SETTORI_SPIAGGIA[unit]["transect_ids"] if unit != "whole" else list(scelti.transect_id)\n    seeds = PUNTI_MARE_MANUALI.get(unit)\n    if seeds is None:\n        seeds = [list(to_wgs.transform(float(preparati[key][COL_X].iloc[0]), float(preparati[key][COL_Y].iloc[0]))) for key in ids]\n    CARTOGRAFIE.append(dict(unit_id=unit, dem_path=str(DEM_SOURCE), orthophoto_path=str(ORTHO_SOURCE),\n        display_polygon=polygon, seed_points=seeds, survey_credit="DEMO sintetico" if DEMO else CREDITI_RILIEVI,\n        survey_date="Dati sintetici" if DEMO else DATA_RILIEVI, license="Solo dimostrazione" if DEMO else LICENZA_RILIEVI,\n        vertical_reference="Zero sintetico comune" if DEMO else RIFERIMENTO_VERTICALE_MAPPA,\n        dem_offset_m=CORREZIONE_DEM_MAPPA_M,\n        vertical_alignment_confirmed=True if DEMO else RACCORDO_VERTICALE_CONFERMATO,\n        clip_to_polygon=True, clip_buffer_m=MARGINE_CLIPPING_M,\n        orthophoto_resolution_m=RISOLUZIONE_ORTOFOTO_M))\nMAPPING_CONFIGS = {}; CARTOGRAPHY_ASSETS = {}\nfor spec in CARTOGRAFIE:\n    unit = spec["unit_id"]\n    metadata, assets = prepare_mapping(output=WORK/"cartography"/unit, slug=ID_SITO, **spec)\n    MAPPING_CONFIGS[unit] = metadata; CARTOGRAPHY_ASSETS.update(assets)\n    from forecast_service.inundation import load_grid\n    grid, seeds, mask, bounds = load_grid(assets[f"cartography/{unit}/grid.npz"])\n    fig, ax = plt.subplots(figsize=(8, 5))\n    ax.imshow(np.where(mask, grid, np.nan), cmap="terrain")\n    yy, xx = np.nonzero(seeds); ax.scatter(xx, yy, color="red", label="Avvio verso mare")\n    ax.set_title(f"{UNITA_COSTIERE[unit]} · controllo del DEM (non previsione)"); ax.legend(); display(fig); plt.close(fig)\nMAP_ANALYSIS_SIGNATURE = ANALYSIS_SIGNATURE\nCARTOGRAPHY_SIGNATURE = json.dumps(CARTOGRAFIE, sort_keys=True)\nprint("Ritagli pronti:", list(MAPPING_CONFIGS), "· ortofoto", RISOLUZIONE_ORTOFOTO_M, "m/pixel")\n',tags=('survey-cartography',))
+md('''## 8. Serie storica ERA5 — unica per tutta l’area
 Per dati reali servono un account Climate Data Store e l’accettazione personale delle condizioni di [ERA5 time-series](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-timeseries?tab=download). La ricerca automatica della cella marina usa anche [ERA5 grigliato](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=download).
 
 Puoi salvare il token nei **Secrets di Colab**, con nome `CDS_KEY` e accesso a questo notebook, oppure inserirlo nel campo protetto quando richiesto. Non scriverlo nei campi del notebook. La cache contiene soltanto richieste e dati: sarà riutilizzata se la sessione riparte dalla stessa cartella.
 
 Il servizio ERA5 restituisce **periodo medio**, non Tp: lo salviamo come `tm_s`; non lo usiamo come periodo di picco per il runup. Il confronto storico usa Hs. Il confronto con tutte le ore storiche è distinto dal fit Gumbel dei massimi annuali per settore descritto sotto.''')
 
-md('''### Tempi di ritorno delle onde per settore
+md('''### Tempi di ritorno per direzione delle onde (non settori costieri)
 La suddivisione statistica in settori di provenienza è distinta dall’esposizione fisica della spiaggia. Puoi scegliere l’ampiezza dei settori: nessuna direzione è privilegiata. I settori sono centrati su multipli dell’ampiezza scelta; per esempio, con 45°, quello centrato a 90° va da 67,5° incluso a 112,5° escluso. Le direzioni indicano **da dove arrivano** le onde.
 
 Per ogni anno di calendario UTC completo si seleziona il massimo Hs **fra tutte le ore di ciascun settore**, non si suddivide il solo massimo annuale generale. Si usano soltanto anni con copertura oraria completa e direzione valida (la direzione può mancare nelle ore di calma con Hs=0). Se un settore non ha onde positive in qualche anno completo, il fit non viene mostrato: rimuovere quegli anni condizionerebbe la frequenza.
@@ -703,76 +528,13 @@ if SEA_LEVEL_REFERENCE is not None:
     (WORK/f"sea_level_reference_{ANNO_RIFERIMENTO_SSH}.json").write_text(json.dumps(SEA_LEVEL_REFERENCE,ensure_ascii=False,allow_nan=False,indent=2))
     display(pd.DataFrame([{"riferimento":f'Media SSH Copernicus {SEA_LEVEL_REFERENCE["year"]}',"media SSH (m)":SEA_LEVEL_REFERENCE["mean_ssh_m"],"ore":SEA_LEVEL_REFERENCE["n_records"],"cella":SEA_LEVEL_REFERENCE["selected_point"],"versione dataset":SEA_LEVEL_REFERENCE["dataset_version"]}]))
     print("Questo valore resterà fisso nei futuri bollettini. Il raccordo con le quote locali è ancora da verificare.")''',form=True,tags=('historical-sealevel-reference',))
-md('''## 7. Rivedi ed esporta il sito
+md('''## 9. Rivedi ed esporta l’area
 Il pacchetto contiene configurazione, soglie, pendenze e relativa diagnostica, profili normalizzati e climatologia quando disponibile. **Conserva la cache o il CSV storico in Drive**: il pacchetto riporta il riferimento statistico, non tutti i NetCDF delle richieste.
 
 Un pacchetto prodotto in modalità demo è marcato come tale e l’importatore lo rifiuta per impostazione predefinita. Nessun token entra nel pacchetto. Nessun file del portale viene modificato da Colab.''')
-code('''#@title Riepilogo prima dell’esportazione
-from forecast_service.time_utils import iso
-import hashlib
-current_signature=(Z_MIN,Z_MAX,ORIENTAMENTO,COL_ID,COL_DIST,COL_Z,COL_X,COL_Y,
-    hashlib.sha256(pd.util.hash_pandas_object(profili,index=True).values.tobytes()).hexdigest())
-if PROFILE_DATA_MODE!=("demo" if DEMO else "study") or (CLIMATE is not None and CLIMATE_DATA_MODE!=("demo" if DEMO else "study")):
-    raise ValueError("Modalità cambiata: riesegui caricamento profili, pendenze e climatologia prima di esportare.")
-if current_signature!=ANALYSIS_SIGNATURE or SELECTION_ANALYSIS_SIGNATURE!=ANALYSIS_SIGNATURE or PLOT_ANALYSIS_SIGNATURE!=ANALYSIS_SIGNATURE:
-    raise ValueError("Parametri o profili cambiati: riesegui calcolo, grafico e selezione delle pendenze.")
-normalized=profili.rename(columns={COL_ID:"TR_ID",COL_DIST:"distance",COL_Z:"SAMPLE_1",COL_X:"X",COL_Y:"Y"})[["TR_ID","distance","SAMPLE_1","X","Y"]]
-normalized.to_csv(WORK/"profili_normalizzati.csv",index=False)
-location=dict(SITE_INPUT,slopes=PENDENZE,roughness_m=float(RUGOSITA_M),parameters_status="provisional",
-    wave_exposure=parse_exposure(SETTORI_PROVENIENZA,NOTE_ESPOSIZIONE),
-    datum_offset_m=float(OFFSET_LIVELLO_M),vertical_reference_status="provisional",
-    climatology_file=f"config/climatology/{ID_SITO}.json" if CLIMATE is not None else None,
-    summer_season=dict(start_month_day=INIZIO_ESTATE or None,end_month_day=FINE_ESTATE or None,status="configured" if INIZIO_ESTATE else "to_be_defined"),
-    transects=json.loads(scelti.to_json(orient="records")),notes=NOTE_SITO)
-if SETTORI_SPIAGGIA:
-    location["sectors"] = copy.deepcopy(SETTORI_SPIAGGIA)
-resolve_sectors(location, thresholds)
-if SECTOR_ANALYSIS_SIGNATURE != ANALYSIS_SIGNATURE or (MAPPING_CONFIGS and MAP_ANALYSIS_SIGNATURE != ANALYSIS_SIGNATURE):
-    raise ValueError("Profili cambiati: riesegui assegnazione dei settori e preparazione delle mappe.")
-if CARTOGRAPHY_SIGNATURE != json.dumps(CARTOGRAFIE, sort_keys=True):
-    raise ValueError("Cartografia cambiata: riesegui la preparazione prima di esportare.")
-for unit, metadata in MAPPING_CONFIGS.items():
-    if unit == "whole":
-        location["mapping"] = metadata
-    elif unit in location.get("sectors", {}):
-        location["sectors"][unit]["mapping"] = metadata
-    else:
-        raise ValueError("Settore rimosso: riesegui la preparazione della cartografia.")
-if not LIVELLO_STESSO_PUNTO:
-    location["sealevel_point"]=dict(latitude=LAT_LIVELLO,longitude=LON_LIVELLO)
-if SEA_LEVEL_REFERENCE is not None:
-    if SEA_LEVEL_REFERENCE["year"]!=ANNO_RIFERIMENTO_SSH:
-        raise ValueError("Anno del riferimento cambiato: riesegui la sezione del livello marino prima di esportare.")
-    location=apply_reference(location,SEA_LEVEL_REFERENCE)
-payload=dict(schema_version=1,slug=ID_SITO,data_mode="demo" if DEMO else "study",location=location,thresholds=thresholds,
-    provenance=dict(created_at=iso(dt.datetime.now(dt.timezone.utc)),slope_method=BEACHFACE_METHOD_VERSION,
-        reference_notebook="Stockdon_runup_soluzione.ipynb, celle 24–25",profile_source=PROFILE_SOURCE,
-        profile_sha256=hashlib.sha256((WORK/"profili_normalizzati.csv").read_bytes()).hexdigest(),
-        profile_data_mode=PROFILE_DATA_MODE,climate_data_mode=CLIMATE_DATA_MODE if CLIMATE else None,
-        sea_level_reference_year=SEA_LEVEL_REFERENCE["year"] if SEA_LEVEL_REFERENCE else None,
-        geospatial_preprocessing=GEO_PREPROCESSING,profile_crs=crs.to_string(),vertical_reference=RIFERIMENTO_QUOTE,z_correction_m=CORREZIONE_QUOTE_DEM_M,
-        excluded_transects=sorted(excluded),slope_sampling=MODALITA_PENDENZE,z_min_m=Z_MIN,z_max_m=Z_MAX))
-display(pd.DataFrame([{"località":NOME_SITO,"modalità":payload["data_mode"],"transetti inclusi":len(scelti),"pendenze":PENDENZE,"ERA5 o riferimento":CLIMATE["source"] if CLIMATE else "Non configurato","esposizione":location["wave_exposure"]["sectors_deg"] if location["wave_exposure"] else "Da definire","stagione estiva":f"{INIZIO_ESTATE} / {FINE_ESTATE}" if INIZIO_ESTATE else "Da definire"}]))
-print("Le soglie e il raccordo delle quote restano da validare, anche con profili misurati.")''',form=True)
-code('''#@title Crea e scarica il pacchetto
-ESPORTA_PACCHETTO = True #@param {type:"boolean"}
-if ESPORTA_PACCHETTO:
-    attachments={name:WORK/name for name in ["pendenze_transetti.csv","profili_normalizzati.csv","profilo_selezionato.png"]}
-    for name in ["climatologia.png","massimi_annuali.csv","estremi_settoriali.png"]:
-        if CLIMATE is not None and (WORK/name).exists(): attachments[name]=WORK/name
-    for name in ["estrazione_transetti.csv", "assegnazioni_settori.csv"]:
-        if (WORK/name).exists(): attachments[name]=WORK/name
-    if GEO_TRANSECTS_SOURCE: attachments["transetti.geojson"]=GEO_TRANSECTS_SOURCE
-    if AREAS_SOURCE: attachments["settori.geojson"]=AREAS_SOURCE
-    output=WORK/f"{ID_SITO}_{'DEMO' if DEMO else 'studio'}.zip"
-    write_site_package(output,payload,climatology=CLIMATE,attachments=attachments,cartography=CARTOGRAPHY_ASSETS)
-    print("Pacchetto creato:",output)
-    try:
-        from google.colab import files
-        files.download(str(output))
-    except ImportError:
-        display(FileLink(str(output)))''',form=True,tags=('export-package',))
-md('''## 8. Importa il pacchetto nella repository
+code('#@title Riepilogo prima dell’esportazione\nfrom forecast_service.time_utils import iso\nimport hashlib\ncurrent_signature=(Z_MIN,Z_MAX,ORIENTAMENTO,COL_ID,COL_DIST,COL_Z,COL_X,COL_Y,\n    hashlib.sha256(pd.util.hash_pandas_object(profili,index=True).values.tobytes()).hexdigest())\nif PROFILE_DATA_MODE!=("demo" if DEMO else "study") or (CLIMATE is not None and CLIMATE_DATA_MODE!=("demo" if DEMO else "study")):\n    raise ValueError("Modalità cambiata: riesegui caricamento profili, pendenze e climatologia prima di esportare.")\nif current_signature!=ANALYSIS_SIGNATURE or SELECTION_ANALYSIS_SIGNATURE!=ANALYSIS_SIGNATURE or PLOT_ANALYSIS_SIGNATURE!=ANALYSIS_SIGNATURE:\n    raise ValueError("Parametri o profili cambiati: riesegui calcolo, grafico e selezione delle pendenze.")\nif STRUCTURE_POINT_META:\n    if hashlib.sha256(STRUCTURES_SOURCE.read_bytes()).hexdigest()!=STRUCTURE_POINT_META["points_sha256"] or COL_STRUTTURA!=STRUCTURE_POINT_META["label_field"]:\n        raise ValueError("Punti delle strutture cambiati: riesegui campionamento e modulo delle strutture.")\n    if not np.isclose(CORREZIONE_QUOTE_DEM_M,STRUCTURE_POINT_META["elevation_correction_m"],rtol=0,atol=1e-9):\n        raise ValueError("Correzione delle quote cambiata: riesegui i campionamenti.")\n    if hashlib.sha256(json.dumps(POLIGONI_SETTORI,sort_keys=True).encode()).hexdigest()!=STRUCTURE_POINT_META["polygons_sha256"]:\n        raise ValueError("Poligoni cambiati: riesegui le quote delle strutture.")\nSTRUTTURE_PER_UNITA = STRUTTURE_EDITOR.read()\nif set(STRUTTURE_PER_UNITA) != set(UNITA_COSTIERE):\n    raise ValueError("Unità cambiate: ricrea il modulo delle strutture esposte.")\nthresholds = STRUTTURE_PER_UNITA.get("whole", next(iter(STRUTTURE_PER_UNITA.values())))\nfor key, values in STRUTTURE_PER_UNITA.items():\n    if key != "whole": SETTORI_SPIAGGIA[key]["thresholds"] = values\nnormalized=profili.rename(columns={COL_ID:"TR_ID",COL_DIST:"distance",COL_Z:"SAMPLE_1",COL_X:"X",COL_Y:"Y"})[["TR_ID","distance","SAMPLE_1","X","Y"]]\nnormalized.to_csv(WORK/"profili_normalizzati.csv",index=False)\nlocation=dict(SITE_INPUT,slopes=PENDENZE,roughness_m=float(RUGOSITA_M),parameters_status="provisional",\n    wave_exposure=parse_exposure(SETTORI_PROVENIENZA,NOTE_ESPOSIZIONE),\n    datum_offset_m=float(OFFSET_LIVELLO_M),vertical_reference_status="provisional",\n    climatology_file=f"config/climatology/{ID_SITO}.json" if CLIMATE is not None else None,\n    summer_season=dict(start_month_day=INIZIO_ESTATE or None,end_month_day=FINE_ESTATE or None,status="configured" if INIZIO_ESTATE else "to_be_defined"),\n    transects=json.loads(scelti.to_json(orient="records")),notes=NOTE_SITO)\nif SETTORI_SPIAGGIA:\n    location["sectors"] = copy.deepcopy(SETTORI_SPIAGGIA)\nresolve_sectors(location, thresholds)\nif SECTOR_ANALYSIS_SIGNATURE != ANALYSIS_SIGNATURE or (MAPPING_CONFIGS and MAP_ANALYSIS_SIGNATURE != ANALYSIS_SIGNATURE):\n    raise ValueError("Profili cambiati: riesegui assegnazione dei settori e preparazione delle mappe.")\nif CARTOGRAPHY_SIGNATURE != json.dumps(CARTOGRAFIE, sort_keys=True):\n    raise ValueError("Cartografia cambiata: riesegui la preparazione prima di esportare.")\nfor unit, metadata in MAPPING_CONFIGS.items():\n    if unit == "whole":\n        location["mapping"] = metadata\n    elif unit in location.get("sectors", {}):\n        location["sectors"][unit]["mapping"] = metadata\n    else:\n        raise ValueError("Settore rimosso: riesegui la preparazione della cartografia.")\nif not LIVELLO_STESSO_PUNTO:\n    location["sealevel_point"]=dict(latitude=LAT_LIVELLO,longitude=LON_LIVELLO)\nif SEA_LEVEL_REFERENCE is not None:\n    if SEA_LEVEL_REFERENCE["year"]!=ANNO_RIFERIMENTO_SSH:\n        raise ValueError("Anno del riferimento cambiato: riesegui la sezione del livello marino prima di esportare.")\n    location=apply_reference(location,SEA_LEVEL_REFERENCE)\npayload=dict(schema_version=1,slug=ID_SITO,data_mode="demo" if DEMO else "study",location=location,thresholds=thresholds,\n    provenance=dict(created_at=iso(dt.datetime.now(dt.timezone.utc)),slope_method=BEACHFACE_METHOD_VERSION,\n        reference_notebook="Stockdon_runup_soluzione.ipynb, celle 24–25",profile_source=PROFILE_SOURCE,\n        profile_sha256=hashlib.sha256((WORK/"profili_normalizzati.csv").read_bytes()).hexdigest(),\n        profile_data_mode=PROFILE_DATA_MODE,climate_data_mode=CLIMATE_DATA_MODE if CLIMATE else None,\n        sea_level_reference_year=SEA_LEVEL_REFERENCE["year"] if SEA_LEVEL_REFERENCE else None,\n        geospatial_preprocessing=GEO_PREPROCESSING,structure_point_preprocessing=STRUCTURE_POINT_META,\n        structure_point_exclusions_confirmed=bool(ESCLUDI_PUNTI_STRUTTURE_NON_VALIDI) if STRUCTURE_POINT_META else None,profile_crs=crs.to_string(),vertical_reference=RIFERIMENTO_QUOTE,z_correction_m=CORREZIONE_QUOTE_DEM_M,\n        excluded_transects=sorted(excluded),slope_sampling=MODALITA_PENDENZE,z_min_m=Z_MIN,z_max_m=Z_MAX))\ndisplay(pd.DataFrame([{"località":NOME_SITO,"modalità":payload["data_mode"],"transetti inclusi":len(scelti),"pendenze":PENDENZE,"ERA5 o riferimento":CLIMATE["source"] if CLIMATE else "Non configurato","esposizione":location["wave_exposure"]["sectors_deg"] if location["wave_exposure"] else "Da definire","stagione estiva":f"{INIZIO_ESTATE} / {FINE_ESTATE}" if INIZIO_ESTATE else "Da definire"}]))\nprint("Le soglie e il raccordo delle quote restano da validare, anche con profili misurati.")',form=True)
+code('#@title Crea e scarica il pacchetto\nESPORTA_PACCHETTO = True #@param {type:"boolean"}\nif ESPORTA_PACCHETTO:\n    attachments={name:WORK/name for name in ["pendenze_transetti.csv","profili_normalizzati.csv","profilo_selezionato.png"]}\n    for name in ["climatologia.png","massimi_annuali.csv","estremi_settoriali.png"]:\n        if CLIMATE is not None and (WORK/name).exists(): attachments[name]=WORK/name\n    for name in ["estrazione_transetti.csv", "assegnazioni_settori.csv", "quote_strutture_punti.csv", "quote_strutture_riepilogo.csv"]:\n        if (WORK/name).exists(): attachments[name]=WORK/name\n    if GEO_TRANSECTS_SOURCE: attachments["transetti.geojson"]=GEO_TRANSECTS_SOURCE\n    if AREAS_SOURCE: attachments["settori.geojson"]=AREAS_SOURCE\n    if STRUCTURES_SOURCE: attachments["strutture.geojson"]=STRUCTURES_SOURCE\n    output=WORK/f"{ID_SITO}_{\'DEMO\' if DEMO else \'studio\'}.zip"\n    write_site_package(output,payload,climatology=CLIMATE,attachments=attachments,cartography=CARTOGRAPHY_ASSETS)\n    print("Pacchetto creato:",output)\n    try:\n        from google.colab import files\n        files.download(str(output))\n    except ImportError:\n        display(FileLink(str(output)))',form=True,tags=('export-package',))
+md('''## 10. Importa il pacchetto nella repository
 Dopo il download, dal terminale nella cartella `Runup_GUI`, per aggiornare una località già presente:
 
 ```sh

@@ -7,15 +7,15 @@ def valid_id(value):
     return isinstance(value, str) and re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', value) is not None
 
 
-def validate_thresholds(thresholds):
-    if not isinstance(thresholds, list) or not thresholds:
+def validate_thresholds(thresholds, *, allow_empty=False):
+    if not isinstance(thresholds, list) or (not thresholds and not allow_empty):
         raise ValueError('Soglie del settore mancanti.')
     try:
         ids = [t['id'] for t in thresholds]
         heights = [t['elevation_m'] for t in thresholds]
         if len(set(ids)) != len(ids) or any(not valid_id(i.replace('_', '-')) for i in ids):
             raise ValueError('Identificativi delle soglie non validi.')
-        if any(not isinstance(h, (int, float)) or not math.isfinite(h) for h in heights) or heights != sorted(set(heights)):
+        if any(not isinstance(h, (int, float)) or not math.isfinite(h) for h in heights) or heights != sorted(heights):
             raise ValueError('Quote delle soglie non valide.')
         if any(t['season'] not in ('summer', 'all_year') or not t.get('description') for t in thresholds):
             raise ValueError('Descrizione o stagione delle soglie non valida.')
@@ -51,6 +51,8 @@ def resolve_sectors(location, thresholds):
             raise ValueError(f'Transetti mancanti, duplicati o sconosciuti nel settore {key}.')
         if assigned.intersection(ids):
             raise ValueError('Uno stesso transetto è assegnato a più settori.')
+        if 'wave_exposure' in sector and sector['wave_exposure'] != location.get('wave_exposure'):
+            raise ValueError('L’esposizione alle onde è comune all’area: non può variare tra settori costieri.')
         assigned.update(ids)
         selected = [by_id[i] for i in ids]
         slopes = [row.get('slope') for row in selected]
@@ -59,7 +61,8 @@ def resolve_sectors(location, thresholds):
         slopes = sorted(set(slopes))
         merged = {k: v for k, v in location.items() if k not in ('sectors', 'mapping')}
         merged.update(sector, slopes=slopes, transects=selected, thresholds=sector.get('thresholds', thresholds))
-        validate_thresholds(merged['thresholds'])
+        merged['wave_exposure'] = location.get('wave_exposure')
+        validate_thresholds(merged['thresholds'], allow_empty=True)
         validate_exposure(merged.get('wave_exposure'))
         season = merged.get('summer_season')
         if season:

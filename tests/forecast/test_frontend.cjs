@@ -374,3 +374,19 @@ test('Una spiaggia senza settori nasconde il selettore e senza cartografia nasco
   call('renderInundation({name:"Spiaggia unica"})');
   assert.equal(nodes['inundation-panel'].hidden,true);
 });
+
+test('La struttura di riferimento può essere diversa dai chioschi nei settori costieri',()=>{
+  assert.equal(call('referenceThreshold({thresholds:[{id:"ombrelloni",season:"summer"},{id:"passeggiata",season:"all_year"}]}).id'),'passeggiata');
+  assert.equal(call('referenceThreshold({thresholds:[]})'),null);
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  call('renderThresholds({thresholds:[]},[])');
+  assert.match(nodes.thresholds.innerHTML,/Nessuna struttura esposta/);
+  assert.match(call('modelAgreement({threshold:null})'),/mappa restano consultabili/);
+});
+
+test('Una struttura solo estiva fuori stagione non viene descritta come dato mancante',()=>{
+  context.seasonalArea={thresholds:[{id:'ombrelloni',season:'summer',elevation_m:.7}],wave_exposure:{sectors_deg:[[70,130]]}};
+  context.inactiveRows=[{time:'2026-11-11T06:00Z',hs_m:1,direction_deg:90,n_estimates:10,statistics_method:'sigma_clip_3_population_v1',twl_p75_m:1,twl_p95_m:2,thresholds:[{id:'ombrelloni',active:false,fraction:1}]}];
+  assert.match(call('assessTrend(seasonalArea,inactiveRows).title'),/fuori dal periodo/);
+  assert.match(call('modelAgreement(assessTrend(seasonalArea,inactiveRows))'),/fuori stagione/);
+});

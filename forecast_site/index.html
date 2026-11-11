@@ -7,10 +7,10 @@
   <title>Onde a riva · Previsioni locali</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=20261111-mappe-azzurre">
+  <link rel="stylesheet" href="styles.css?v=20261111-area-settori-costieri">
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-  <script defer src="app.js?v=20261111-mappe-azzurre"></script>
+  <script defer src="app.js?v=20261111-area-settori-costieri"></script>
 </head>
 <body>
   <a class="skip" href="#main">Vai al contenuto</a>
@@ -43,7 +43,7 @@
       <div class="detail-heading"><div><p id="area" class="eyebrow"></p><h1 id="location-title"></h1><p id="period" class="muted"></p></div><a id="download" class="button" download>Scarica tutti i calcoli (CSV) ↓</a></div>
       <div id="sector-selection" class="sector-selection" hidden></div>
       <div id="metrics" class="metrics"></div>
-      <section id="outlook-panel" class="panel outlook-panel impact-unavailable"><p class="eyebrow">IL CONFRONTO CON I CHIOSCHI</p><h2 id="outlook-title">Tendenza a 4 giorni</h2><div id="outlook"></div></section>
+      <section id="outlook-panel" class="panel outlook-panel impact-unavailable"><p class="eyebrow">IL CONFRONTO CON LE STRUTTURE</p><h2 id="outlook-title">Tendenza a 4 giorni</h2><div id="outlook"></div></section>
       <section class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">L’ACQUA A RIVA</p><h2>A quale quota potrebbe arrivare l’acqua?</h2></div><span id="twl-reference-label" class="small muted">metri rispetto al riferimento dichiarato</span></div><p class="chart-caption">Il grafico combina il livello del mare con la risalita delle onde sulla spiaggia. La linea mostra la media dei calcoli; le fasce colorate mostrano quanto differiscono i risultati. Le linee tratteggiate indicano le quote associate alle strutture. Il grafico non indica la profondità o l’estensione di un allagamento. <a href="metodo.html#colori">Come leggere il grafico ↗</a></p><div id="threshold-key" class="threshold-key"></div><div id="twl-chart" class="chart" aria-label="Previsione del livello totale dell’acqua"></div></section>
       <section id="inundation-panel" class="panel" hidden><p class="eyebrow">ESTENSIONE POTENZIALE SULLA SPIAGGIA</p><h2>Area potenzialmente raggiunta dall’acqua in 4 giorni</h2><p id="inundation-description" class="chart-caption"></p><div id="inundation-legend" class="inundation-legend"></div><div id="inundation-map" aria-label="Ortofoto e inviluppi di estensione potenziale dell’acqua"></div><p id="inundation-credit" class="small muted"></p><p class="small muted">Il runup è una risalita intermittente delle onde. La mappa usa un riempimento statico delle zone collegate al mare: non simula durata, velocità, portate o sormonto delle opere. <a href="metodo.html#mappe">Metodo e limiti della mappa ↗</a></p></section>
       <div class="section-heading"><div><p class="eyebrow">UNO SGUARDO AI PROSSIMI GIORNI</p><h2>Cosa aspettarsi giorno per giorno</h2></div></div>

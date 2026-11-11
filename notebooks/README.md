@@ -1,93 +1,85 @@
-# Definizione dei siti in Colab
+# Configura un’area di studio in Colab
 
-Aprire `Definisci_siti_studio.ipynb` in [Google Colab](https://colab.research.google.com/) usando **File → Carica notebook**. Le funzioni sono incluse nel notebook: non occorre clonare la repository, pubblicare il sito o configurare GitHub per eseguirlo.
+Aprire `Definisci_siti_studio.ipynb` con **File → Carica notebook** in [Google Colab](https://colab.research.google.com/). Il notebook include le funzioni del progetto e prepara un pacchetto ZIP; non pubblica il sito. Per provare senza account o download usare `DEMO=True`.
 
-## Prima prova
+## Area e settori costieri
 
-1. Eseguire le celle in ordine con `DEMO=True`. Non servono token né richieste a servizi esterni; i profili e la distribuzione delle onde sono sintetici e dichiarati come tali.
-2. Controllare la tabella delle pendenze e il grafico: i punti arancioni sono quelli usati per la regressione. Il terreno dietro il primo punto sopra Z_MAX deve essere escluso anche se torna a quote inferiori.
-3. Esportare il pacchetto demo per familiarizzare con i contenuti. L’importatore del portale lo rifiuta per impostazione predefinita.
+**L’area di studio è la località**, per esempio Borghetto Santo Spirito. Può essere una spiaggia intera oppure essere suddivisa in **settori costieri**, rappresentati da poligoni GeoJSON.
 
-## I propri siti di studio
+| Comuni a tutta l’area | Specifici di ogni settore costiero |
+|---|---|
+| DEM e ortofotomosaico sorgenti | Transetti assegnati e relative pendenze |
+| Direzioni di esposizione alle onde | Elenco delle strutture esposte e quote |
+| Punto/serie delle previsioni di onde, surge e marea | Runup, TWL, confronti con le strutture |
+| Punto e serie storica ERA5, statistiche comprese | Ritaglio e risultato della mappa |
 
-1. Impostare `DEMO=False`, poi rieseguire tutte le celle.
-2. Compilare nome, identificativo, tratto di costa e coordinate del sito e del punto onde offshore. Si può impostare un punto distinto per il livello marino. La mappa mostra i punti e restituisce coordinate al clic; riportare quelle scelte nei campi e rieseguire la cella.
-   Definire anche i settori di provenienza delle onde che espongono la spiaggia, oppure lasciare il campo vuoto se ancora sconosciuti. Sono ammessi più settori arbitrari, in gradi dal Nord geografico e in senso orario: `20,120;250,300` è solo un esempio di formato. Il settore `315,45` attraversa il Nord; `0,360` include tutte le direzioni. Lo schema circolare serve a verificare la scelta. Nessun settore è preimpostato per Venezia o Borghetto.
-3. Caricare il CSV QGIS o indicare un file già presente. I nomi iniziali sono quelli del notebook fornito: `TR_ID`, `distance`, `SAMPLE_1`, `X`, `Y`. Sono modificabili. Indicare il CRS proiettato in metri; EPSG:32632 è solo il valore iniziale per Borghetto. Le quote devono riferirsi a un riferimento dichiarato, con correzione esplicita se necessaria.
-4. Impostare Z_MIN e Z_MAX. Il metodo è quello del notebook didattico: orientamento dalla media delle prime/ultime 10 quote, distanza X/Y dal primo punto a mare, arresto al primo punto sopra Z_MAX e regressione lineare sul tratto precedente con quota almeno Z_MIN. Con profili corti l’orientamento può essere ambiguo: verificarlo e scegliere il verso esplicitamente se necessario. Il segno della pendenza non viene nascosto con un valore assoluto.
-5. Esaminare grafici e diagnostica. Correggere i transetti non validi oppure escluderli esplicitamente. Scegliere se esportare le pendenze dei transetti o campionare uniformemente l’intervallo minimo–massimo.
-6. Definire stagione estiva, rugosità e soglie delle strutture. Le soglie proposte restano esempi da validare.
-7. Scaricare ERA5 dal CDS oppure importare un CSV già disponibile. Il default storico è 1991–2020, modificabile. Il download richiede il consenso esplicito nella cella e le condizioni dei dataset accettate personalmente sul CDS. Il token si legge dai Secrets Colab `CDS_KEY` o tramite input protetto; non scriverlo nei campi del notebook. Per conservare la cache fra sessioni si può attivare il salvataggio su Drive.
-8. Verificare distribuzione, percentili 95/99, massimo osservato e massimi annuali. ERA5 fornisce periodo medio, non Tp; il portale continua a usare Tp Copernicus per il runup. Il confronto fra tutte le ore storiche è distinto dal nuovo fit Gumbel dei massimi annuali per settore.
-9. Rivedere il riepilogo e scaricare lo ZIP del sito. Dopo aver cambiato modalità o parametri, rieseguire caricamento, calcolo, grafico e selezione prima dell’esportazione: il notebook verifica la coerenza di questi passaggi.
+Il servizio scarica le forzanti una volta per area e le riusa per tutti i settori costieri. Le direzioni di esposizione non si impostano separatamente per settore costiero. I settori statistici di provenienza delle onde ERA5 sono un’altra cosa: riguardano la distribuzione delle direzioni offshore e restano comuni all’area.
 
-## Importazione nel portale
+## File da preparare
 
-Dalla radice di Runup_GUI, per aggiornare Borghetto già presente:
+Tre file obbligatori per un’area reale:
 
-```sh
-python scripts/import_site_package.py /percorso/borghetto-santo-spirito_studio.zip --replace
-```
+- **DEM GeoTIFF** dell’intera area, con CRS e quote in metri.
+- **Ortofotomosaico GeoTIFF** dell’intera area, georeferenziato e a 8 bit, grigio/RGB/RGBA.
+- **GeoJSON delle linee dei transetti**, con un ID univoco per linea; il campo iniziale è `TR_ID`, modificabile.
 
-Per Venezia usare il suo identificativo. Per località nuove omettere `--replace`. L’importatore valida la configurazione prima di aggiornare i file, copia la climatologia quando disponibile e conserva la documentazione del sito in `config/study_sites/IDENTIFICATIVO/`. Non effettua commit, push o pubblicazioni. Per una prova locale esplicita con lo ZIP demo occorre anche `--allow-demo`.
+Un file facoltativo:
 
-Il pacchetto comprende configurazione, soglie, tabella delle pendenze, profili normalizzati, un grafico del transetto scelto e il riferimento climatologico quando calcolato. I token e i NetCDF della cache non vengono inclusi. Conservare la cache o il CSV storico separatamente per eventuali aggiornamenti.
+- **GeoJSON dei poligoni dei settori costieri**, con ID e nome; i campi iniziali sono `sector_id` e `name`, modificabili. Gli ID usano minuscole, numeri e trattini. `whole` è riservato alla spiaggia intera.
 
-La stima delle pendenze usa il metodo del notebook fornito, senza cambiare le formule di runup già presenti nell’app. Non viene simulata la propagazione dell’acqua a terra e il riferimento delle quote richiede ancora verifica locale.
+Non serve un CSV di punti né ritagliare manualmente i raster. Per GeoJSON standard usare EPSG:4326; se il file dichiara un altro CRS, indicarlo esplicitamente. Il CRS di lavoro dei profili deve essere proiettato in metri, per esempio quello effettivamente usato nel rilievo. Le Z del GeoJSON vengono ignorate: le quote si estraggono dal DEM.
 
-## Aggiornare il notebook come sviluppatore
+Conservare i sorgenti in **`notebooks/dati originali/`**, esclusa da Git. La cartella resta sul Mac e non entra nel push. Da Colab caricare i file oppure indicare percorsi su Drive: i percorsi del Mac non sono leggibili dal runtime Colab. I GeoTIFF originali non entrano nel pacchetto esportato.
 
-Le funzioni condivise sono in `forecast_service/site_setup.py`, `era5_download.py`, `climate.py`, `exposure.py`, `time_utils.py` e `site_package.py`. Dopo una modifica, rigenerare il notebook per aggiornare la copia inclusa:
+## Il percorso nel notebook
 
-```sh
-python -m pip install nbformat
-python scripts/build_setup_notebook.py
-```
+1. **Ambiente e cartella di lavoro.** Installare le librerie e scegliere modalità demo o dati reali, con eventuale salvataggio su Drive.
+2. **Area e dati marini comuni.** Definire nome, coordinate e punto offshore; scegliere le direzioni di provenienza che espongono l’area. Questi dati valgono per tutta l’area. I flussi reali di previsione sono configurati nel servizio, non scaricati separatamente per ogni settore costiero dal notebook.
+3. **File dell’area.** Caricare DEM, ortofoto e transetti una sola volta. Caricare anche i poligoni se si vogliono settori costieri. `PASSO_CAMPIONAMENTO_M=0` usa il passo del DEM; un numero positivo sceglie il passo in metri. NoData e punti esterni al raster restano quote mancanti.
+4. **Pendenze e controllo dei transetti.** Verificare tabella, grafici e orientamento mare→terra. Correggere o escludere esplicitamente i profili non validi. La pendenza segue il notebook didattico: distanza euclidea X/Y dal primo punto a mare, arresto prima del primo punto sopra `Z_MAX` e regressione sui punti precedenti con quota almeno `Z_MIN`. Le linee dovrebbero essere rettilinee. Nessuna modifica alle formule di runup.
+5. **Settori costieri facoltativi.** Con i poligoni, il centro della battigia usata per il fit assegna ogni transetto al settore costiero. I casi ambigui richiedono una correzione o `ASSEGNAZIONI_MANUALI`; le linee non vengono tagliate. Senza poligoni si conserva una sola spiaggia.
+6. **Strutture esposte.** Compare una scheda per ogni settore costiero, oppure una sola scheda per la spiaggia intera. Modificare nomi, quote e attività estiva/annuale; deselezionare le strutture assenti o aggiungerne altre. Gli elenchi possono essere diversi e anche vuoti: grafici e mappa restano disponibili. Eseguire la verifica sotto il modulo dopo le modifiche.
+7. **Ritagli e crediti.** I raster sono già caricati. Compilare autore, data, licenza e riferimento delle quote. Il notebook prepara il dominio con margine e le immagini ritagliate senza altri selettori di sorgente o interruttori per attivare le mappe. Senza settori costieri usa l’estensione del DEM. L’anteprima controlla terreno e avvio verso mare, non contiene ancora la previsione.
+8. **Serie storica ERA5 comune.** Scaricare una volta per l’area oppure importare una serie disponibile. Distribuzione, massimi annuali, Gumbel per provenienza e citazioni restano conservati. I dati di previsione sono scaricati dal servizio giornaliero e condivisi tra i settori costieri.
+9. **Controllo ed esportazione.** Il riepilogo legge nuovamente le strutture dal modulo corrente. Il pacchetto comprende configurazione, profili, diagnostica, ritagli e climatologia disponibile. Gli originali, i token e i NetCDF completi non vengono inclusi. Un pacchetto demo è marcato come tale.
+10. **Importazione locale.** Eseguire `python scripts/import_site_package.py /percorso/sito_studio.zip --replace` per aggiornare una località esistente, omettendo `--replace` per una nuova. Dopo il controllo locale, commit/push e workflow pubblicano i derivati.
 
-Il test `test_notebook_embeds_current_sources` verifica che la copia inclusa non diverga dai moduli del progetto. Il notebook distribuito non contiene output o credenziali salvati.
+## Risoluzione e riferimento verticale
 
-I settori sono esportati nello ZIP come `location.wave_exposure`. Servono a mostrare avvertenze sul sito: non filtrano la climatologia ERA5 e non azzerano né correggono onde, runup o TWL. Onde fuori settore non garantiscono assenza di effetti sulla spiaggia, perché rifrazione, diffrazione e riparo non sono simulati.
+L’ortofoto pubblicata parte da **0,5 m/pixel**, indipendentemente dal DEM originale usato per i profili. Il campo è `RISOLUZIONE_ORTOFOTO_M`. Il singolo ritaglio deve rientrare in 4096 pixel per asse e 12 MiB: un passo troppo fine produce un errore esplicito, senza degradazione silenziosa. L’esterno del poligono e le zone senza ortofoto sono trasparenti, lasciando visibile OpenStreetMap.
 
-## Curve Gumbel per settore di provenienza
+Il DEM cartografico è preparato su una griglia leggera, fino a 1024 pixel per asse. Il ricampionamento può perdere opere strette: controllare muri, varchi, dune e NoData. I punti di avvio verso mare sono ricavati dai primi punti validi dei profili orientati, verificabili nell’anteprima e sostituibili con `PUNTI_MARE_MANUALI`.
 
-Nella nuova sezione **Impostazioni dei massimi annuali per settore**, lasciare `CALCOLA_ESTREMI_SETTORIALI=True` e scegliere `AMPIEZZA_SETTORI_ESTREMI`. Il valore iniziale di 45° definisce una partizione statistica uniforme di tutte le direzioni: non è una scelta sull’esposizione di Venezia o Borghetto. È possibile usare anche 30°, 60°, 90°, 120°, 180° o tutte le direzioni (360°). I settori sono centrati su multipli dell’ampiezza, con inizio incluso e fine esclusa.
+DEM, TWL e quote delle strutture devono usare lo stesso riferimento verticale. `CORREZIONE_QUOTE_DEM_M` riguarda i profili; `CORREZIONE_DEM_MAPPA_M` riguarda il DEM delle mappe. Non confermare il raccordo verticale prima della verifica. Le mappe mostrano un’estensione statica potenziale, non profondità, durata o probabilità di inondazione.
 
-Il download normalizza automaticamente la direzione in `direction_deg`. Per un CSV già disponibile, indicare il nome corretto in `COL_DIREZIONE_ERA5`: la direzione deve indicare la provenienza, in gradi dal Nord geografico e in senso orario. Il vecchio file climatologico con le sole Hs ordinate non consente di ricostruire questa informazione; occorre riusare la serie completa dalla cache o scaricarla nuovamente.
+Il riferimento SSH storico Copernicus, quando usato, resta comune all’area e si applica soltanto al relativo fornitore. Non viene sottratto a NOAA + MeteOcean. ERA5 e il riferimento SSH sono distinti: il setup mantiene le procedure già presenti per entrambi.
 
-Il notebook seleziona un massimo Hs per anno di calendario UTC **all’interno di ciascun settore**, utilizzando anni con copertura oraria completa. La direzione può mancare nelle ore con Hs=0; una direzione mancante con onde positive rende l’anno incompleto. Non si dividono per direzione i soli massimi annuali generali. Gli anni senza onde positive da un settore non sono eliminati per produrre un fit condizionato: quel settore resta senza stima Gumbel.
+Gli strumenti Python che importano CSV di profili già campionati restano disponibili (`forecast_service.site_setup` e `scripts/setup_location.py`); il percorso principale del notebook usa direttamente GeoJSON e DEM.
 
-Il fit richiede 30 anni utilizzabili per impostazione predefinita. Usa massima verosimiglianza (`scipy.stats.gumbel_r.fit`) e 400 ricampionamenti degli anni per una banda bootstrap al 95%. I grafici di controllo confrontano curva e massimi annuali, con tempi di ritorno 1,01–100 anni. La banda rappresenta l’incertezza del fit e non include bias ERA5/Copernicus, errore previsionale, effetti a riva o non stazionarietà.
+Riferimento delle pendenze: notebook fornito `Stockdon_runup_soluzione.ipynb`, celle 24–25; Stockdon et al. (2006), https://doi.org/10.1016/j.coastaleng.2005.12.005. Le formule e le citazioni dei modelli del portale restano invariate.
 
-Il pacchetto ZIP include i parametri e le curve di tutti i settori e, quando esiste un fit, il grafico `estremi_settoriali.png`. Dopo l’importazione e la rigenerazione del bollettino, il portale seleziona il settore della direzione nell’ora del massimo Hs dei quattro giorni. Il selettore consente di confrontare anche il picco di ciascun altro settore presente nelle onde previste. Un settore senza fit valido rimane esplicitamente senza stima; non viene sostituito dalla curva di tutte le direzioni.
+## Quote delle strutture da punti GeoJSON (facoltativo)
 
-Si assume che i massimi annuali siano indipendenti e stazionari e che Gumbel sia una distribuzione appropriata: sono ipotesi da verificare, non garantite dal numero di anni. Il tempo di ritorno riguarda l’altezza significativa **al largo** per il settore, non runup, TWL o allagamenti. Le elaborazioni rimangono sperimentali e non utilizzabili per previsioni, allerte o decisioni gestionali.
+Puoi aggiungere un unico GeoJSON di **punti** per tutta l’area, anche con tipi di struttura diversi tra settori costieri. Imposta `FILE_PUNTI_STRUTTURE` nel passaggio dei file oppure attiva `USA_PUNTI_STRUTTURE` per caricarlo dal computer.
 
-Riferimenti: [Gumbel e metodi SciPy](https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.gumbel_r.html); [convenzione delle direzioni ECMWF](https://confluence.ecmwf.int/spaces/FCST/pages/111155338/What+is+the+direction+convention+for+wave+fields).
+Il campo richiesto è **`struttura`**, un nome testuale come `Chiosco`, `Passeggiata` o `Prima fila di ombrelloni`. Usa lo stesso valore per punti dello stesso tipo; maiuscole e spazi ripetuti vengono normalizzati. Nomi diversi restano tipi diversi. Non servono quote nel GeoJSON: la Z delle geometrie viene ignorata e la quota viene campionata dal **DEM originale**.
 
-## Riferimento SSH fisso: distinto da ERA5
+Il notebook:
 
-Prima dell’esportazione, la nuova sezione **Riferimento storico del livello marino** definisce lo zero dei grafici e del TWL. Per Borghetto è già incluso il riferimento Copernicus del **2025** (8.760 ore nella cella verificata; media circa −0,4032 m): scegliere **Usa riferimento incluso**. Non occorre riscaricare ERA5.
+1. assegna il punto al poligono del settore costiero, oppure alla spiaggia intera se non suddivisa;
+2. legge la cella DEM, applicando scala/offset del raster e la correzione verticale dell’area;
+3. raggruppa per **settore costiero + struttura** e propone la **media aritmetica dei punti validi**, con uguale peso per punto;
+4. mostra anche minimo, massimo, punti esclusi e numero di celle DEM distinte;
+5. riempie il modulo delle strutture soltanto con le voci mappate nel relativo settore, senza aggiungere gli esempi non osservati. Puoi modificare nomi, quote, stagione e presenza prima di esportare.
 
-Per un altro sito scegliere **Calcola da Copernicus**, indicare un anno completo disponibile e abilitare `CONSENSO_DOWNLOAD_SSH`. L’account è quello Copernicus Marine, distinto da CDS: le credenziali possono essere lette dai Secrets Colab `COPERNICUSMARINE_USERNAME` e `COPERNICUSMARINE_PASSWORD` oppure inserite tramite input protetto. Non sono scritte nei file esportati. È possibile anche importare un riferimento JSON precedentemente preparato. Il controllo verifica anno, punto richiesto, cella selezionata e completezza oraria; il riferimento non viene riutilizzato per una cella diversa.
+Campi facoltativi nei punti:
 
-Il pacchetto salva `mean_reference_m` e `sea_level_reference`, inclusi anno, cella, versione del prodotto e hash della serie. La media resta fissa a ogni previsione. I grafici dichiarano **zero = media Copernicus 2025**, e non sostengono che questo coincida già con il livello medio mare locale misurato. Il raccordo alle quote delle strutture resta da verificare.
+- `stagione`: `estiva`/`summer` oppure `annuale`/`all_year`. Se manca si propone attività annuale da verificare nel modulo. Valori discordanti nello stesso gruppo richiedono di correggere il file.
+- `settore_costiero`: ID del poligono da usare per un punto sul confine o in poligoni sovrapposti. Il settore indicato deve effettivamente contenere il punto.
+- `id`: identificativo leggibile per ritrovare il punto nella diagnostica. Se manca, il report usa il numero progressivo del punto nel file.
 
-## Transetti da GeoJSON e raster originali dell’intera area
+Punti senza quota, fuori DEM o fuori dai settori, con geometria non valida o assegnazione ambigua non valgono zero e non vengono assegnati a un settore arbitrario. Il notebook mostra il problema e richiede correzione o conferma esplicita dell’esclusione tramite `ESCLUDI_PUNTI_STRUTTURE_NON_VALIDI`. Un gruppo senza quote valide non riceve una quota inventata; i settori senza punti validi restano senza voci proposte.
 
-Per preparare i profili non serve più esportare prima un CSV di punti:
+**Mappa la quota fisicamente esposta all’acqua:** terreno alla base, ingresso o altro punto di confronto definito nello studio. Se il raster contiene i tetti, la lettura sui tetti non rappresenta la quota del terreno. La media non descrive il primo punto che potrebbe essere raggiunto: per questo rimangono visibili minimo e massimo. Nessuna quota è ricavata dall’ortofoto ricampionata.
 
-1. Nella sezione 3 scegliere **GeoJSON + DEM**, indicare il file di linee e il DEM GeoTIFF, il campo identificativo dei transetti (inizialmente `TR_ID`) e il CRS del GeoJSON. Per GeoJSON standard è WGS84/EPSG:4326. Il CRS di lavoro dei profili resta proiettato in metri.
-2. Impostare `PASSO_CAMPIONAMENTO_M`: `0` usa il passo del DEM, un valore positivo sceglie il passo in metri. Le quote provengono dalle celle del DEM originale, indipendentemente dalla risoluzione dell’ortofoto. Eventuali Z nel GeoJSON non sono usate. NoData e punti esterni restano quote mancanti; non sono riempiti con zero.
-3. Verificare diagnostica, orientamento, grafici e selezione della battigia con Z_MIN/Z_MAX, come prima. Il metodo della regressione resta invariato. Le linee dovrebbero essere rettilinee; la distanza per il fit è quella euclidea dal primo punto a mare, come nel notebook di riferimento.
-4. Nella sezione 5A attivare `USA_AREE_GEOJSON` e caricare i poligoni. I campi iniziali sono `sector_id` (ID come `ponente`, `centro`, `levante`) e `name` (nome leggibile); si possono modificare. Ogni transetto incluso viene assegnato usando il centro del tratto di battigia selezionato. Confini ambigui o transetti fuori dalle aree richiedono una correzione o `ASSEGNAZIONI_MANUALI`. Le linee non vengono tagliate sui confini dei settori.
-5. Nella sezione 5B attivare `PREPARA_MAPPE_DA_AREE`, indicare l’ortofoto comune e i crediti. Il DEM dei profili viene riutilizzato se `FILE_DEM_MAPPE` è vuoto. Il notebook prepara ciascuna mappa usando il poligono con `MARGINE_CLIPPING_M` di margine (100 m iniziali, modificabili). Il margine serve per la connessione; il risultato visualizzato resta ritagliato al settore. I punti di avvio verso mare sono ricavati dai primi punti validi dei profili orientati; sono verificabili nell’anteprima e sostituibili con `PUNTI_MARE_MANUALI`.
-
-Il campo `RISOLUZIONE_ORTOFOTO_M` parte da **0,5 m/pixel** e usa **metri/pixel**, separatamente dal DEM: `0` mantiene le dimensioni della griglia; `0.5` significa 50 cm/pixel e `0.005` significa 5 mm/pixel. Si ricampiona lo sfondo con interpolazione bilineare. L’immagine pubblicata può avere una risoluzione diversa dalla griglia di calcolo ma la stessa estensione geografica. Il passo effettivo ai bordi del rettangolo è approssimato tramite distanze geodetiche; target e dimensioni sono registrati nei metadati.
-
-Per mantenere leggeri pacchetto e sito, un singolo ritaglio ortofoto deve restare entro 4096 pixel per asse e 12 MiB. Un’impostazione troppo fine interrompe la preparazione con un messaggio: non viene degradata silenziosamente. Le parti senza ortofoto restano trasparenti e mostrano OpenStreetMap. Le quote dei profili non vengono ricavate dall’ortofoto ricampionata.
-
-### Cartella locale degli originali
-
-Mettere i file sorgente in `notebooks/dati originali/`, per esempio DEM, ortofotomosaico completo, linee dei transetti e poligoni dei settori. La cartella è esclusa da Git tramite `.gitignore`: **non viene inclusa nel push né scaricata da GitHub/Colab**. Da Colab occorre caricare i file oppure leggerli da Drive; un percorso del Mac non è accessibile dal runtime Colab.
-
-Il pacchetto esporta le griglie e le ortofoto ritagliate/ricampionate, diagnostica e geometrie utili a documentare il setup; non include i GeoTIFF originali. Eseguire il controllo del riferimento verticale e compilare autore, data e licenza dei rilievi prima di abilitare le mappe. Le pendenze e i risultati devono essere ricontrollati dopo aver cambiato i sorgenti.
+Poiché punti e mappa usano lo stesso DEM, il notebook verifica che le correzioni verticali coincidano. Se la quota proposta viene modificata a mano, il pacchetto conserva separatamente la media osservata e segnala `manual_override`. Vengono inclusi GeoJSON dei punti e CSV di dettaglio/riepilogo nella diagnostica, insieme agli hash e ai parametri di estrazione; i GeoTIFF originali restano fuori dal pacchetto.

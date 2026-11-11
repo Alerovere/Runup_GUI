@@ -6,8 +6,8 @@
   <meta name="description" content="Previsioni locali di runup e livello totale dell'acqua per Venezia e Borghetto Santo Spirito. Prototipo scientifico con onde e storm surge MeteOcean e marea NOAA.">
   <title>Dati, metodo e limiti · Onde a riva</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=20261111-mappe-azzurre">
-  <script defer src="app.js?v=20261111-mappe-azzurre"></script>
+  <link rel="stylesheet" href="styles.css?v=20261111-area-settori-costieri">
+  <script defer src="app.js?v=20261111-area-settori-costieri"></script>
 </head>
 <body data-page="method">
   <a class="skip" href="#main">Vai al contenuto</a>
@@ -59,7 +59,7 @@
 <p>Gumbel è un’ipotesi da verificare: i massimi sono assunti indipendenti e stazionari. Oltre la durata della serie la curva è un’estrapolazione, tratteggiata. La fascia non comprende l’incertezza della previsione, le differenze fra ERA5 e il modello di onda usato nella previsione o la trasformazione verso riva; non si applica una correzione dei bias fra i prodotti.</p>
 <p><strong>Il tempo di ritorno riguarda le onde al largo, non gli allagamenti.</strong> Non indica una ripetizione a intervalli regolari e non è una stima operativa del rischio.</p></section>
 <section id="mappe" class="panel method-section"><h2>Settori di spiaggia e mappe potenziali</h2>
-<p>Una località può essere suddivisa in settori, con transetti, pendenze, esposizione e quote delle strutture specifici. Onde al largo, marea e surge restano comuni. Senza suddivisione la spiaggia viene rappresentata come prima. Il filtro ±3σ e i percentili sono ricalcolati per settore e ora, senza modificare le formule dei modelli.</p>
+<p>Un’area può essere suddivisa in settori costieri, con transetti, pendenze e strutture esposte specifici. Direzioni di esposizione, onde al largo, marea, surge e riferimento storico restano comuni all’area. Senza suddivisione la spiaggia viene rappresentata come prima. Il filtro ±3σ e i percentili sono ricalcolati per settore e ora, senza modificare le formule dei modelli.</p>
 <p>La cartografia è facoltativa. Il DEM deve avere quote in metri raccordate al riferimento del TWL; l’ortofotomosaico georeferenziato è soltanto lo sfondo. Crediti, data e licenza del rilievo sono indicati accanto alla mappa.</p>
 <p>Per ogni ora si sommano contributi contemporanei di runup, marea e surge. Per P75 e P95 dei risultati filtrati si seleziona poi la quota oraria maggiore nelle 96 ore dell’elaborazione: non si sommano picchi avvenuti in momenti diversi e non si usa il massimo dei singoli modelli. L’inviluppo resta riferito a quel periodo fisso, indicato sulla mappa, anche quando i grafici mostrano soltanto le ore ancora future.</p>
 <p>Il riempimento statico seleziona celle sotto la quota e collegate ai punti di avvio verso mare, con otto vicini, secondo il principio di <a href="https://grass.osgeo.org/grass-stable/manuals/r.lake.html">r.lake</a>. NoData è una barriera. Il calcolo usa l’intero DEM preparato e ritaglia soltanto l’immagine finale sul poligono del settore. I livelli sono uniformi per settore: non è simulata l’interazione idraulica tra settori.</p>
