@@ -68,3 +68,13 @@
 .legal-draft{padding:16px 18px;border:1px solid #e6d2ae;border-radius:9px;background:#fff5e5;font-size:13px;line-height:1.8}.method-section h3{margin-top:24px}.method-section a{overflow-wrap:anywhere}
 
 .data-credit{display:grid;grid-template-columns:240px minmax(0,1fr);align-items:center;gap:28px;margin:0 0 30px;padding:25px 30px;border:1px solid var(--line);border-radius:14px;background:white}.data-credit img{display:block;width:100%;height:auto}.data-credit h2{font-size:18px;margin:0 0 7px}.data-credit p{font-size:12px;line-height:1.8;margin:0;color:var(--muted)}@media(max-width:760px){.data-credit{grid-template-columns:1fr;padding:23px;gap:18px}.data-credit img{max-width:240px}}
+
+/* Optional subdivisions and survey cartography. */
+.sector-selection{margin:0 0 1.5rem;padding:1rem 1.25rem;border:1px solid var(--line,#dbe2da);border-radius:14px;background:#fff}
+.sector-selection label{display:block;font-weight:700;margin-bottom:.5rem}
+.sector-selection select{font:inherit;width:100%;max-width:32rem;padding:.65rem;border:1px solid #aebeb9;border-radius:8px;background:#fff;color:#194e4c}
+#inundation-map{height:480px;border-radius:12px;margin:1rem 0;isolation:isolate}
+.inundation-legend{display:flex;gap:.75rem;flex-wrap:wrap;margin:.75rem 0}
+.map-key{border-radius:6px;padding:.4rem .6rem;font-size:.85rem;color:#254644}
+.map-key-95{background:rgba(107,197,232,.35);border:1px solid #6bc5e8}.map-key-75{background:rgba(35,129,188,.45);border:1px solid #2381bc}
+@media(max-width:600px){#inundation-map{height:360px}.inundation-legend{display:grid}}

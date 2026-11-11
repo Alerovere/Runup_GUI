@@ -5,7 +5,7 @@ from statistics import fmean, pstdev
 STATISTICS_METHOD = 'sigma_clip_3_population_v1'
 STATISTICS_METADATA = {
     'method': STATISTICS_METHOD,
-    'grouping': 'location_hour',
+    'grouping': 'location_or_sector_hour',
     'ensemble_unit': 'model_slope',
     'sigma_multiplier': 3,
     'sigma_ddof': 0,

@@ -75,6 +75,9 @@ def load_configuration(root=ROOT):
             raise ValueError(f'Soglie non valide: {slug}')
         if any(t['season'] not in ('summer', 'all_year') for t in thresholds):
             raise ValueError(f'Stagionalità non valida: {slug}')
+        from forecast_service.sectors import resolve_sectors, validate_mappings
+        resolve_sectors(loc, thresholds)
+        validate_mappings(loc, slug)
     for loc in locations['locations'].values():
         season = loc.get('summer_season', impacts['summer_season'])
         dates = [season['start_month_day'], season['end_month_day']]
@@ -333,15 +336,35 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
                                          valid_from=waves[0]['time'], valid_to=iso(parse_time(waves[-1]['time']) + timedelta(hours=1)),
                                          valid_models=valid_models, missing_models=[m for m in MODEL_ORDER if m not in valid_models],
                                          csv=f'data/{slug}.csv')
-        output = io.StringIO(newline='')
-        writer = csv.DictWriter(output, fieldnames=['data_mode', 'vertical_reference', *detail[0].keys()])
-        writer.writeheader()
         reference_code = ('synthetic_reference' if demo else
             'noaa_htp_plus_meteocean_surge_provisional_msl' if provider=='meteocean' else
             'mean_sea_level_assumed' if locations['water_level']['mode']!='copernicus_ssh' else
             f"copernicus_mean_{location['sea_level_reference']['year']}_provisional" if location.get('sea_level_reference') else
             'fixed_reference_provisional' if location.get('mean_reference_m') is not None else
             'model_mdt_provisional' if locations['water_level']['mode']=='copernicus_ssh' else 'mean_sea_level_assumed')
+        # Each sector reuses these exact offshore and water-level time series.
+        from forecast_service.sectors import resolve_sectors
+        sectors = resolve_sectors(location, thresholds)
+        if sectors:
+            bulletin['locations'][slug]['sectors'] = {}
+        for sector_id, sector in sectors.items():
+            sector_season = sector.get('summer_season', season)
+            sector_hourly, sector_detail = summarize_records(waves, sector, sector['thresholds'], sector_season, locations['water_level'].get('offset_m', 0))
+            sector_models = [name for name in MODEL_ORDER if any(row['model'] == name for row in sector_detail)]
+            sector_csv = f'{slug}--{sector_id}.csv'
+            bulletin['locations'][slug]['sectors'][sector_id] = dict(sector, hourly=sector_hourly, source=metadata,
+                sea_level_source=level_meta, climatology=climate_summary, summer_season=sector_season,
+                valid_from=waves[0]['time'], valid_to=iso(parse_time(waves[-1]['time'])+timedelta(hours=1)),
+                valid_models=sector_models, missing_models=[m for m in MODEL_ORDER if m not in sector_models], csv=f'data/{sector_csv}')
+            sector_output = io.StringIO(newline='')
+            sector_writer = csv.DictWriter(sector_output, fieldnames=['data_mode', 'vertical_reference', 'sector_id', *sector_detail[0].keys()])
+            sector_writer.writeheader()
+            for record in sector_detail:
+                sector_writer.writerow(dict(record, data_mode=bulletin['mode'], vertical_reference=reference_code, sector_id=sector_id))
+            csvs[sector_csv] = sector_output.getvalue()
+        output = io.StringIO(newline='')
+        writer = csv.DictWriter(output, fieldnames=['data_mode', 'vertical_reference', *detail[0].keys()])
+        writer.writeheader()
         for row in detail:
             writer.writerow(dict(row, data_mode=bulletin['mode'], vertical_reference=reference_code))
         csvs[f'{slug}.csv'] = output.getvalue()
@@ -352,12 +375,14 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
     return bulletin, csvs
 
 
-def write_bulletin(bulletin, csvs, output):
+def write_bulletin(bulletin, csvs, output, *, root=ROOT):
     """Caller builds in an unpublished directory; deployment is one complete artifact."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     for filename, contents in csvs.items():
         (output / filename).write_text(contents, encoding='utf-8')
+    from forecast_service.inundation import write_maps
+    write_maps(bulletin, output, root)
     temp = output / 'forecast.json.tmp'
     temp.write_text(json.dumps(bulletin, ensure_ascii=False, allow_nan=False, separators=(',', ':')) + '\n', encoding='utf-8')
     temp.replace(output / 'forecast.json')

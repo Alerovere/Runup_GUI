@@ -54,6 +54,7 @@ def main():
         parser.add_argument('--'+name)
     for name in ['latitude','longitude','wave-lat','wave-lon','z-min','z-max']:
         parser.add_argument('--'+name,type=float)
+    parser.add_argument('--sectors-json',type=Path,help='Dizionario JSON facoltativo con settori e ID dei transetti.')
     parser.add_argument('--profile',type=Path,help='CSV QGIS TR_ID,distance,SAMPLE_1,X,Y oppure profilo 1-D transect_id,x_m,z_m.')
     parser.add_argument('--from-draft',type=Path,help='Installa una bozza già rivista, senza ripetere le domande.')
     parser.add_argument('--install',action='store_true',help='Aggiunge la nuova località ai due file di configurazione dopo validazione.')
@@ -91,6 +92,8 @@ def main():
          'vertical_reference_status':'provisional','climatology_file':None,
          'summer_season':{'start_month_day':start,'end_month_day':end,'status':'configured' if start and end else 'to_be_defined'},
          'transects':diagnostics,'notes':'Punti, pendenze, rugosità e quote da verificare. Tutte le direzioni sono incluse.'}
+    if args.sectors_json:
+        loc['sectors']=json.loads(args.sectors_json.read_text())
     template=copy.deepcopy(next(iter(impacts['locations'].values()))['thresholds'])
     for threshold in template:
         threshold['elevation_m']=float(input(f"Quota per {threshold.get('short_label',threshold['description'])} [m LMM] [{threshold['elevation_m']}]: ").strip() or threshold['elevation_m'])

@@ -1,14 +1,50 @@
 """Regenerate the standalone Colab notebook from the shared setup modules."""
 from pathlib import Path
 import json
+import ast
 import nbformat as nbf
 
 ROOT=Path(__file__).resolve().parents[1]
+def saved_form_values(previous_cells):
+    values = {}
+    for cell in previous_cells:
+        if cell.get('cell_type') != 'code':
+            continue
+        for line in ''.join(cell['source']).splitlines():
+            if '#@param' not in line:
+                continue
+            try:
+                node = ast.parse(line.split('#@param', 1)[0].strip()).body[0]
+                if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                    value = ast.literal_eval(node.value)
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        values[node.targets[0].id] = value
+            except (ValueError, SyntaxError, IndexError):
+                continue
+    return values
+
+
+def apply_form_values(text, values):
+    result = []
+    for line in text.splitlines():
+        if '#@param' in line:
+            name = line.split('=', 1)[0].strip()
+            if name.isidentifier() and name in values:
+                line = f"{name} = {values[name]!r} #@param" + line.split('#@param', 1)[1]
+        result.append(line)
+    return '\n'.join(result)
+
+
+target = ROOT/'notebooks/Definisci_siti_studio.ipynb'
+previous = json.loads(target.read_text()) if target.exists() else {'cells': []}
+form_values = saved_form_values(previous['cells'])
+previous_ids = {''.join(cell['source']).splitlines()[0]: cell.get('id')
+                for cell in previous['cells'] if ''.join(cell['source']).strip()}
 cells=[]
 def md(text):
     cells.append(nbf.v4.new_markdown_cell(text.strip()))
 def code(text, *, form=False, tags=()):
-    cell=nbf.v4.new_code_cell(text.strip())
+    cell=nbf.v4.new_code_cell(apply_form_values(text.strip(), form_values))
     if form: cell.metadata['cellView']='form'
     if tags: cell.metadata['tags']=list(tags)
     cells.append(cell)
@@ -28,9 +64,9 @@ code('''#@title Installa le librerie
 INSTALLA_DIPENDENZE = True #@param {type:"boolean"}
 if INSTALLA_DIPENDENZE:
     import subprocess, sys
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1", "rasterio>=1.3,<2"])
 print("Ambiente pronto.")''',form=True,tags=('install-dependencies',))
-modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','LICENSE-wave-climate.txt']
+modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','mapping_setup.py','ensemble.py','LICENSE-wave-climate.txt']
 sources={'forecast_service/'+name:(ROOT/'forecast_service'/name).read_text() for name in modules}
 for reference_path in sorted(ROOT.glob('config/study_sites/*/sea_level_reference_*.json')):
     sources[str(reference_path.relative_to(ROOT))]=reference_path.read_text()
@@ -283,6 +319,87 @@ for identifier,height,label,season in zip(
     ["summer","summer","all_year","all_year"]):
     thresholds.append(dict(id=identifier,elevation_m=float(height),short_label=label,description="Possibile interessamento: "+label.lower(),season=season))
 display(pd.DataFrame(thresholds)[["short_label","elevation_m","season"]])''',form=True)
+md('''### 5A. Settori di spiaggia — facoltativi
+Lascia `SETTORI_SPIAGGIA = {}` per rappresentare la spiaggia intera. Altrimenti assegna tutti i transetti inclusi a un solo settore ciascuno. Le pendenze sono ricavate dai transetti con il metodo già usato. Onde, ERA5, marea e surge restano condivisi; soglie, esposizione e stagione si ereditano dal sito, salvo diversa indicazione.
+
+I settori di spiaggia sono distinti dai settori di provenienza delle onde. I confini non sono dedotti automaticamente dagli ID dei transetti.''')
+code('''import copy
+from forecast_service.sectors import resolve_sectors
+
+def soglie_settore(quote):
+    if len(quote) != len(thresholds):
+        raise ValueError("Indicare una quota per ciascuna soglia del sito.")
+    result = copy.deepcopy(thresholds)
+    for threshold, value in zip(result, quote):
+        threshold["elevation_m"] = float(value)
+    return result
+
+# Adatta ai tuoi transetti reali; tutti gli ID inclusi devono essere assegnati.
+# SETTORI_SPIAGGIA = {
+#   "ponente": {"name": "Spiaggia di Ponente", "transect_ids": ["1", "2"]},
+#   "levante": {"name": "Spiaggia di Levante", "transect_ids": ["3", "4"],
+#               "thresholds": soglie_settore([0.65, 0.85, 1.05, 1.35]),
+#               "wave_exposure": {"sectors_deg": [[120, 220]], "note": "Da rilievo"}}
+# }
+SETTORI_SPIAGGIA = {}
+preview_location = dict(SITE_INPUT, slopes=PENDENZE, roughness_m=float(RUGOSITA_M),
+    transects=json.loads(scelti.to_json(orient="records")),
+    wave_exposure=parse_exposure(SETTORI_PROVENIENZA, NOTE_ESPOSIZIONE), sectors=SETTORI_SPIAGGIA)
+settori_risolti = resolve_sectors(preview_location, thresholds)
+if settori_risolti:
+    display(pd.DataFrame([{"settore":key,"nome":value["name"],"transetti":value["transect_ids"],"pendenze":value["slopes"]} for key,value in settori_risolti.items()]))
+else:
+    print("Spiaggia unica, senza suddivisioni.")''',tags=('beach-sectors',))
+md('''### 5B. DEM, ortofotomosaico e crediti — facoltativi
+Lascia `CARTOGRAFIE = []` per non produrre mappe. Ogni voce può riferirsi alla spiaggia intera (`unit_id="whole"`) oppure a uno dei settori.
+
+Il DEM deve essere un GeoTIFF locale ritagliato, con quote in **metri**, e includere una fascia attorno all’area di interesse per verificare le connessioni. L’ortofotomosaico è opzionale, GeoTIFF georeferenziato a 8 bit (grigio/RGB/RGBA). Si esportano soltanto una griglia e un’immagine leggere, normalmente fino a 768 pixel per asse; gli originali restano fuori dalla repository.
+
+Indica un poligono GeoJSON e punti di partenza verso mare in WGS84 **[longitudine, latitudine]**. La connessione si calcola sull’intero DEM; il poligono ritaglia solo il risultato. I punti devono cadere su celle valide sufficientemente basse: NoData non è acqua e non viene riempito artificialmente.
+
+Compila **autore/ente del rilievo, data, licenza e riferimento verticale**, distinguendo DEM e ortofoto se hanno autori diversi. Conferma `vertical_alignment_confirmed=True` solo dopo aver raccordato lo zero delle quote al TWL. `dem_offset_m` si somma al DEM una sola volta, indipendentemente dalla correzione dei profili. La griglia ridotta può perdere muri e varchi stretti: controlla l’anteprima e, se necessario, riduci l’area o usa fino a 1024 pixel.
+
+Le estensioni usano le quote orarie P75 e P95 più alte nelle 96 ore: non sono probabilità né una simulazione dinamica di allagamento.''')
+code('''#@title Carica i raster dal computer (facoltativo)
+CARICA_RASTER_DAL_COMPUTER = False #@param {type:"boolean"}
+if CARICA_RASTER_DAL_COMPUTER:
+    from google.colab import files
+    uploads = files.upload()
+    for filename, content in uploads.items():
+        destination = WORK / Path(filename).name
+        destination.write_bytes(content)
+        print(destination)''',form=True)
+code('''from forecast_service.mapping_setup import prepare_mapping
+# Aggiungi una voce per ogni unità con cartografia, usando geometrie reali.
+# CARTOGRAFIE = [{
+#   "unit_id": "ponente",  # oppure "whole"
+#   "dem_path": str(WORK / "dem.tif"),
+#   "orthophoto_path": str(WORK / "ortofotomosaico.tif"),  # oppure None
+#   "display_polygon": {"type": "Polygon", "coordinates": [...]},
+#   "seed_points": [[LONGITUDINE, LATITUDINE]],
+#   "survey_credit": "DEM: autore / ente. Ortofoto: autore / ente.",
+#   "survey_date": "AAAA-MM-GG", "license": "Licenza / attribuzione del rilievo",
+#   "vertical_reference": "DEM raccordato allo zero del TWL",
+#   "dem_offset_m": 0.0, "vertical_alignment_confirmed": True,
+#   "max_dimension": 768
+# }]
+CARTOGRAFIE = []
+MAPPING_CONFIGS = {}; CARTOGRAPHY_ASSETS = {}
+for spec in CARTOGRAFIE:
+    unit = spec.get("unit_id", "whole")
+    if unit in MAPPING_CONFIGS or unit != "whole" and unit not in SETTORI_SPIAGGIA:
+        raise ValueError("Unità cartografica duplicata o non definita.")
+    metadata, assets = prepare_mapping(output=WORK/"cartography"/unit, slug=ID_SITO, **spec)
+    MAPPING_CONFIGS[unit] = metadata; CARTOGRAPHY_ASSETS.update(assets)
+    from forecast_service.inundation import load_grid
+    grid, seeds, mask, bounds = load_grid(assets[f"cartography/{unit}/grid.npz"])
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.imshow(np.where(mask, grid, np.nan), cmap="terrain")
+    yy, xx = np.nonzero(seeds); ax.scatter(xx, yy, color="red", label="Avvio verso mare")
+    ax.set_title(f"{unit}: DEM e area visualizzata (non previsione)"); ax.legend(); display(fig); plt.close(fig)
+CARTOGRAPHY_SIGNATURE = json.dumps(CARTOGRAFIE, sort_keys=True)
+print("Mappe predisposte:", list(MAPPING_CONFIGS) or "nessuna")''',tags=('survey-cartography',))
+
 md('''## 6. ERA5 — scarica una volta o riusa il tuo CSV
 Per dati reali servono un account Climate Data Store e l’accettazione personale delle condizioni di [ERA5 time-series](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-timeseries?tab=download). La ricerca automatica della cella marina usa anche [ERA5 grigliato](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=download).
 
@@ -514,6 +631,18 @@ location=dict(SITE_INPUT,slopes=PENDENZE,roughness_m=float(RUGOSITA_M),parameter
     climatology_file=f"config/climatology/{ID_SITO}.json" if CLIMATE is not None else None,
     summer_season=dict(start_month_day=INIZIO_ESTATE or None,end_month_day=FINE_ESTATE or None,status="configured" if INIZIO_ESTATE else "to_be_defined"),
     transects=json.loads(scelti.to_json(orient="records")),notes=NOTE_SITO)
+if SETTORI_SPIAGGIA:
+    location["sectors"] = copy.deepcopy(SETTORI_SPIAGGIA)
+resolve_sectors(location, thresholds)
+if CARTOGRAPHY_SIGNATURE != json.dumps(CARTOGRAFIE, sort_keys=True):
+    raise ValueError("Cartografia cambiata: riesegui la preparazione prima di esportare.")
+for unit, metadata in MAPPING_CONFIGS.items():
+    if unit == "whole":
+        location["mapping"] = metadata
+    elif unit in location.get("sectors", {}):
+        location["sectors"][unit]["mapping"] = metadata
+    else:
+        raise ValueError("Settore rimosso: riesegui la preparazione della cartografia.")
 if not LIVELLO_STESSO_PUNTO:
     location["sealevel_point"]=dict(latitude=LAT_LIVELLO,longitude=LON_LIVELLO)
 if SEA_LEVEL_REFERENCE is not None:
@@ -537,7 +666,7 @@ if ESPORTA_PACCHETTO:
     for name in ["climatologia.png","massimi_annuali.csv","estremi_settoriali.png"]:
         if CLIMATE is not None and (WORK/name).exists(): attachments[name]=WORK/name
     output=WORK/f"{ID_SITO}_{'DEMO' if DEMO else 'studio'}.zip"
-    write_site_package(output,payload,climatology=CLIMATE,attachments=attachments)
+    write_site_package(output,payload,climatology=CLIMATE,attachments=attachments,cartography=CARTOGRAPHY_ASSETS)
     print("Pacchetto creato:",output)
     try:
         from google.colab import files
@@ -553,13 +682,17 @@ python scripts/import_site_package.py /percorso/borghetto-santo-spirito_studio.z
 
 Per una località nuova ometti `--replace`. Il controllo della configurazione viene eseguito prima di scrivere i file. Per una prova locale con un pacchetto demo serve anche `--allow-demo`; non usarlo per pubblicare parametri di esempio come dati reali.
 
-Dopo l’importazione rigenera il bollettino e verifica il risultato nel portale. Il download ERA5 rimane un’attività di setup: i due aggiornamenti giornalieri leggono il riferimento già salvato.
+Dopo l’importazione rigenera il bollettino e verifica il risultato nel portale. Il download ERA5 rimane un’attività di setup: gli aggiornamenti giornalieri leggono il riferimento già salvato.
 
 ### Riferimenti
 - Metodo della pendenza: notebook didattico fornito dall’utente **Stockdon_runup_soluzione.ipynb**, celle 24–25.
 - Stockdon, H. F., Holman, R. A., Howd, P. A., & Sallenger, A. H. (2006). *Empirical parameterization of setup, swash, and runup*. Coastal Engineering, 53(7), 573–588. https://doi.org/10.1016/j.coastaleng.2005.12.005
 - ERA5 hourly time-series: https://doi.org/10.24381/1cf1ad76. Il downloader adatta lo script fornito dall’utente, copyright 2026 Alessio Rovere, MIT; la licenza è inclusa nella cella tecnica.
 - [Colab: caricamento, salvataggio e condivisione dei notebook](https://research.google.com/colaboratory/faq.html).''')
+for cell in cells:
+    first_line=cell.source.splitlines()[0]
+    if previous_ids.get(first_line):
+        cell.id=previous_ids[first_line]
 nb=nbf.v4.new_notebook(cells=cells,metadata={'kernelspec':{'display_name':'Python 3','language':'python','name':'python3'},'language_info':{'name':'python'},'colab':{'name':'Definisci_siti_studio.ipynb','provenance':[]}})
 nbf.validate(nb)
 target=ROOT/'notebooks/Definisci_siti_studio.ipynb'

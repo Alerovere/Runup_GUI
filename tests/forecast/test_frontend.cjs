@@ -347,3 +347,30 @@ test('Pubblicazione 06:20 UTC e acquisizione 06:40 UTC restano distinte anche co
   assert.match(call("noticeDate(nextSiteAcquisition(Date.parse('2026-11-09T06:35:00Z')))"),/07:40/);
   assert.match(call("noticeDate(nextSiteAcquisition(Date.parse('2026-07-09T06:35:00Z')))"),/08:40/);
 });
+
+test('La selezione opzionale usa il settore valido e mantiene la spiaggia senza settori',()=>{
+  context.beachFixture={name:'Spiaggia',hourly:[{hs_m:1}],sectors:{ponente:{name:'Ponente',hourly:[{hs_m:2}]}}};
+  assert.equal(call('selectedBeachUnit(beachFixture,"ponente").name'),'Ponente');
+  assert.equal(call('selectedBeachUnit(beachFixture,"sconosciuto").name'),'Spiaggia');
+  assert.equal(call('selectedBeachUnit({name:"Spiaggia unica"},null).name'),'Spiaggia unica');
+  assert.equal(call('selectedBeachUnit(beachFixture,"__proto__").name'),'Spiaggia');
+});
+
+test('La mappa dichiara periodo fisso, direzioni non frontali, incertezza e scadenza',()=>{
+  context.mapFixture={status:'available',period_from:'2026-11-11T06:00Z',period_to:'2026-11-15T06:00Z',hours_non_frontal:12,hours_direction_unknown:2};
+  const text=call('inundationMapText(mapFixture,Date.UTC(2026,10,11,12))');
+  assert.match(text,/Inviluppo delle 96 ore/);
+  assert.match(text,/12 ore/);assert.match(text,/2 ore/);
+  assert.match(text,/Non sono probabilità/);
+  assert.doesNotMatch(text,/Periodo concluso/);
+  assert.match(call('inundationMapText(mapFixture,Date.UTC(2026,10,16))'),/Periodo concluso/);
+  assert.match(call('inundationMapText({status:"unavailable",reason:"DEM mancante"})'),/DEM mancante/);
+});
+
+test('Una spiaggia senza settori nasconde il selettore e senza cartografia nasconde la mappa',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  call('renderSectorSelector({name:"Spiaggia unica"},null)');
+  assert.equal(nodes['sector-selection'].hidden,true);
+  call('renderInundation({name:"Spiaggia unica"})');
+  assert.equal(nodes['inundation-panel'].hidden,true);
+});

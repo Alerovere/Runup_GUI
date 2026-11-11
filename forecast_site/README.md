@@ -101,3 +101,7 @@ Per verificare l’accesso anonimo a NOAA GEFS-Wave ed ECMWF ENS-WAM senza modif
 Per la prova isolata delle 72 ore giornaliere, con tutti i 51 membri ECMWF via GribStream e NOAA diretto, vedere [PROVA_GIORNALIERA.md](PROVA_GIORNALIERA.md). Il documento distingue quota nominale ed effettiva e descrive il controllo ECMWF separato. Non modifica ancora il bollettino pubblico.
 
 Configurazione corrente MeteOcean + sola marea NOAA e ripristino Copernicus: [METEOCEAN_NOAA.md](METEOCEAN_NOAA.md).
+
+## Settori, DEM e ortofotomosaici (opzionali)
+
+Il notebook di setup permette di assegnare i transetti a settori di spiaggia e aggiungere cartografia con crediti del rilievo. Senza queste opzioni i siti esistenti restano rappresentati come prima. Vedi [SETTORI_E_MAPPE.md](SETTORI_E_MAPPE.md) per configurazione, raccordo verticale, importazione e significato degli inviluppi statici P75/P95 nelle 96 ore.

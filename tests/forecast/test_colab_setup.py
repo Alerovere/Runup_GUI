@@ -30,6 +30,20 @@ def profile(reverse=False):
 
 
 class SlopeReferenceTests(unittest.TestCase):
+    def test_generator_preserves_existing_form_settings_without_executing_them(self):
+        module=ast.parse((ROOT/'scripts/build_setup_notebook.py').read_text())
+        functions=ast.Module(body=[node for node in module.body if isinstance(node,ast.FunctionDef) and node.name in ('saved_form_values','apply_form_values')],type_ignores=[])
+        namespace={'ast':ast}
+        exec(compile(functions,'notebook_generator','exec'),namespace)
+        cells=[{'cell_type':'code','source':['DEMO = False #@param {type:"boolean"}\nLAT_ONDE = 44.08 #@param {type:"number"}\nINIZIO_ESTATE = "05-01" #@param {type:"string"}\nCONSENSO_DOWNLOAD_ERA5 = True #@param {type:"boolean"}\nBAD = open("secret") #@param {type:"string"}']}]
+        values=namespace['saved_form_values'](cells)
+        self.assertNotIn('BAD',values)
+        self.assertEqual(values['INIZIO_ESTATE'],'05-01')
+        source=namespace['apply_form_values']('DEMO = True #@param {type:"boolean"}\nLAT_ONDE = 0 #@param {type:"number"}\nNEW = 1 #@param {type:"integer"}',values)
+        self.assertIn('DEMO = False',source)
+        self.assertIn('LAT_ONDE = 44.08',source)
+        self.assertIn('NEW = 1',source)
+
     def test_notebook_embeds_current_sources(self):
         notebook=json.loads((ROOT/'notebooks/Definisci_siti_studio.ipynb').read_text())
         found=False

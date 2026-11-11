@@ -2,6 +2,14 @@
 import math
 
 
+def is_exposed(direction, exposure):
+    if not exposure or not exposure.get('sectors_deg') or not isinstance(direction, (int, float)) or not math.isfinite(direction):
+        return None
+    direction %= 360
+    return any((a <= direction <= b or b == 360 and direction == 0) if a <= b else (direction >= a or direction <= b)
+               for a, b in exposure['sectors_deg'])
+
+
 def validate_exposure(exposure):
     if exposure is None:
         return

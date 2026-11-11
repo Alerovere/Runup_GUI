@@ -152,6 +152,7 @@ function setupMap() {
 function navigate(slug) {
   const url = new URL(window.location.href);
   if (slug) url.searchParams.set('localita',slug); else url.searchParams.delete('localita');
+  url.searchParams.delete('settore');
   history.pushState({},'',url);
   renderRoute();
   window.scrollTo({top:0,behavior:'smooth'});
@@ -466,7 +467,7 @@ async function bootMethod() {
     bulletin=await response.json();
     if (bulletin.schema_version!==1 || !bulletin.locations) throw new Error('Metadati non riconosciuti');
     $('model-references').innerHTML=bulletin.model_order.map(name=>`<p>${esc(bulletin.citations[name]||name)}</p>`).join('');
-    $('method-locations').innerHTML=Object.entries(bulletin.locations).map(([slug,loc])=>`<details class="location-technical" id="parametri-${esc(slug)}"><summary>${esc(loc.name)}</summary><div>${locationParameters(loc)}</div></details>`).join('');
+    $('method-locations').innerHTML=Object.entries(bulletin.locations).map(([slug,loc])=>`<details class="location-technical" id="parametri-${esc(slug)}"><summary>${esc(loc.name)}</summary><div>${locationParameters(loc)}${Object.entries(loc.sectors||{}).map(([id,sector])=>`<h3>${esc(sector.name)}</h3>${locationParameters(sector)}`).join('')}</div></details>`).join('');
     if ($('hero-provider')) $('hero-provider').textContent=bulletin.mode==='meteocean'?'MeteOcean + NOAA':bulletin.mode==='demo'?'Dati dimostrativi':'Copernicus Marine';
     $('updated').textContent=`Metadati del bollettino: ${local(bulletin.generated_at)} · Italia`;
     const slug=new URL(window.location.href).searchParams.get('localita');
@@ -474,12 +475,75 @@ async function bootMethod() {
   } catch(error) {$('method-locations').innerHTML='<p>Parametri momentaneamente non disponibili. Le spiegazioni del metodo restano consultabili.</p>';}
 }
 
+let inundationMap;
+
+function selectedBeachUnit(location,sectorId) {
+  return sectorId && location.sectors && Object.hasOwn(location.sectors,sectorId) ? location.sectors[sectorId] : location;
+}
+
+function renderSectorSelector(location,sectorId) {
+  const node=$('sector-selection'), sectors=Object.entries(location.sectors||{});
+  if (!node) return;
+  node.hidden=!sectors.length;
+  if (!sectors.length) return;
+  node.innerHTML=`<label for="beach-sector">Tratto di spiaggia</label><select id="beach-sector"><option value="">Tutta la spiaggia · riepilogo</option>${sectors.map(([id,sector])=>`<option value="${esc(id)}" ${id===sectorId?'selected':''}>${esc(sector.name)}</option>`).join('')}</select><p class="small muted">Onde, marea e storm surge sono comuni alla località. Pendenze, quote delle strutture e risultati cambiano con il settore scelto. Nel riepilogo dell’intera spiaggia le pendenze sono riunite e si usano le quote generali della località.</p>`;
+  $('beach-sector').addEventListener('change',event=>{
+    const url=new URL(window.location.href);
+    if (event.target.value) url.searchParams.set('settore',event.target.value); else url.searchParams.delete('settore');
+    history.pushState({},'',url);renderRoute();
+  });
+}
+
+function inundationExtentLabel(percentile) {
+  return percentile===95?'Estensione più ampia':'Estensione più contenuta';
+}
+
+function inundationMapText(data,now=Date.now()) {
+  if (!data) return 'DEM e cartografia non configurati per questo tratto.';
+  if (data.status!=='available') return `Mappa non disponibile: ${data.reason||'dati da verificare'}`;
+  const expired=now>=Date.parse(data.period_to);
+  const direction=data.hours_non_frontal?` In ${data.hours_non_frontal} ore le onde provengono da altre direzioni: l’estensione non tiene conto del riparo della costa e richiede particolare cautela.`:'';
+  const unknown=data.hours_direction_unknown?` In ${data.hours_direction_unknown} ore il confronto con l’esposizione non è disponibile.`:'';
+  return `${expired?'Periodo concluso: questa mappa non descrive le prossime ore. ':''}Inviluppo delle 96 ore dell’elaborazione: ${local(data.period_from)} — ${local(data.period_to)}. Le due aree mostrano quanto cambia l’estensione usando stime diverse dei modelli, considerando le quote più alte del periodo. Non sono probabilità di inondazione né profondità d’acqua.${direction}${unknown}`;
+}
+
+function renderInundation(location) {
+  const panel=$('inundation-panel');
+  if (!panel) return;
+  if (inundationMap) {inundationMap.remove();inundationMap=null;}
+  const data=location.inundation_map;
+  panel.hidden=!location.mapping && !data;
+  if (panel.hidden) return;
+  $('inundation-description').textContent=inundationMapText(data);
+  $('inundation-credit').textContent=data?.status==='available'?`Rilievo: ${data.survey_credit} · ${data.survey_date}. Licenza: ${data.license}. Quote: ${data.vertical_reference}.`:'';
+  $('inundation-legend').innerHTML=data?.status==='available'?data.layers.slice().sort((a,b)=>b.percentile-a.percentile).map(layer=>`<span class="map-key map-key-${layer.percentile}">${inundationExtentLabel(layer.percentile)} · quota ${num(layer.level_m)} m · ${local(layer.peak_time)}</span>`).join(''):'';
+  const canvas=$('inundation-map');canvas.hidden=data?.status!=='available';
+  if (data?.status!=='available') return;
+  if (!window.L) {canvas.hidden=true;$('inundation-description').textContent+=' Mappa interattiva momentaneamente non disponibile.';return;}
+  inundationMap=L.map('inundation-map',{scrollWheelZoom:false});
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22,maxNativeZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(inundationMap);
+  const overlays={};
+  if (data.orthophoto) {
+    overlays['Ortofotomosaico']=L.imageOverlay(data.orthophoto,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
+  }
+  // Larger envelope underneath; P75 remains distinguishable where they overlap.
+  for (const layer of data.layers.slice().sort((a,b)=>b.percentile-a.percentile)) {
+    overlays[inundationExtentLabel(layer.percentile)]=L.imageOverlay(layer.image,data.bounds).addTo(inundationMap);
+  }
+  L.control.layers(null,overlays,{collapsed:false}).addTo(inundationMap);
+  inundationMap.fitBounds(data.bounds,{padding:[12,12]});
+}
+
 function renderDetail(slug) {
-  const location=bulletin.locations[slug];
+  const parent=bulletin.locations[slug];
+  const sectorId=new URL(window.location.href).searchParams.get('settore');
+  const location=selectedBeachUnit(parent,sectorId);
+  renderSectorSelector(parent,sectorId);
+  renderInundation(location);
   const rows=windowRows(location);
   document.title=`${location.name} · Onde a riva`;
   $('location-title').textContent=location.name;
-  $('area').textContent=location.area;
+  $('area').textContent=location===parent?location.area:`${parent.name} · ${location.area}`;
   const reference=seaLevelReference(location);
   $('twl-reference-label').textContent=`metri · zero: ${reference.label}`;
   $('sealevel-caption').innerHTML=`${location.sea_level_source?.mode==='noaa_tide_meteocean_surge'?'Marea, storm surge e loro somma sono separati e usano la stessa scala verticale. I valori negativi indicano un livello sotto il riferimento. ':''}Zero del livello marino: ${esc(reference.label)}. <a href="metodo.html?localita=${encodeURIComponent(slug)}#zero">Riferimento delle quote ↗</a>`;
@@ -497,7 +561,7 @@ function renderDetail(slug) {
   $('metrics').innerHTML=[
     ['Livello alto stimato',`${num(peak?.twl_p95_m)} <small>m</small>`,peak ? `Valore più alto del bordo superiore della fascia delle stime · ${local(peak.time)} · quote provvisorie` : 'Dati non disponibili'],
     ['Massima altezza delle onde',`${num(hs)} <small>m</small>`,'Altezza significativa: un valore rappresentativo delle onde più alte, calcolato al largo della località'],
-    ['Modelli a confronto',`${location.valid_models.length} <small>/ ${bulletin.model_order.length}</small>`,`${location.slopes.length} pendenze della spiaggia: ripetiamo il calcolo con ciascuna pendenza`]
+    ['Modelli a confronto',`${location.valid_models.length} <small>/ ${bulletin.model_order.length}</small>`,`${location.slopes.length} ${location.slopes.length===1?"pendenza della spiaggia: il calcolo usa questa pendenza":"pendenze della spiaggia: ripetiamo il calcolo con ciascuna pendenza"}`]
   ].map(([label,value,note])=>`<div class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${value}</div><div class="metric-note">${esc(note)}</div></div>`).join('');
   renderDaily(location,rows);
   renderExtremes(location,rows);
@@ -512,6 +576,7 @@ function renderRoute() {
   $('detail').hidden=!selected;
   if (selected) renderDetail(slug);
   else {
+    if (inundationMap) {inundationMap.remove();inundationMap=null;}
     document.title='Onde a riva · Previsioni locali';
     setNotice(slug ? 'Località non trovata: scegli una delle aree disponibili.' : '');
     locationCards(); setupMap();
@@ -532,7 +597,7 @@ async function boot() {
       if (!link || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button!==0) return;
       const url=new URL(link.href);
       if (url.origin===location.origin && url.pathname===location.pathname && !url.hash && !link.hasAttribute('download')) {
-        event.preventDefault(); navigate(url.searchParams.get('localita'));
+        event.preventDefault(); history.pushState({},'',url);renderRoute();window.scrollTo({top:0,behavior:'smooth'});
       }
     });
     window.addEventListener('popstate',renderRoute);

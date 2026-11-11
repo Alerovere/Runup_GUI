@@ -28,11 +28,14 @@ def validate_payload(payload):
         raise ValueError('Soglie mancanti.')
     if location.get('climatology_file') not in (None,f'config/climatology/{slug}.json'):
         raise ValueError('Percorso climatologico non valido nel pacchetto.')
+    from forecast_service.sectors import resolve_sectors, validate_mappings
+    resolve_sectors(location, payload['thresholds'])
+    validate_mappings(location, slug)
     json.dumps(payload,allow_nan=False)
     return slug
 
 
-def write_site_package(output,payload,*,climatology=None,attachments=None):
+def write_site_package(output,payload,*,climatology=None,attachments=None,cartography=None):
     slug=validate_payload(payload)
     if bool(climatology) != bool(payload['location'].get('climatology_file')):
         raise ValueError('Riferimento climatologico e configurazione non coerenti.')
@@ -42,6 +45,10 @@ def write_site_package(output,payload,*,climatology=None,attachments=None):
             root=Path(folder)
             (root/'climatology.json').write_text(json.dumps(climatology,allow_nan=False))
             load_climate(root,'climatology.json')
+    expected=cartography_paths(payload['location'],slug)
+    if set(cartography or {})!=set(expected):
+        raise ValueError('Allegati cartografici e configurazione non coerenti.')
+    validate_cartography(cartography or {})
     output=Path(output); output.parent.mkdir(parents=True,exist_ok=True)
     temporary=output.with_suffix('.zip.tmp')
     try:
@@ -49,6 +56,8 @@ def write_site_package(output,payload,*,climatology=None,attachments=None):
             archive.writestr('site.json',json.dumps(payload,ensure_ascii=False,allow_nan=False,indent=2)+'\n')
             if climatology:
                 archive.writestr('climatology.json',json.dumps(climatology,ensure_ascii=False,allow_nan=False,separators=(',',':'))+'\n')
+            for name,path in (cartography or {}).items():
+                archive.write(path,name)
             for name,path in (attachments or {}).items():
                 if not re.fullmatch('[A-Za-z0-9_.-]+',name) or name.startswith('.'):
                     raise ValueError('Nome allegato non valido.')
@@ -72,7 +81,7 @@ def import_site_package(path,root,*,replace=False,allow_demo=False):
             raise ValueError('Nomi duplicati nel pacchetto.')
         for member in members:
             name=member.filename
-            if name not in ('site.json','climatology.json') and not re.fullmatch(r'diagnostics/[A-Za-z0-9_][A-Za-z0-9_.-]*',name):
+            if name not in ('site.json','climatology.json') and not re.fullmatch(r'diagnostics/[A-Za-z0-9_][A-Za-z0-9_.-]*',name) and not re.fullmatch(r'cartography/[a-z0-9]+(?:-[a-z0-9]+)*/(?:grid\.npz|orthophoto\.png)',name):
                 raise ValueError('Percorso non ammesso nel pacchetto.')
         payload=json.loads(archive.read('site.json'))
         slug=validate_payload(payload)
@@ -89,7 +98,19 @@ def import_site_package(path,root,*,replace=False,allow_demo=False):
             payload.setdefault('provenance',{})['retained_existing_sea_level_reference']=True
         payload['location']=local
         validate_payload(payload)
+        expected=cartography_paths(local,slug)
+        actual={m.filename for m in members if m.filename.startswith('cartography/')}
+        if actual!=set(expected):
+            raise ValueError('Allegati cartografici e configurazione non coerenti.')
+        with tempfile.TemporaryDirectory() as folder:
+            paths={}
+            for name,destination in expected.items():
+                raw=archive.read(name)
+                target=Path(folder)/name; target.parent.mkdir(parents=True,exist_ok=True); target.write_bytes(raw)
+                paths[name]=target; updates[destination]=raw
+            validate_cartography(paths)
         if local.get('sea_level_reference'):
+
             ref=local['sea_level_reference']
             updates[f"config/study_sites/{slug}/sea_level_reference_{ref['year']}.json"]=(json.dumps(ref,ensure_ascii=False,allow_nan=False,indent=2)+'\n').encode()
         if local.get('climatology_file'):
@@ -130,3 +151,26 @@ def import_site_package(path,root,*,replace=False,allow_demo=False):
                 destination.write_bytes(contents)
         raise
     return slug
+
+
+def cartography_paths(location,slug):
+    from forecast_service.sectors import mapping_entries
+    paths={}
+    for key,mapping in mapping_entries(location):
+        paths[f'cartography/{key}/grid.npz']=mapping['grid_file']
+        if mapping.get('orthophoto_file'):
+            paths[f'cartography/{key}/orthophoto.png']=mapping['orthophoto_file']
+    return paths
+
+
+def validate_cartography(paths):
+    from forecast_service.inundation import load_grid
+    import struct
+    for name,path in paths.items():
+        if name.endswith('/grid.npz'):
+            z,_,_,_=load_grid(path)
+            ortho=paths.get(name.replace('grid.npz','orthophoto.png'))
+            if ortho:
+                raw=Path(ortho).read_bytes()
+                if len(raw)>12*1024*1024 or raw[:8]!=b'\x89PNG\r\n\x1a\n' or len(raw)<24 or struct.unpack('>II',raw[16:24])!=(z.shape[1],z.shape[0]):
+                    raise ValueError('Ortofoto preparata non coerente con la griglia.')
