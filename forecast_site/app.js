@@ -515,6 +515,13 @@ function inundationMapText(data,now=Date.now()) {
   return `${expired?'Periodo concluso: questa mappa non descrive le prossime ore. ':''}Inviluppo delle 96 ore dell’elaborazione: ${local(data.period_from)} — ${local(data.period_to)}. Le due aree mostrano quanto cambia l’estensione usando stime diverse dei modelli, considerando le quote più alte del periodo. Non sono probabilità di inondazione né profondità d’acqua.${direction}${unknown}`;
 }
 
+function inundationDownloads(data) {
+  if (data?.status!=='available' || !data.geojson_export) return '';
+  if (data.geojson_export.status!=='available') return `GeoJSON non disponibile per questa elaborazione: ${esc(data.geojson_export.reason||'esportazione da verificare')}.`;
+  return data.geojson_export.files.filter(file=>['aree','limiti'].includes(file.kind) && /^data\/maps\/[a-z0-9-]+\/[a-z0-9-]+-\d{8}T\d{6}Z-(?:aree|limiti)\.geojson$/.test(file.url))
+    .map(file=>`<a href="${esc(file.url)}" download="${esc(file.filename)}">${file.kind==='aree'?'Scarica le aree':'Scarica i limiti'} (GeoJSON) ↓</a>`).join(' · ');
+}
+
 function renderInundation(location) {
   const panel=$('inundation-panel');
   if (!panel) return;
@@ -524,6 +531,8 @@ function renderInundation(location) {
   if (panel.hidden) return;
   $('inundation-description').textContent=inundationMapText(data);
   $('inundation-credit').textContent=data?.status==='available'?`Rilievo: ${data.survey_credit} · ${data.survey_date}. Licenza: ${data.license}. Quote: ${data.vertical_reference}.`:'';
+  const downloads=$('inundation-downloads');
+  if (downloads) downloads.innerHTML=inundationDownloads(data);
   $('inundation-legend').innerHTML=data?.status==='available'?data.layers.slice().sort((a,b)=>b.percentile-a.percentile).map(layer=>`<span class="map-key map-key-${layer.percentile}">${inundationExtentLabel(layer.percentile)} · quota ${num(layer.level_m)} m · ${local(layer.peak_time)}</span>`).join(''):'';
   if (data?.status==='available' && data.terrain && data.terrain_scale) {
     const scale=data.terrain_scale;

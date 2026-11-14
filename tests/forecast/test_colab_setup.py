@@ -113,6 +113,11 @@ class PackageTests(unittest.TestCase):
         impacts=json.loads((ROOT/'config/impact_thresholds.json').read_text())
         slug='borghetto-santo-spirito'
         locations['locations'][slug]['climatology_file']=None
+        # Legacy-package scenarios must not inherit cartographic attachments or
+        # Monte Carlo provenance from whichever survey was last imported locally.
+        for field in ('sectors','mapping','slope_sampling','transects'):
+            locations['locations'][slug].pop(field,None)
+        locations['locations'][slug]['slopes']=[.03,.05,.07]
         return {'schema_version':1,'slug':slug,'data_mode':'study','location':locations['locations'][slug],
                 'thresholds':impacts['locations'][slug]['thresholds']}
 

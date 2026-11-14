@@ -22,6 +22,14 @@ def config(root):
     for name in ('locations.json', 'impact_thresholds.json'):
         shutil.copyfile(p.ROOT/'config'/name, root/'config'/name)
     shutil.copytree(p.ROOT/'config/climatology', root/'config/climatology', dirs_exist_ok=True)
+    # This isolated fixture must not inherit newly imported surveys, hundreds of
+    # Monte Carlo slopes, or map paths whose files are absent from the fixture.
+    fixture=json.loads((root/'config/locations.json').read_text())
+    for location in fixture['locations'].values():
+        for field in ('sectors','mapping','slope_sampling','transects'):
+            location.pop(field,None)
+        location['slopes']=[.03,.05,.07]
+    (root/'config/locations.json').write_text(json.dumps(fixture))
     locations, impacts = p.load_configuration(root)
     loc = locations['locations']['venezia']
     loc['transects'] = [{'transect_id': 'a', 'slope': .03, 'status': 'valid'}, {'transect_id': 'b', 'slope': .09, 'status': 'valid'}]
@@ -122,7 +130,8 @@ class MapTests(unittest.TestCase):
             self.assertEqual(data['survey_credit'], mapping['survey_credit'])
             self.assertEqual(data['hours_non_frontal'], 0)
             self.assertEqual(data['hours_direction_unknown'], 0)
-            self.assertTrue(all(raw.startswith(b'\x89PNG') for raw in assets.values()))
+            self.assertTrue(all(raw.startswith(b'\x89PNG') for name,raw in assets.items() if name.endswith('.png')))
+            self.assertEqual(data['geojson_export']['status'],'available')
             rows.pop(10)
             with self.assertRaisesRegex(ValueError, '96 ore'):
                 build_map({'hourly': rows}, bulletin, mapping, root, 'venezia', 'whole')

@@ -375,6 +375,22 @@ test('Una spiaggia senza settori nasconde il selettore e senza cartografia nasco
   assert.equal(nodes['inundation-panel'].hidden,true);
 });
 
+test('I download GeoJSON hanno nomi datati e distinguono aree e limiti',()=>{
+  context.exportFixture={status:'available',geojson_export:{status:'available',files:[
+    {kind:'aree',url:'data/maps/borghetto/2-20261114T064000Z-aree.geojson',filename:'2-20261114T064000Z-aree.geojson'},
+    {kind:'limiti',url:'data/maps/borghetto/2-20261114T064000Z-limiti.geojson',filename:'2-20261114T064000Z-limiti.geojson'}]}};
+  const html=call('inundationDownloads(exportFixture)');
+  assert.match(html,/Scarica le aree/);assert.match(html,/Scarica i limiti/);
+  assert.match(html,/download="2-20261114T064000Z-aree.geojson"/);
+  assert.match(html,/href="data\/maps\/borghetto\/2-/);
+});
+
+test('Vecchi bollettini e GeoJSON non disponibili non producono link fittizi',()=>{
+  assert.equal(call('inundationDownloads({status:"available"})'),'');
+  assert.match(call('inundationDownloads({status:"available",geojson_export:{status:"unavailable",reason:"Prova"}})'),/Prova/);
+  assert.doesNotMatch(call('inundationDownloads({status:"available",geojson_export:{status:"available",files:[{kind:"aree",url:"javascript:alert(1)"}]}})'),/href/);
+});
+
 test('Senza ortofoto il DEM con legenda resta sotto le fasce e sopra OpenStreetMap',()=>{
   const nodes={};context.document.getElementById=id=>(nodes[id]??={});
   const added=[];

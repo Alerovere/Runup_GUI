@@ -48,6 +48,21 @@ Si propaga sul DEM un livello uniforme dalle celle di avvio verso mare, attraver
 
 Dati mancanti o un errore della cartografia rendono indisponibile la sola mappa, con motivazione visibile, senza impedire i grafici. Nessuna mappa viene prodotta con copertura inferiore alle 96 ore o statistiche obsolete. Rimangono tutte le avvertenze sperimentali e le condizioni d’uso del portale.
 
+## GeoJSON datati e archivio per ogni elaborazione
+
+Quando una mappa è disponibile, il servizio genera due GeoJSON WGS84 per località o settore, usando gli stessi risultati P75/P95 dei PNG:
+
+- `maps/<località>/<settore>-AAAAMMGGThhmmssZ-aree.geojson`: due geometrie MultiPolygon delle celle potenzialmente raggiunte, con i vuoti interni e le componenti distinte conservati. Non è applicata semplificazione alle aree.
+- `maps/<località>/<settore>-AAAAMMGGThhmmssZ-limiti.geojson`: due limiti esterni, senza i contorni degli isolotti interni, semplificati soltanto per la rappresentazione con tolleranza iniziale di 3 m. Non si inventano linee ai bordi NoData o del ritaglio. L’eventuale campo di configurazione `mapping.line_tolerance_m` può scegliere un valore fra 0 e 20 m. Questo parametro è distinto dalla tolleranza dell’anteprima Colab.
+
+La data nel nome è **l’inizio dell’elaborazione in UTC**, non un riferimento stimato del ciclo del modello. Ogni feature contiene `issued_at_utc`, `generated_at_utc`, inizio/fine delle 96 ore (`forecast_from_utc`, `forecast_to_utc`, estremo finale escluso), `peak_time_utc`, percentile, quota TWL, conteggio celle, modalità dei dati, settore, metodo statistico, riferimento verticale, correzione, crediti e hash della griglia. Un’area o un fronte vuoto ha geometria `null` ed è marcato `empty=true`.
+
+I link **Scarica le aree / Scarica i limiti (GeoJSON)**, accanto alla mappa, riguardano l’ultima elaborazione pubblicata. Questi inviluppi coprono il periodo di quattro giorni: non sono 96 mappe orarie e non attribuiscono probabilità all’allagamento. I limiti semplificati non vanno usati per misurare superfici.
+
+La Action salva i GeoJSON in un artifact distinto per ogni esecuzione e tentativo, chiamato `inondazione-<run_id>-<run_attempt>`. Si trova in **GitHub → Actions → Previsioni locali → esecuzione → Artifacts**. La conservazione richiesta è **90 giorni**, entro il limite consentito dalle impostazioni del repository; non è un archivio permanente. Scaricare le copie da conservare più a lungo prima della scadenza. Il sito Pages viene sostituito a ogni deploy e non conserva da solo le uscite precedenti. Riferimento: [conservazione degli artifact GitHub](https://docs.github.com/en/actions/tutorials/store-and-share-data#configuring-a-custom-artifact-retention-period).
+
+Un errore della sola esportazione GIS viene segnalato accanto alla mappa e nei log, senza nascondere immagini di previsione valide. Le dipendenze GIS sono incluse in `forecast_service/requirements.txt`; non occorrono account aggiuntivi. Il notebook viene mantenuto autosufficiente, ma l’archivio giornaliero viene prodotto dal servizio di previsione, non dal setup Colab.
+
 ## Quote delle strutture campionate dal DEM
 
 Il notebook accetta un GeoJSON facoltativo di punti con campo `struttura`. Per ogni settore costiero e tipo di struttura campiona il DEM originale e propone la media delle quote valide. Senza suddivisione, il raggruppamento riguarda la spiaggia intera. Minimo, massimo, numero di punti e osservazioni escluse restano nella diagnostica. Il modulo permette di modificare la proposta, conservando l’origine della quota e la media iniziale nel pacchetto.

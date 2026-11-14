@@ -4,3 +4,7 @@ py-wave-runup==0.1.12
 copernicusmarine==2.4.1
 fsspec[http]==2026.9.0
 h5netcdf==1.8.2
+rasterio>=1.4,<2
+scipy>=1.11,<2
+shapely>=2,<3
+pyproj>=3.6,<4
