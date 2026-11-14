@@ -1,0 +1,44 @@
+{
+  "method": "external_reach_lines_display_only_v1",
+  "display_only": true,
+  "reached_cells": 40799,
+  "filled_cells": 0,
+  "mask_modified": false,
+  "elevations_modified": false,
+  "internal_components_not_drawn": 318,
+  "interface_segments": 1536,
+  "pixel_size_ground_m": [
+    0.8003449113903373,
+    0.7978377518075329
+  ],
+  "tolerance_m": 0.5,
+  "original_vertices": 1651,
+  "simplified_vertices": 895,
+  "original_length_m": 1227.4368784105402,
+  "simplified_length_m": 1114.3110686844846,
+  "empty": false,
+  "interpretation": "Solo limite cartografico: non ricostruisce terreno né propagazione dietro false barriere del DSM.",
+  "level_m": 1.4,
+  "grid_sha256": "d635e02dd8946f48aa7eb2e2b387941228bf0cf8dcbd14e0ca1c30f379d58928",
+  "bounds_wgs84": [
+    [
+      44.107322156745,
+      8.24094976002953
+    ],
+    [
+      44.11283664847959,
+      8.247917734836903
+    ]
+  ],
+  "bounds_3857": [
+    917378.3309394373,
+    5482065.583177999,
+    918154.0023468544,
+    5482920.551298078
+  ],
+  "seeds_below_level": 44,
+  "unit_id": "2",
+  "data_mode": "study",
+  "vertical_reference": "ItalGeo2009",
+  "dem_offset_m": 0.0
+}

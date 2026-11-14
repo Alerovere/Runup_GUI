@@ -16,59 +16,59 @@
   "start": "2025-01-01T00:00:00Z",
   "end": "2025-12-31T23:00:00Z",
   "n_records": 8760,
-  "mean_ssh_m": -0.4032032064388128,
+  "mean_ssh_m": -0.4032032065408211,
   "monthly": {
     "1": {
-      "mean_ssh_m": -0.410685404639785,
+      "mean_ssh_m": -0.41068540514016183,
       "n_records": 744
     },
     "2": {
-      "mean_ssh_m": -0.5115411359226191,
+      "mean_ssh_m": -0.5115411352543604,
       "n_records": 672
     },
     "3": {
-      "mean_ssh_m": -0.4807945041263441,
+      "mean_ssh_m": -0.4807945045652569,
       "n_records": 744
     },
     "4": {
-      "mean_ssh_m": -0.46933154022222223,
+      "mean_ssh_m": -0.46933154060194887,
       "n_records": 720
     },
     "5": {
-      "mean_ssh_m": -0.4296025681586021,
+      "mean_ssh_m": -0.429602568448391,
       "n_records": 744
     },
     "6": {
-      "mean_ssh_m": -0.4312678409444445,
+      "mean_ssh_m": -0.4312678412430816,
       "n_records": 720
     },
     "7": {
-      "mean_ssh_m": -0.3726959052822581,
+      "mean_ssh_m": -0.3726959057072157,
       "n_records": 744
     },
     "8": {
-      "mean_ssh_m": -0.3369342917688172,
+      "mean_ssh_m": -0.3369342914271739,
       "n_records": 744
     },
     "9": {
-      "mean_ssh_m": -0.3413011670013889,
+      "mean_ssh_m": -0.34130116678360434,
       "n_records": 720
     },
     "10": {
-      "mean_ssh_m": -0.36464155797715053,
+      "mean_ssh_m": -0.36464155783816693,
       "n_records": 744
     },
     "11": {
-      "mean_ssh_m": -0.31705964612500004,
+      "mean_ssh_m": -0.3170596461794857,
       "n_records": 720
     },
     "12": {
-      "mean_ssh_m": -0.38133004919354835,
+      "mean_ssh_m": -0.3813300493263429,
       "n_records": 744
     }
   },
   "data_mode": "study",
   "local_datum_status": "not_validated",
   "method": "Arithmetic mean of all hourly SSH values in one complete UTC calendar year; fixed for future forecasts.",
-  "input_sha256": "c5f2271ef0e2de0c95d91b074a032294af6ee9c1e46074d74c122dfacf6eaef2"
+  "input_sha256": "3f35ba4e934974108f2e3c7cf6995aecdafc43c8749c782a405c4c5a1e614fb8"
 }

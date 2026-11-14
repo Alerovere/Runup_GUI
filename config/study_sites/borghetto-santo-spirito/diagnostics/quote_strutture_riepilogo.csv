@@ -1,0 +1,7 @@
+sector_id,structure,method,original_structure,mean_elevation_m,min_elevation_m,max_elevation_m,n_valid,n_excluded,n_dem_cells,season_assumed,elevation_correction_m
+1,chioschi,arithmetic_mean_dem_points_v1,chioschi,1.3959307352701795,1.089653778076169,1.6132972717285128,9,0,9,True,0.0
+1,passeggiata mare,arithmetic_mean_dem_points_v1,passeggiata mare,1.8213651242463456,1.292412567138669,2.137589263916013,23,0,23,True,0.0
+2,chioschi,arithmetic_mean_dem_points_v1,chioschi,1.3560055782920408,1.0648925781249972,1.531437683105466,19,0,19,True,0.0
+2,passeggiata mare,arithmetic_mean_dem_points_v1,passeggiata mare,2.1683075904846163,1.8571022033691378,2.4255645751953097,16,0,16,True,0.0
+3,chioschi,arithmetic_mean_dem_points_v1,chioschi,1.448657226562497,1.2722747802734347,1.781040954589841,10,0,10,True,0.0
+3,passeggiata mare,arithmetic_mean_dem_points_v1,passeggiata mare,3.5157205854143387,1.4761360168457003,4.81893615722656,21,0,21,True,0.0

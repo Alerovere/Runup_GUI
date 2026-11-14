@@ -105,6 +105,22 @@ def extract_dem_profiles(dem_path, transects_path, *, profile_crs='EPSG:32632', 
     return pd.DataFrame(records), pd.DataFrame(diagnostics), metadata
 
 
+def sector_assignment_choices(areas_path, profiles, selections, included_ids, *, profile_crs='EPSG:32632',
+                              geojson_crs='EPSG:4326', id_field='sector_id', name_field='name', x_col='X', y_col='Y'):
+    """Inspect ambiguous assignments before asking the user through widgets."""
+    from shapely.geometry import LineString
+    areas = read_geojson(areas_path, crs=geojson_crs, target_crs=profile_crs, id_field=id_field, polygon=True, name_field=name_field)
+    records = []
+    for key in included_ids:
+        key = str(key)
+        beachface = LineString(profiles[key].loc[selections[key], [x_col, y_col]].to_numpy())
+        point = beachface.interpolate(.5, normalized=True)
+        candidates = [identifier for identifier, item in areas.items() if item['geometry'].covers(point)]
+        allowed = [identifier for identifier, item in areas.items() if item['geometry'].intersects(beachface)]
+        records.append(dict(transect_id=key, automatic=candidates[0] if len(candidates)==1 else None, allowed=allowed))
+    return records, {key:item['name'] for key,item in areas.items()}
+
+
 def sectors_from_beachfaces(areas_path, profiles, selections, included_ids, *, profile_crs='EPSG:32632',
                            geojson_crs='EPSG:4326', id_field='sector_id', name_field='name',
                            x_col='X', y_col='Y', manual=None):

@@ -53,6 +53,9 @@ def load_configuration(root=ROOT):
             raise ValueError(f'Pendenze non valide: {slug}')
         if len(set(loc['slopes'])) != len(loc['slopes']):
             raise ValueError(f'Pendenze duplicate: {slug}')
+        if loc.get('slope_sampling') is not None:
+            from forecast_service.slope_sampling import validate_sampling
+            validate_sampling(loc['slopes'],loc['slope_sampling'],[r['slope'] for r in loc.get('transects',[])],unit_id='whole')
         if not math.isfinite(loc['roughness_m']) or loc['roughness_m'] < 0:
             raise ValueError(f'Rugosità non valida: {slug}')
         if not math.isfinite(loc.get('datum_offset_m', 0)):

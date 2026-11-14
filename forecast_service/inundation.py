@@ -113,9 +113,14 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
     if mapping.get('orthophoto_file'):
         image = orthophoto_bytes(Path(root)/mapping['orthophoto_file'], z.shape, mapping)
         filename = prefix+'-orthophoto.png'; assets[filename] = image; ortho = 'data/'+filename
+    terrain, terrain_scale = None, None
+    if not ortho:
+        from forecast_service.terrain_background import terrain_background
+        image, terrain_scale = terrain_background(z, display)
+        filename = prefix+'-terrain.png'; assets[filename] = image; terrain = 'data/'+filename
     exposure = [is_exposed(r.get('direction_deg'), unit.get('wave_exposure')) if r.get('hs_m', 0) > 0 else None for r in rows]
     return {'status': 'available', 'method': METHOD, 'data_mode': bulletin['mode'], 'period_from': start.isoformat(), 'period_to': end.isoformat(),
-            'bounds': bounds, 'layers': layers, 'orthophoto': ortho,
+            'bounds': bounds, 'layers': layers, 'orthophoto': ortho, 'terrain': terrain, 'terrain_scale': terrain_scale,
             'survey_credit': mapping['survey_credit'], 'survey_date': mapping['survey_date'], 'license': mapping['license'],
             'vertical_reference': mapping['vertical_reference'], 'dem_offset_m': mapping['dem_offset_m'],
             'grid_sha256': hashlib.sha256(grid_path.read_bytes()).hexdigest(),

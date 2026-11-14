@@ -24,6 +24,9 @@ def validate_payload(payload):
     validate_exposure(location.get('wave_exposure'))
     if not location.get('slopes') or any(not isinstance(s,(int,float)) or not 0<s<1 for s in location['slopes']):
         raise ValueError('Pendenze non valide.')
+    if location.get('slope_sampling') is not None:
+        from forecast_service.slope_sampling import validate_sampling
+        validate_sampling(location['slopes'],location['slope_sampling'],[r['slope'] for r in location.get('transects',[])],unit_id='whole')
     if not isinstance(payload.get('thresholds'), list):
         raise ValueError('Soglie mancanti.')
     if location.get('climatology_file') not in (None,f'config/climatology/{slug}.json'):

@@ -4,11 +4,15 @@ L’app Streamlit resta separata. Queste opzioni riguardano il notebook di setup
 
 ## 1. Un’area, eventuali settori costieri
 
-Per il percorso principale del notebook servono DEM, ortofotomosaico e GeoJSON delle linee dei transetti. I poligoni GeoJSON dei **settori costieri** sono facoltativi. Senza poligoni la spiaggia intera rimane rappresentata.
+Per il percorso principale del notebook servono DEM e GeoJSON delle linee dei transetti. Ortofotomosaico e poligoni GeoJSON dei **settori costieri** sono facoltativi. Senza poligoni la spiaggia intera rimane rappresentata.
+
+Le pendenze possono provenire da profili campionati sul DEM oppure da transetti **GNSS LineString XYZ già sulla battigia**. Il percorso GNSS offre menu per i campi ID, β e R² e usa tutti i vertici senza Zmin/Zmax: si può ricalcolare β o importare esplicitamente la pendenza dal campo scelto. Il DEM resta la sorgente di cartografia e quote delle strutture; le quote GNSS hanno correzione e riferimento separati. I campioni DEM lungo i transetti GNSS servono soltanto agli avvii cartografici. Vedi `notebooks/README.md` per formato e procedura.
 
 Le direzioni di esposizione, le previsioni di onda/surge/marea e il riferimento storico ERA5 sono comuni all’area. Ogni settore costiero ha i propri transetti e le proprie strutture esposte, anche con nomi, quote ed elenchi diversi. Un’esposizione diversa nel singolo settore costiero viene rifiutata dalla configurazione. I settori statistici di provenienza ERA5 non sono settori costieri.
 
 I transetti sono assegnati con i poligoni usando il centro della battigia selezionata per il fit. I casi ambigui richiedono una scelta esplicita. Il filtro ±3σ e i percentili sono calcolati per settore costiero e ora, mantenendo le formule scientifiche. È possibile non configurare strutture esposte, continuando a calcolare runup, TWL e mappe.
+
+Il notebook offre menu per le assegnazioni ambigue e caselle per i nomi pubblici dei settori, lasciando invariati gli ID. Le pendenze possono essere campionate con Monte Carlo da una normale troncata agli estremi misurati del singolo settore (200 campioni e seme 42 iniziali, modificabili). I campioni sono salvati e validati nel pacchetto, poi riutilizzati nelle previsioni. Restano disponibili i valori misurati e un intervallo regolare. Non sono probabilità di allagamento; vedi `notebooks/README.md` per ipotesi e casi con una sola pendenza.
 
 ## 2. File, strutture e ritagli nel notebook
 
@@ -17,6 +21,8 @@ Il caricamento dei sorgenti è unico. Nel passaggio delle strutture compare una 
 I raster completi possono risiedere in `notebooks/dati originali/`, esclusa da Git. Il preprocessing prepara un dominio DEM con margine e ritaglia le immagini al poligono del settore costiero. In assenza di poligoni usa l’estensione del DEM. I punti di avvio verso mare derivano dai profili orientati e sono modificabili. Compilare crediti, data e licenza, e confermare il raccordo delle quote con lo zero del TWL.
 
 La risoluzione dell’ortofoto pubblicata parte da **0,5 m/pixel**, separatamente dal DEM originale dei profili. La griglia DEM della mappa rimane leggera (massimo 1024 pixel per asse). Il PNG ortofoto, allineato in EPSG:3857, può arrivare a 4096 pixel per asse e 12 MiB. I limiti producono un errore esplicito; non viene alterato silenziosamente il passo richiesto. Le zone esterne o non coperte restano trasparenti e mostrano OpenStreetMap.
+
+Se l’ortofoto non è fornita, il servizio genera dalla griglia preparata uno sfondo DEM con legenda delle quote, sotto le fasce di possibile raggiungimento. NoData ed esterno del poligono sono trasparenti. La scala cromatica satura sotto il 2° e sopra il 98° percentile delle quote visualizzate per rendere leggibile il rilievo della spiaggia: cambia soltanto il colore, non le quote o il calcolo. Le zone fuori scala mantengono il colore estremo. Crediti e riferimento verticale rimangono quelli del rilievo.
 
 Istruzioni dettagliate, ordine dei passaggi e dati richiesti: `notebooks/README.md`. Il notebook non richiede di preparare un CSV dei profili né di attivare separatamente le mappe dopo aver caricato i raster.
 

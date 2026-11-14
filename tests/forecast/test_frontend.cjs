@@ -375,6 +375,28 @@ test('Una spiaggia senza settori nasconde il selettore e senza cartografia nasco
   assert.equal(nodes['inundation-panel'].hidden,true);
 });
 
+test('Senza ortofoto il DEM con legenda resta sotto le fasce e sopra OpenStreetMap',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  const added=[];
+  context.L={
+    map:()=>({fitBounds:()=>{},remove:()=>{}}),
+    tileLayer:()=>({addTo:()=>added.push('OpenStreetMap')}),
+    imageOverlay:image=>({addTo:()=>{added.push(image);return {};}}),
+    control:{layers:()=>({addTo:()=>{}})}
+  };
+  context.window.L=context.L;
+  context.terrainFixture={inundation_map:{status:'available',bounds:[[44,8],[44.01,8.01]],orthophoto:null,
+    terrain:'data/dem.png',terrain_scale:{min_m:0,max_m:3,colors:['#f5f4e1','#7f644b'],scale_note:'Solo colori'},
+    period_from:'2026-11-11T06:00Z',period_to:'2026-11-15T06:00Z',
+    layers:[{percentile:75,image:'p75.png',level_m:.5,peak_time:'2026-11-11T06:00Z'},
+      {percentile:95,image:'p95.png',level_m:1,peak_time:'2026-11-11T06:00Z'}]}};
+  call('renderInundation(terrainFixture)');
+  assert.deepEqual(added,['OpenStreetMap','data/dem.png','p95.png','p75.png']);
+  assert.match(nodes['inundation-legend'].innerHTML,/Sfondo DEM/);
+  assert.match(nodes['inundation-legend'].innerHTML,/linear-gradient/);
+  delete context.window.L;delete context.L;
+});
+
 test('La struttura di riferimento può essere diversa dai chioschi nei settori costieri',()=>{
   assert.equal(call('referenceThreshold({thresholds:[{id:"ombrelloni",season:"summer"},{id:"passeggiata",season:"all_year"}]}).id'),'passeggiata');
   assert.equal(call('referenceThreshold({thresholds:[]})'),null);

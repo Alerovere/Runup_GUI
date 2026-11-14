@@ -8,11 +8,98 @@ from forecast_service.inundation import png_bytes, load_grid, MAX_ORTHOPHOTO_CEL
 from forecast_service.sectors import valid_id, validate_mappings
 
 
+class SeedSelectionError(ValueError):
+    """Keep per-transect diagnostics available when no coastal cell is found."""
+    def __init__(self, message, report):
+        super().__init__(message)
+        self.report = report
+
+
+def select_sea_seeds(z, transform, *, seed_points=None, seed_profiles=None,
+                     max_advance_m=5.0, max_rise_m=0.5):
+    """Choose first valid prepared cell on the initial sea-to-land profile.
+
+    Manual points are strict and never relocated. Automatic profiles map an ID
+    to ordered [lon, lat, distance_from_first_valid_m, source_elevation_m]
+    samples. Elevations must already use the map's vertical correction.
+    Never search in 2-D or jump beyond a source terrain barrier to find a seed.
+    """
+    import math
+    from pyproj import Transformer
+    from rasterio.transform import rowcol, xy
+    if seed_points is not None and seed_profiles is not None:
+        raise ValueError('Usare punti manuali oppure profili per l’avvio automatico, non entrambi.')
+    if not seed_points and not seed_profiles:
+        raise ValueError('Indicare punti o profili di partenza verso mare.')
+    if not all(isinstance(x,(int,float)) and math.isfinite(x) and x>=0 for x in (max_advance_m,max_rise_m)):
+        raise ValueError('Distanza e rialzo massimi di avvio devono essere finiti e non negativi.')
+    to_map=Transformer.from_crs(4326,3857,always_xy=True)
+    to_wgs=Transformer.from_crs(3857,4326,always_xy=True)
+    height,width=z.shape
+    seeds=np.zeros(z.shape,dtype=bool)
+    report=[]
+    def cell(point):
+        if len(point)!=2 or not np.isfinite(point).all() or not -180<=point[0]<=180 or not -85<point[1]<85:
+            raise ValueError('Coordinate di avvio: servono longitudine e latitudine WGS84 valide.')
+        x,y=to_map.transform(*point)
+        row,col=rowcol(transform,x,y)
+        if not 0<=row<height or not 0<=col<width or not np.isfinite(z[row,col]):
+            return None
+        return int(row),int(col)
+    if seed_points is not None:
+        for i,point in enumerate(seed_points,1):
+            selected=cell(point)
+            if selected is None:
+                raise ValueError(f'Punto a mare manuale {i} fuori dalla griglia preparata o su NoData: scegliere una cella valida; coordinate {point}.')
+            row,col=selected;seeds[row,col]=True
+            report.append(dict(transect_id=f'manuale-{i}',status='manuale',advance_m=0.,
+                               requested_point=list(point),selected_point=list(point),grid_elevation_m=float(z[row,col])))
+        return seeds,report
+    if not isinstance(seed_profiles,dict) or not seed_profiles:
+        raise ValueError('Profili di avvio automatico non validi.')
+    for identifier,samples in seed_profiles.items():
+        samples=np.asarray(samples,dtype=float)
+        if samples.ndim!=2 or samples.shape[1]!=4 or not len(samples) or not np.isfinite(samples).all():
+            raise ValueError(f'Transetto {identifier}: campioni di avvio non validi.')
+        if abs(samples[0,2])>1e-6 or (np.diff(samples[:,2])<0).any() or (samples[:,2]<0).any():
+            raise ValueError(f'Transetto {identifier}: le distanze devono partire da zero e crescere verso terra.')
+        reference=float(samples[0,3]);selected=None
+        for lon,lat,distance,elevation in samples:
+            # Strict prefix: a low cell beyond a crest is not a valid shortcut.
+            if distance>max_advance_m+1e-8 or elevation>reference+max_rise_m+1e-8:
+                break
+            candidate=cell([lon,lat])
+            if candidate is None:
+                continue
+            row,col=candidate
+            if float(z[row,col])>reference+max_rise_m+1e-8:
+                continue
+            selected=(row,col,lon,lat,distance)
+            break
+        if selected is None:
+            report.append(dict(transect_id=str(identifier),status='nessuna_cella_costiera_valida',advance_m=None,
+                               requested_point=samples[0,:2].tolist(),selected_point=None,grid_elevation_m=None))
+            continue
+        row,col,lon,lat,distance=selected
+        center=xy(transform,row,col)
+        seeds[row,col]=True
+        report.append(dict(transect_id=str(identifier),status='iniziale' if distance<1e-8 else 'avanzato_sul_transetto',
+                           advance_m=float(distance),requested_point=samples[0,:2].tolist(),
+                           selected_point=[float(lon),float(lat)],grid_cell_center=list(to_wgs.transform(*center)),
+                           grid_elevation_m=float(z[row,col])))
+    failed=[r['transect_id'] for r in report if r['selected_point'] is None]
+    if failed:
+        raise SeedSelectionError('Nessuna cella costiera valida per i transetti '+', '.join(failed)+
+            f' entro {max_advance_m:g} m e {max_rise_m:g} m di rialzo. Controllare la diagnostica o PUNTI_MARE_MANUALI.',report)
+    return seeds,report
+
+
 def prepare_mapping(dem_path, output, *, slug, unit_id='whole', orthophoto_path=None,
                     display_polygon=None, seed_points=None, survey_credit='', survey_date='',
                     license='', vertical_reference='', dem_offset_m=0.0,
                     vertical_alignment_confirmed=False, max_dimension=768, clip_to_polygon=False, clip_buffer_m=100,
-                    orthophoto_resolution_m=None):
+                    orthophoto_resolution_m=None, seed_profiles=None,
+                    seed_max_advance_m=5.0, seed_max_rise_m=0.5):
     """Prepare a local map from a full-area DEM; preserve originals outside Git.
 
     Polygon and sea-side seed points use WGS84 lon/lat. Offset is ADDED once to
@@ -30,7 +117,7 @@ def prepare_mapping(dem_path, output, *, slug, unit_id='whole', orthophoto_path=
                     survey_credit=survey_credit, survey_date=survey_date, license=license, vertical_reference=vertical_reference,
                     dem_offset_m=float(dem_offset_m), vertical_alignment_confirmed=vertical_alignment_confirmed)
     validate_mappings({'mapping': metadata} if unit_id == 'whole' else {'sectors': {unit_id: {'mapping': metadata}}}, slug)
-    if not seed_points:
+    if not seed_points and not seed_profiles:
         raise ValueError('Indicare punti di partenza verso mare in celle valide del DEM (lon, lat).')
     with rasterio.open(dem_path) as dem:
         if not dem.crs or dem.count != 1:
@@ -65,15 +152,10 @@ def prepare_mapping(dem_path, output, *, slug, unit_id='whole', orthophoto_path=
     if not display_polygon or display_polygon.get('type') not in ('Polygon', 'MultiPolygon'):
         raise ValueError('Definire il poligono WGS84 dell’area da rappresentare.')
     display = geometry_mask([transform_geom("EPSG:4326", "EPSG:3857", display_polygon)], out_shape=z.shape, transform=transform, invert=True)
-    seeds = np.zeros(z.shape, dtype=bool)
-    for point in seed_points:
-        if len(point) != 2 or not np.isfinite(point).all():
-            raise ValueError('Coordinate dei punti a mare non valide.')
-        xx, yy = reproject_coordinates("EPSG:4326", "EPSG:3857", [point[0]], [point[1]])
-        row, col = rowcol(transform, xx[0], yy[0])
-        if not 0 <= row < height or not 0 <= col < width or not np.isfinite(z[row, col]):
-            raise ValueError('Un punto a mare è fuori dal DEM o su NoData: scegliere una cella valida.')
-        seeds[row, col] = True
+    seeds, seed_report = select_sea_seeds(z, transform, seed_points=seed_points, seed_profiles=seed_profiles,
+                                        max_advance_m=seed_max_advance_m, max_rise_m=seed_max_rise_m)
+    metadata['seed_selection'] = seed_report
+    metadata['seed_selection_limits'] = dict(max_advance_m=seed_max_advance_m,max_rise_m=seed_max_rise_m)
     output = Path(output); output.mkdir(parents=True, exist_ok=True)
     grid = output/'grid.npz'
     np.savez_compressed(grid, z=z, seeds=seeds, display_mask=display, bounds=np.array([west, south, east, north]))

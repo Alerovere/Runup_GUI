@@ -459,7 +459,9 @@ function renderExtremes(location,rows,sectorId=null) {
 
 function locationParameters(location) {
   const reference=seaLevelReference(location);
-  const content=`<dl><dt>Pendenze β</dt><dd>${location.slopes.map(s=>num(s,3)).join(' · ')} (valori configurati)</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : bulletin.mode==='demo'?'Non applicabile ai dati dimostrativi':'Coordinate del campione non esposte nel CSV'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti i risultati dei modelli sull’intero periodo disponibile; tempi in UTC. Con MeteOcean include anche i contributi separati di marea e surge.</dd></dl>`;
+  const sampling=location.slope_sampling;
+  const slopeLabel=sampling?`${location.slopes.length} valori · da ${num(sampling.source_min,4)} a ${num(sampling.source_max,4)} · ${sampling.method==="truncated_normal"?"Monte Carlo, normale troncata":sampling.method==="linear_range"?"intervallo regolare":"pendenze misurate"}. ${sampling.source_count} transetti; media misurata ${num(sampling.source_mean,4)}, deviazione standard ${num(sampling.source_std,4)}; seme ${sampling.seed}.`:location.slopes.map(s=>num(s,3)).join(" · ")+" (valori configurati)";
+  const content=`<dl><dt>Pendenze β</dt><dd>${esc(slopeLabel)}</dd><dt>Rugosità</dt><dd>${num(location.roughness_m,4)} m</dd><dt>Punto offshore richiesto</dt><dd>${num(location.wave_point.latitude,5)}° N, ${num(location.wave_point.longitude,5)}° E</dd><dt>Cella estratta</dt><dd>${location.source.selected_point ? esc(JSON.stringify(location.source.selected_point)) : bulletin.mode==='demo'?'Non applicabile ai dati dimostrativi':'Coordinate del campione non esposte nel CSV'}</dd><dt>Modelli disponibili</dt><dd>${esc(location.valid_models.join('; '))}</dd><dt>Senza risultati validi</dt><dd>${esc(location.missing_models.join('; ')||'Nessuno')}</dd><dt>Motore di calcolo</dt><dd>${esc(bulletin.model_backend)}</dd><dt>Settori di esposizione</dt><dd>${location.wave_exposure?.sectors_deg?.length?esc(location.wave_exposure.sectors_deg.map(([a,b])=>`${num(a,0)}° → ${num(b,0)}° in senso orario`).join('; ')):'Da definire'}</dd><dt>Riferimento verticale</dt><dd>${esc(reference.label)}. ${esc(reference.detail)}</dd><dt>Note della località</dt><dd>${esc(location.notes)}</dd><dt>Download CSV</dt><dd>Contiene tutti i risultati dei modelli sull’intero periodo disponibile; tempi in UTC. Con MeteOcean include anche i contributi separati di marea e surge.</dd></dl>`;
   const c=location.climatology,e=c?.directional_extremes;
   const filtered=location.hourly.filter(hasFilteredStatistics);
   const filterInfo=filtered.length?`<h4>Filtro dei risultati di runup</h4><p>Filtro ±3σ per ora, un passaggio. ${num(filtered.reduce((sum,r)=>sum+r.n_outliers,0),0)} esclusioni su ${num(filtered.reduce((sum,r)=>sum+r.n_estimates_raw,0),0)} calcoli grezzi nell’intero periodo scaricato. I CSV conservano tutti i risultati con il campo included_in_summary.</p>`:'<p>Statistiche filtrate non disponibili: occorre aggiornare il bollettino.</p>';
@@ -523,6 +525,11 @@ function renderInundation(location) {
   $('inundation-description').textContent=inundationMapText(data);
   $('inundation-credit').textContent=data?.status==='available'?`Rilievo: ${data.survey_credit} · ${data.survey_date}. Licenza: ${data.license}. Quote: ${data.vertical_reference}.`:'';
   $('inundation-legend').innerHTML=data?.status==='available'?data.layers.slice().sort((a,b)=>b.percentile-a.percentile).map(layer=>`<span class="map-key map-key-${layer.percentile}">${inundationExtentLabel(layer.percentile)} · quota ${num(layer.level_m)} m · ${local(layer.peak_time)}</span>`).join(''):'';
+  if (data?.status==='available' && data.terrain && data.terrain_scale) {
+    const scale=data.terrain_scale;
+    const colors=scale.colors.filter(c=>/^#[0-9a-f]{6}$/i.test(c));
+    $('inundation-legend').innerHTML+=`<span class="terrain-key" title="${esc(scale.scale_note)}">Sfondo DEM · quota del terreno: ${num(scale.min_m)} m <span style="display:inline-block;width:100px;height:12px;background:linear-gradient(to right,${colors.join(',')})"></span> ${num(scale.max_m)} m. Colori ai limiti della scala per le quote esterne.</span>`;
+  }
   const canvas=$('inundation-map');canvas.hidden=data?.status!=='available';
   if (data?.status!=='available') return;
   if (!window.L) {canvas.hidden=true;$('inundation-description').textContent+=' Mappa interattiva momentaneamente non disponibile.';return;}
@@ -531,6 +538,8 @@ function renderInundation(location) {
   const overlays={};
   if (data.orthophoto) {
     overlays['Ortofotomosaico']=L.imageOverlay(data.orthophoto,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
+  } else if (data.terrain) {
+    overlays['DEM · quote del terreno']=L.imageOverlay(data.terrain,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
   }
   // Larger envelope underneath; P75 remains distinguishable where they overlap.
   for (const layer of data.layers.slice().sort((a,b)=>b.percentile-a.percentile)) {

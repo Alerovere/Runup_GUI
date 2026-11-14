@@ -52,32 +52,44 @@
       "name": "Borghetto Santo Spirito (SV)",
       "thresholds": [
         {
-          "id": "prima_fila_ombrelloni",
-          "elevation_m": 0.7,
-          "short_label": "Prima fila di ombrelloni",
-          "description": "Possibile interessamento: prima fila di ombrelloni",
-          "season": "summer"
+          "id": "chioschi-3c96a0f4",
+          "short_label": "chioschi",
+          "description": "Possibile interessamento: chioschi",
+          "elevation_m": 1.3959307352701795,
+          "season": "all_year",
+          "survey_statistics": {
+            "method": "arithmetic_mean_dem_points_v1",
+            "original_structure": "chioschi",
+            "mean_elevation_m": 1.3959307352701795,
+            "min_elevation_m": 1.089653778076169,
+            "max_elevation_m": 1.6132972717285128,
+            "n_valid": 9,
+            "n_excluded": 0,
+            "n_dem_cells": 9,
+            "season_assumed": true,
+            "elevation_correction_m": 0.0,
+            "selected_elevation_source": "dem_point_mean"
+          }
         },
         {
-          "id": "strutture_turistiche_stagionali",
-          "elevation_m": 0.9,
-          "short_label": "Strutture turistiche stagionali",
-          "description": "Possibile interessamento: strutture turistiche stagionali",
-          "season": "summer"
-        },
-        {
-          "id": "strutture_turistiche_fisse",
-          "elevation_m": 1.1,
-          "short_label": "Chioschi e strutture fisse",
-          "description": "Possibile interessamento: chioschi e strutture fisse",
-          "season": "all_year"
-        },
-        {
-          "id": "infrastrutture_fisse",
-          "elevation_m": 1.4,
-          "short_label": "Passeggiata a mare",
-          "description": "Possibile interessamento: passeggiata a mare",
-          "season": "all_year"
+          "id": "passeggiata-mare-ff3ba12b",
+          "short_label": "passeggiata mare",
+          "description": "Possibile interessamento: passeggiata mare",
+          "elevation_m": 1.8213651242463456,
+          "season": "all_year",
+          "survey_statistics": {
+            "method": "arithmetic_mean_dem_points_v1",
+            "original_structure": "passeggiata mare",
+            "mean_elevation_m": 1.8213651242463456,
+            "min_elevation_m": 1.292412567138669,
+            "max_elevation_m": 2.137589263916013,
+            "n_valid": 23,
+            "n_excluded": 0,
+            "n_dem_cells": 23,
+            "season_assumed": true,
+            "elevation_correction_m": 0.0,
+            "selected_elevation_source": "dem_point_mean"
+          }
         }
       ]
     }

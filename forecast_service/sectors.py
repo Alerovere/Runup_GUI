@@ -38,7 +38,7 @@ def resolve_sectors(location, thresholds):
         by_id[key] = row
     assigned = set()
     resolved = {}
-    allowed = {'name', 'transect_ids', 'thresholds', 'wave_exposure', 'mapping', 'notes', 'summer_season'}
+    allowed = {'name', 'transect_ids', 'thresholds', 'wave_exposure', 'mapping', 'notes', 'summer_season', 'slopes', 'slope_sampling'}
     for key, sector in sectors.items():
         if not valid_id(key) or key == 'whole' or not isinstance(sector, dict) or not sector.get('name'):
             raise ValueError('Identificativo o nome del settore non valido (whole è riservato).')
@@ -58,8 +58,15 @@ def resolve_sectors(location, thresholds):
         slopes = [row.get('slope') for row in selected]
         if any(row.get('status', 'valid') != 'valid' for row in selected) or not slopes or any(isinstance(s, bool) or not isinstance(s, (int, float)) or not math.isfinite(s) or not 0 < s < 1 for s in slopes):
             raise ValueError(f'Pendenze dei transetti non valide nel settore {key}.')
-        slopes = sorted(set(slopes))
-        merged = {k: v for k, v in location.items() if k not in ('sectors', 'mapping')}
+        if sector.get('slope_sampling') is not None:
+            from forecast_service.slope_sampling import validate_sampling
+            validate_sampling(sector.get('slopes', []), sector['slope_sampling'], slopes, unit_id=key)
+            slopes = sector['slopes']
+        else:
+            if 'slopes' in sector:
+                raise ValueError('Pendenze campionate del settore senza metadati di campionamento.')
+            slopes = sorted(set(slopes))
+        merged = {k: v for k, v in location.items() if k not in ('sectors', 'mapping', 'slope_sampling')}
         merged.update(sector, slopes=slopes, transects=selected, thresholds=sector.get('thresholds', thresholds))
         merged['wave_exposure'] = location.get('wave_exposure')
         validate_thresholds(merged['thresholds'], allow_empty=True)
