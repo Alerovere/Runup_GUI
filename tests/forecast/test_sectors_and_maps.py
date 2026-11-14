@@ -119,12 +119,12 @@ class MapTests(unittest.TestCase):
     def test_maps_use_fixed_96h_filtered_percentiles_not_raw_maximum(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder); mapping, _ = grid(root)
-            rows = [dict(time=p.iso(NOW+timedelta(hours=i)), twl_p75_m=.5, twl_p95_m=1., twl_max_m=100.,
+            rows = [dict(time=p.iso(NOW+timedelta(hours=i)), twl_mean_m=.4,twl_p75_m=.5, twl_p95_m=1., twl_max_m=100.,
                          statistics_method=p.STATISTICS_METHOD, hs_m=1., direction_deg=90) for i in range(120)]
-            rows[95]['twl_p95_m'] = 2.; rows[96]['twl_p95_m'] = 99.
+            rows[12]['twl_mean_m'] = .6; rows[95]['twl_p75_m'] = 2.; rows[96]['twl_p75_m'] = 99.; rows[96]['twl_mean_m']=99.
             bulletin = {'mode': 'demo', 'processing_started_at': p.iso(NOW), 'display_hours': 96}
             data, assets = build_map({'hourly': rows, 'wave_exposure': {'sectors_deg': [[70, 130]]}}, bulletin, mapping, root, 'venezia', 'whole')
-            self.assertEqual([layer['level_m'] for layer in data['layers']], [.5, 2.])
+            self.assertEqual([layer['level_m'] for layer in data['layers']], [.6, 2.])
             self.assertEqual(data['layers'][1]['peak_time'], rows[95]['time'])
             self.assertEqual(data['layers'][1]['cells'], 6)
             self.assertEqual(data['survey_credit'], mapping['survey_credit'])

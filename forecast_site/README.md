@@ -104,4 +104,4 @@ Configurazione corrente MeteOcean + sola marea NOAA e ripristino Copernicus: [ME
 
 ## Settori, DEM e ortofotomosaici (opzionali)
 
-Il notebook di setup permette di assegnare i transetti a settori di spiaggia e aggiungere cartografia con crediti del rilievo. Senza queste opzioni i siti esistenti restano rappresentati come prima. Vedi [SETTORI_E_MAPPE.md](SETTORI_E_MAPPE.md) per configurazione, raccordo verticale, importazione e significato degli inviluppi statici P75/P95 nelle 96 ore.
+Il notebook di setup permette di assegnare i transetti a settori di spiaggia e aggiungere cartografia con crediti del rilievo. Senza queste opzioni i siti esistenti restano rappresentati come prima. Vedi [SETTORI_E_MAPPE.md](SETTORI_E_MAPPE.md) per configurazione, raccordo verticale, importazione e significato delle mappe della media e del limite superiore della fascia centrale nelle 96 ore, orari rappresentati e download GeoJSON/KMZ.

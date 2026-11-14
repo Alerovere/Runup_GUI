@@ -62,11 +62,13 @@ jobs:
           done
           echo 'Aggiornamento fallito: il sito già pubblicato rimane invariato.'
           exit 1
-      - name: Conserva i GeoJSON di questa elaborazione
+      - name: Conserva i GeoJSON e KMZ di questa elaborazione
         uses: actions/upload-artifact@v4
         with:
           name: inondazione-${{ github.run_id }}-${{ github.run_attempt }}
-          path: _site/data/maps/**/*.geojson
+          path: |
+            _site/data/maps/**/*.geojson
+            _site/data/maps/**/*.kmz
           if-no-files-found: ignore
           retention-days: 90
       - uses: actions/configure-pages@v5

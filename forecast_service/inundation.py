@@ -17,7 +17,7 @@ import numpy as np
 
 MAX_CELLS = 1024 * 1024
 MAX_ORTHOPHOTO_CELLS = 4096 * 4096
-METHOD = 'connected_static_twl_filtered_p75_p95_v1'
+METHOD = 'connected_static_twl_filtered_mean_p75_v2'
 
 
 def png_bytes(rgba, *, max_cells=MAX_CELLS):
@@ -92,26 +92,37 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
         end = parse_time(bulletin['display_to'])
     rows = [r for r in unit['hourly'] if start <= parse_time(r['time']) < end]
     expected = [start+timedelta(hours=i) for i in range(bulletin['display_hours'])]
-    if [parse_time(r['time']) for r in rows] != expected or any(r.get('statistics_method') != STATISTICS_METHOD or not all(isinstance(r.get(f'twl_p{q}_m'), (int, float)) and math.isfinite(r[f'twl_p{q}_m']) for q in (75, 95)) for r in rows):
-        raise ValueError('La mappa richiede tutte le 96 ore e percentili filtrati validi.')
+    if [parse_time(r['time']) for r in rows] != expected or any(r.get('statistics_method') != STATISTICS_METHOD or not all(isinstance(r.get(key), (int, float)) and math.isfinite(r[key]) for key in ('twl_mean_m','twl_p75_m')) for r in rows):
+        raise ValueError('La mappa richiede tutte le 96 ore, media e 75° percentile filtrati validi.')
     grid_path = Path(root)/mapping['grid_file']
     z, seeds, display, bounds = load_grid(grid_path)
     prefix = f'maps/{slug}/{unit_id}'
     assets = {}
     layers = []
     masks = []
-    for q, color in [(75, (35, 129, 188, 115)), (95, (107, 197, 232, 90))]:
-        peak = max(rows, key=lambda r: r[f'twl_p{q}_m'])
-        level = peak[f'twl_p{q}_m']
-        if not (z[seeds] < level).any():
-            raise ValueError('Quota prevista sotto tutte le celle di partenza: spostare i punti di avvio verso mare nel DEM.')
+    estimates=[('mean','twl_mean_m',None,'Inondazione media prevista dai modelli',(107,197,232,100)),
+               ('central_upper','twl_p75_m',75,'Inondazione massima (fascia centrale)',(35,129,188,115))]
+    for kind,field,q,label,color in estimates:
+        peak = max(rows, key=lambda r: r[field])
+        level = peak[field]
+        seed_available=bool((z[seeds] < level).any())
         reached = connected_mask(z, seeds, level)
         mask = reached & display
         rgba = np.zeros((*z.shape, 4), dtype=np.uint8)
         rgba[mask] = color
-        filename = f'{prefix}-p{q}.png'
+        filename = f'{prefix}-{"mean" if kind=="mean" else "p75"}.png'
         assets[filename] = png_bytes(rgba)
-        layers.append({'percentile': q, 'level_m': level, 'peak_time': peak['time'], 'image': 'data/'+filename, 'cells': int(mask.sum())})
+        windows=[]
+        for row in rows:
+            if not math.isclose(row[field],level,rel_tol=1e-9,abs_tol=1e-9):continue
+            instant=parse_time(row['time']);finish=instant+timedelta(hours=1)
+            if windows and parse_time(windows[-1]['to'])==instant:windows[-1]['to']=finish.isoformat()
+            else:windows.append({'from':instant.isoformat(),'to':finish.isoformat()})
+        layers.append({'kind':kind,'label':label,'statistic':field,'percentile': q, 'level_m': level,
+            'seed_condition':'available' if seed_available else 'below_seed_level',
+            'quality_note':'' if seed_available else 'Quota sotto tutti gli avvii disponibili nel DEM: non si può tracciare un’area connessa. Non indica assenza di interessamento della costa.',
+            'peak_time': peak['time'], 'peak_to':(parse_time(peak['time'])+timedelta(hours=1)).isoformat(),
+            'peak_windows':windows,'image': 'data/'+filename, 'cells': int(mask.sum())})
         masks.append((layers[-1],reached))
     ortho = None
     if mapping.get('orthophoto_file'):
@@ -126,7 +137,7 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
     issued = parse_time(bulletin['processing_started_at'])
     metadata = {'status': 'available', 'method': METHOD, 'data_mode': bulletin['mode'], 'period_from': start.isoformat(), 'period_to': end.isoformat(),
             'issued_at_utc':issued.isoformat(), 'generated_at_utc':parse_time(bulletin.get('generated_at',bulletin['processing_started_at'])).isoformat(),
-            'bounds': bounds, 'layers': layers, 'orthophoto': ortho, 'terrain': terrain, 'terrain_scale': terrain_scale,
+            'bounds': bounds, 'layers': layers, 'default_layer':'mean', 'orthophoto': ortho, 'terrain': terrain, 'terrain_scale': terrain_scale,
             'survey_credit': mapping['survey_credit'], 'survey_date': mapping['survey_date'], 'license': mapping['license'],
             'vertical_reference': mapping['vertical_reference'], 'dem_offset_m': mapping['dem_offset_m'],
             'grid_sha256': hashlib.sha256(grid_path.read_bytes()).hexdigest(),
@@ -142,6 +153,15 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
             assets[filename]=raw
             files.append(dict(kind=kind,url='data/'+filename,filename=Path(filename).name))
         metadata['geojson_export']=dict(status='available',files=files,line_tolerance_m=mapping.get('line_tolerance_m',3.))
+        try:
+            from forecast_service.inundation_kmz import export_kmz
+            kmz=export_kmz(vectors['aree'],vectors['limiti'])
+            filename=f'{prefix}-{issued.strftime("%Y%m%dT%H%M%SZ")}-mappa.kmz'
+            assets[filename]=kmz
+            metadata['mobile_export']=dict(status='available',url='data/'+filename,filename=Path(filename).name)
+        except Exception as error:
+            metadata['mobile_export']=dict(status='unavailable',reason=str(error))
+            logging.getLogger(__name__).warning('KMZ %s/%s non disponibile: %s',slug,unit_id,error,exc_info=True)
     except Exception as error:
         # GIS export must not suppress otherwise valid forecast images.
         metadata['geojson_export']=dict(status='unavailable',reason=str(error))

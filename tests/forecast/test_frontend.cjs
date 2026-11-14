@@ -359,12 +359,31 @@ test('La selezione opzionale usa il settore valido e mantiene la spiaggia senza 
 test('La mappa dichiara periodo fisso, direzioni non frontali, incertezza e scadenza',()=>{
   context.mapFixture={status:'available',period_from:'2026-11-11T06:00Z',period_to:'2026-11-15T06:00Z',hours_non_frontal:12,hours_direction_unknown:2};
   const text=call('inundationMapText(mapFixture,Date.UTC(2026,10,11,12))');
-  assert.match(text,/Inviluppo delle 96 ore/);
+  assert.match(text,/Periodo della previsione \(96 ore\)/);
   assert.match(text,/12 ore/);assert.match(text,/2 ore/);
   assert.match(text,/Non sono probabilità/);
   assert.doesNotMatch(text,/Periodo concluso/);
   assert.match(call('inundationMapText(mapFixture,Date.UTC(2026,10,16))'),/Periodo concluso/);
   assert.match(call('inundationMapText({status:"unavailable",reason:"DEM mancante"})'),/DEM mancante/);
+});
+
+test('La vista predefinita usa la media e mostra la propria ora, distinta dal limite centrale',()=>{
+  context.estimatesFixture={default_layer:'mean',layers:[
+    {kind:'mean',peak_time:'2026-11-15T07:00Z',peak_to:'2026-11-15T08:00Z'},
+    {kind:'central_upper',peak_time:'2026-11-16T10:00Z',peak_to:'2026-11-16T11:00Z'}]};
+  assert.equal(call('selectedMapLayer(estimatesFixture).kind'),'mean');
+  assert.equal(call('selectedMapLayer(estimatesFixture,"central_upper").kind'),'central_upper');
+  assert.match(call('mapLayerTiming(estimatesFixture.layers[0],Date.UTC(2026,10,14)).html'),/15 novembre 2026/);
+  assert.match(call('mapLayerTiming(estimatesFixture.layers[1],Date.UTC(2026,10,14)).html'),/16 novembre 2026/);
+  assert.match(call('mapLayerTiming(estimatesFixture.layers[0],Date.UTC(2026,10,17)).html'),/già trascorsi/);
+  assert.match(call('mapLayerTiming(estimatesFixture.layers[0],Date.UTC(2026,10,14)).badge'),/\n/);
+});
+
+test('Le vecchie mappe ai percentili non vengono chiamate medie e il KMZ è scaricabile',()=>{
+  assert.match(call('mapLayerLabel({percentile:95})'),/elaborazione precedente/);
+  assert.doesNotMatch(call('mapLayerLabel({percentile:95})'),/media prevista/);
+  context.mobileFixture={status:'available',mobile_export:{status:'available',url:'data/maps/borghetto/2-20261114T064000Z-mappa.kmz',filename:'2-20261114T064000Z-mappa.kmz'}};
+  assert.match(call('inundationDownloads(mobileFixture)'),/Google Earth \(KMZ\)/);
 });
 
 test('Una spiaggia senza settori nasconde il selettore e senza cartografia nasconde la mappa',()=>{
@@ -407,7 +426,7 @@ test('Senza ortofoto il DEM con legenda resta sotto le fasce e sopra OpenStreetM
     layers:[{percentile:75,image:'p75.png',level_m:.5,peak_time:'2026-11-11T06:00Z'},
       {percentile:95,image:'p95.png',level_m:1,peak_time:'2026-11-11T06:00Z'}]}};
   call('renderInundation(terrainFixture)');
-  assert.deepEqual(added,['OpenStreetMap','data/dem.png','p95.png','p75.png']);
+  assert.deepEqual(added,['OpenStreetMap','data/dem.png','p75.png']);
   assert.match(nodes['inundation-legend'].innerHTML,/Sfondo DEM/);
   assert.match(nodes['inundation-legend'].innerHTML,/linear-gradient/);
   delete context.window.L;delete context.L;

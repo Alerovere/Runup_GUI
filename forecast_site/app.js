@@ -506,23 +506,54 @@ function inundationExtentLabel(percentile) {
   return percentile===95?'Estensione più ampia':'Estensione più contenuta';
 }
 
+function mapLayerId(layer) {return layer.kind || `p${layer.percentile}`;}
+function mapLayerLabel(layer) {
+  if (layer.kind==='mean') return 'Inondazione media prevista dai modelli';
+  if (layer.kind==='central_upper') return 'Inondazione massima (fascia centrale)';
+  return `${inundationExtentLabel(layer.percentile)} · elaborazione precedente`;
+}
+function selectedMapLayer(data,requested) {
+  return data.layers.find(layer=>mapLayerId(layer)===requested) || data.layers.find(layer=>mapLayerId(layer)===(data.default_layer||'mean')) || data.layers[0];
+}
+function mapTimeWindow(window) {
+  const zone='Europe/Rome';
+  const dayOptions={timeZone:zone,weekday:'long',day:'2-digit',month:'long',year:'numeric'};
+  const clockOptions={timeZone:zone,hour:'2-digit',minute:'2-digit',timeZoneName:'short'};
+  const from=new Date(window.from),to=new Date(window.to);
+  const sameDay=from.toLocaleDateString('sv-SE',{timeZone:zone})===to.toLocaleDateString('sv-SE',{timeZone:zone});
+  if (sameDay) return `${from.toLocaleDateString('it-IT',dayOptions)}, dalle ${from.toLocaleTimeString('it-IT',clockOptions)} alle ${to.toLocaleTimeString('it-IT',clockOptions)}`;
+  return `${local(window.from,{...dayOptions,...clockOptions})} — ${local(window.to,{...dayOptions,...clockOptions})}`;
+}
+function mapLayerTiming(layer,now=Date.now()) {
+  if (!layer?.peak_time) return {html:'Orario della stima non disponibile.',badge:'Orario non disponibile'};
+  const windows=layer.peak_windows?.length?layer.peak_windows:[{from:layer.peak_time,to:layer.peak_to||new Date(Date.parse(layer.peak_time)+hourMs).toISOString()}];
+  const past=windows.every(w=>Date.parse(w.to)<=now);
+  const when=windows.map(mapTimeWindow);
+  const html=`<strong>Estensione stimata per:</strong> ${when.map(esc).join('<br>')} <span class="small">(ora italiana · Europe/Rome)</span>${past?'<p class="map-past">Gli orari rappresentati sono già trascorsi: questa mappa non descrive le ore ancora future.</p>':''}`;
+  const badge=[mapLayerLabel(layer),windows.length===1?when[0]:`Picco: ${local(layer.peak_time)} · ${windows.length} finestre alla stessa quota`,`Ora italiana${past?' · ORARIO TRASCORSO':''}`].join('\n');
+  return {html,badge};
+}
 function inundationMapText(data,now=Date.now()) {
   if (!data) return 'DEM e cartografia non configurati per questo tratto.';
   if (data.status!=='available') return `Mappa non disponibile: ${data.reason||'dati da verificare'}`;
   const expired=now>=Date.parse(data.period_to);
   const direction=data.hours_non_frontal?` In ${data.hours_non_frontal} ore le onde provengono da altre direzioni: l’estensione non tiene conto del riparo della costa e richiede particolare cautela.`:'';
   const unknown=data.hours_direction_unknown?` In ${data.hours_direction_unknown} ore il confronto con l’esposizione non è disponibile.`:'';
-  return `${expired?'Periodo concluso: questa mappa non descrive le prossime ore. ':''}Inviluppo delle 96 ore dell’elaborazione: ${local(data.period_from)} — ${local(data.period_to)}. Le due aree mostrano quanto cambia l’estensione usando stime diverse dei modelli, considerando le quote più alte del periodo. Non sono probabilità di inondazione né profondità d’acqua.${direction}${unknown}`;
+  const estimates=data.layers?.some(layer=>layer.kind==='mean')?'Ogni opzione rappresenta l’ora più intensa per quella stima: la media dei risultati dei modelli oppure il limite superiore della fascia centrale, che contiene il 50% dei risultati. Non è una media nel tempo e non è il massimo assoluto dei modelli.':'Questa elaborazione precedente contiene inviluppi dei percentili: occorre un nuovo bollettino per le viste media e fascia centrale.';
+  return `${expired?'Periodo concluso: questa mappa non descrive le prossime ore. ':''}Periodo della previsione (96 ore): ${local(data.period_from)} — ${local(data.period_to)}, ora italiana. ${estimates} Non sono probabilità di inondazione né profondità d’acqua.${direction}${unknown}`;
 }
-
 function inundationDownloads(data) {
-  if (data?.status!=='available' || !data.geojson_export) return '';
-  if (data.geojson_export.status!=='available') return `GeoJSON non disponibile per questa elaborazione: ${esc(data.geojson_export.reason||'esportazione da verificare')}.`;
-  return data.geojson_export.files.filter(file=>['aree','limiti'].includes(file.kind) && /^data\/maps\/[a-z0-9-]+\/[a-z0-9-]+-\d{8}T\d{6}Z-(?:aree|limiti)\.geojson$/.test(file.url))
-    .map(file=>`<a href="${esc(file.url)}" download="${esc(file.filename)}">${file.kind==='aree'?'Scarica le aree':'Scarica i limiti'} (GeoJSON) ↓</a>`).join(' · ');
+  if (data?.status!=='available') return '';
+  const links=[];
+  if (data.geojson_export?.status==='available') {
+    links.push(...data.geojson_export.files.filter(file=>['aree','limiti'].includes(file.kind) && /^data\/maps\/[a-z0-9-]+\/[a-z0-9-]+-\d{8}T\d{6}Z-(?:aree|limiti)\.geojson$/.test(file.url))
+      .map(file=>`<a href="${esc(file.url)}" download="${esc(file.filename)}">${file.kind==='aree'?'Scarica le aree':'Scarica i limiti'} (GeoJSON) ↓</a>`));
+  } else if (data.geojson_export) links.push(`GeoJSON non disponibile per questa elaborazione: ${esc(data.geojson_export.reason||'esportazione da verificare')}.`);
+  const mobile=data.mobile_export;
+  if (mobile?.status==='available' && /^data\/maps\/[a-z0-9-]+\/[a-z0-9-]+-\d{8}T\d{6}Z-mappa\.kmz$/.test(mobile.url)) links.push(`<a href="${esc(mobile.url)}" download="${esc(mobile.filename)}">Scarica la mappa per Google Earth (KMZ) ↓</a>`);
+  return links.join(' ');
 }
-
-function renderInundation(location) {
+function renderInundation(location,requested) {
   const panel=$('inundation-panel');
   if (!panel) return;
   if (inundationMap) {inundationMap.remove();inundationMap=null;}
@@ -531,30 +562,50 @@ function renderInundation(location) {
   if (panel.hidden) return;
   $('inundation-description').textContent=inundationMapText(data);
   $('inundation-credit').textContent=data?.status==='available'?`Rilievo: ${data.survey_credit} · ${data.survey_date}. Licenza: ${data.license}. Quote: ${data.vertical_reference}.`:'';
-  const downloads=$('inundation-downloads');
-  if (downloads) downloads.innerHTML=inundationDownloads(data);
-  $('inundation-legend').innerHTML=data?.status==='available'?data.layers.slice().sort((a,b)=>b.percentile-a.percentile).map(layer=>`<span class="map-key map-key-${layer.percentile}">${inundationExtentLabel(layer.percentile)} · quota ${num(layer.level_m)} m · ${local(layer.peak_time)}</span>`).join(''):'';
-  if (data?.status==='available' && data.terrain && data.terrain_scale) {
-    const scale=data.terrain_scale;
-    const colors=scale.colors.filter(c=>/^#[0-9a-f]{6}$/i.test(c));
-    $('inundation-legend').innerHTML+=`<span class="terrain-key" title="${esc(scale.scale_note)}">Sfondo DEM · quota del terreno: ${num(scale.min_m)} m <span style="display:inline-block;width:100px;height:12px;background:linear-gradient(to right,${colors.join(',')})"></span> ${num(scale.max_m)} m. Colori ai limiti della scala per le quote esterne.</span>`;
-  }
+  if ($('inundation-downloads')) $('inundation-downloads').innerHTML=inundationDownloads(data);
   const canvas=$('inundation-map');canvas.hidden=data?.status!=='available';
   if (data?.status!=='available') return;
+  if (!requested && window.location?.href) requested=new URL(window.location.href).searchParams.get('stima');
+  const layer=selectedMapLayer(data,requested);
+  if (!layer) return;
+  const selector=$('inundation-estimate');
+  if (selector) {
+    selector.innerHTML=data.layers.map(item=>`<option value="${esc(mapLayerId(item))}">${esc(item.kind==='mean'?'Media dei modelli':item.kind==='central_upper'?'Massima nella fascia centrale':mapLayerLabel(item))}</option>`).join('');
+    selector.value=mapLayerId(layer);
+    selector.onchange=()=>{
+      if (window.location?.href) {
+        const url=new URL(window.location.href);url.searchParams.set('stima',selector.value);url.hash='inundation-panel';history.replaceState({},'',url);
+      }
+      renderInundation(location,selector.value);
+    };
+  }
+  const timing=mapLayerTiming(layer);
+  if ($('inundation-when')) $('inundation-when').innerHTML=timing.html;
+  if ($('inundation-quality')) $('inundation-quality').textContent=layer.quality_note||'';
+  $('inundation-legend').innerHTML=`<span class="map-key map-key-${layer.kind==='mean'?'mean':layer.kind==='central_upper'?'central':layer.percentile}">${esc(mapLayerLabel(layer))} · quota ${num(layer.level_m)} m</span>`;
+  if (layer.kind==='mean') $('inundation-legend').innerHTML+='<span>Media dei risultati filtrati dei modelli nell’ora più intensa.</span>';
+  if (layer.kind==='central_upper') $('inundation-legend').innerHTML+='<span>Limite superiore della fascia centrale del 50% dei risultati (75° percentile). Non è il massimo assoluto.</span>';
+  if (data.terrain && data.terrain_scale) {
+    const scale=data.terrain_scale;const colors=scale.colors.filter(c=>/^#[0-9a-f]{6}$/i.test(c));
+    $('inundation-legend').innerHTML+=`<span class="terrain-key" title="${esc(scale.scale_note)}">Sfondo DEM · quota del terreno: ${num(scale.min_m)} m <span style="display:inline-block;width:100px;height:12px;background:linear-gradient(to right,${colors.join(',')})"></span> ${num(scale.max_m)} m.</span>`;
+  }
+  if ($('inundation-permalink') && window.location?.href) {
+    const url=new URL(window.location.href);url.searchParams.set('stima',mapLayerId(layer));url.hash='inundation-panel';
+    $('inundation-permalink').href=url.toString();
+  }
   if (!window.L) {canvas.hidden=true;$('inundation-description').textContent+=' Mappa interattiva momentaneamente non disponibile.';return;}
   inundationMap=L.map('inundation-map',{scrollWheelZoom:false});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:22,maxNativeZoom:19,attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'}).addTo(inundationMap);
   const overlays={};
-  if (data.orthophoto) {
-    overlays['Ortofotomosaico']=L.imageOverlay(data.orthophoto,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
-  } else if (data.terrain) {
-    overlays['DEM · quote del terreno']=L.imageOverlay(data.terrain,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
+  if (data.orthophoto) overlays['Ortofotomosaico']=L.imageOverlay(data.orthophoto,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
+  else if (data.terrain) overlays['DEM · quote del terreno']=L.imageOverlay(data.terrain,data.bounds,{opacity:1,attribution:esc(data.survey_credit)}).addTo(inundationMap);
+  overlays[mapLayerLabel(layer)]=L.imageOverlay(layer.image,data.bounds).addTo(inundationMap);
+  L.control.layers(null,overlays,{collapsed:true}).addTo(inundationMap);
+  if (typeof L.control==='function' && L.DomUtil?.create) {
+    const badge=L.control({position:'topright'});
+    badge.onAdd=()=>{const node=L.DomUtil.create('div','map-time-badge');node.textContent=timing.badge;return node;};
+    badge.addTo(inundationMap);
   }
-  // Larger envelope underneath; P75 remains distinguishable where they overlap.
-  for (const layer of data.layers.slice().sort((a,b)=>b.percentile-a.percentile)) {
-    overlays[inundationExtentLabel(layer.percentile)]=L.imageOverlay(layer.image,data.bounds).addTo(inundationMap);
-  }
-  L.control.layers(null,overlays,{collapsed:false}).addTo(inundationMap);
   inundationMap.fitBounds(data.bounds,{padding:[12,12]});
 }
 
@@ -629,6 +680,7 @@ async function boot() {
     // Refresh the rolling display for tabs left open; never silently extend expired data.
     setInterval(renderRoute,5*60*1000);
     renderRoute();
+    if (location.hash==='#inundation-panel') requestAnimationFrame(()=>$('inundation-panel')?.scrollIntoView({block:'start'}));
   } catch (error) {
     $('notice').className='notice error';
     $('notice').textContent='Bollettino non disponibile. Il primo aggiornamento potrebbe non essere stato ancora pubblicato. Riprova più tardi.';

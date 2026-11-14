@@ -59,7 +59,7 @@ def limit_geometry(reached,valid,display,bounds,tolerance_m):
 
 
 def export_geojson(masks,*,valid,display,bounds,metadata,unit,slug,unit_id,tolerance_m=3.):
-    """Return separate area/line FeatureCollections with two percentile features.
+    """Return separate area/line collections for the mean and central upper end.
 
     An empty mask/front is a null geometry, explicitly marked, never an invented
     boundary at NoData or the grid edge. Source masks and heights are read-only.
@@ -78,8 +78,10 @@ def export_geojson(masks,*,valid,display,bounds,metadata,unit,slug,unit_id,toler
     area_features=[];line_features=[]
     for layer,reached in masks:
         mask=reached & display
-        properties=dict(common,percentile=layer['percentile'],twl_level_m=layer['level_m'],
-            peak_time_utc=layer['peak_time'],cells=layer['cells'])
+        properties=dict(common,estimate=layer['kind'],estimate_label=layer['label'],statistic=layer['statistic'],
+            percentile=layer['percentile'],twl_level_m=layer['level_m'],peak_time_utc=layer['peak_time'],
+            seed_condition=layer['seed_condition'],quality_note=layer['quality_note'],
+            peak_to_utc=layer['peak_to'],peak_windows_utc=layer['peak_windows'],cells=layer['cells'])
         area=area_geometry(mask,bounds)
         line,report=limit_geometry(reached,valid,display,bounds,float(tolerance_m))
         area_features.append(dict(type='Feature',properties=dict(properties,geometry_role='potential_area',

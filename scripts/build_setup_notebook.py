@@ -60,7 +60,7 @@ if INSTALLA_DIPENDENZE:
     import subprocess, sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "numpy>=1.24", "pandas>=2", "matplotlib>=3.7", "folium>=0.14", "pyproj>=3.6", "cdsapi>=0.7.7,<1", "netCDF4>=1.7,<2", "scipy>=1.11,<2", "copernicusmarine==2.4.1", "rasterio>=1.3,<2", "shapely>=2,<3", "ipywidgets>=8,<9"])
 print("Ambiente pronto.")''',form=True,tags=('install-dependencies',))
-modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','inundation_geojson.py','mapping_setup.py','geospatial_setup.py','gnss_setup.py','gnss_forms.py','structure_forms.py','structure_points.py','contour_preview.py','slope_sampling.py','sector_forms.py','terrain_background.py','demo_survey.py','ensemble.py','LICENSE-wave-climate.txt']
+modules=['__init__.py','site_setup.py','time_utils.py','era5_download.py','climate.py','exposure.py','extremes.py','sealevel_reference.py','site_package.py','sectors.py','inundation.py','inundation_geojson.py','inundation_kmz.py','mapping_setup.py','geospatial_setup.py','gnss_setup.py','gnss_forms.py','structure_forms.py','structure_points.py','contour_preview.py','slope_sampling.py','sector_forms.py','terrain_background.py','demo_survey.py','ensemble.py','LICENSE-wave-climate.txt']
 sources={'forecast_service/'+name:(ROOT/'forecast_service'/name).read_text() for name in modules}
 for reference_path in sorted(ROOT.glob('config/study_sites/*/sea_level_reference_*.json')):
     sources[str(reference_path.relative_to(ROOT))]=reference_path.read_text()

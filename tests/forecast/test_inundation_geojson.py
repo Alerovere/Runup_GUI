@@ -15,7 +15,7 @@ from test_sectors_and_maps import grid,NOW
 
 
 def bulletin():
-    rows=[dict(time=p.iso(NOW+timedelta(hours=i)),twl_p75_m=.5,twl_p95_m=1.,
+    rows=[dict(time=p.iso(NOW+timedelta(hours=i)),twl_mean_m=.4,twl_p75_m=.5,twl_p95_m=1.,
         statistics_method=p.STATISTICS_METHOD,hs_m=1.,direction_deg=90) for i in range(96)]
     return dict(mode='demo',processing_started_at='2026-11-11T08:42:17+02:00',generated_at='2026-11-11T06:43:00Z',display_hours=96),rows
 
@@ -57,7 +57,7 @@ class GeoJSONTests(unittest.TestCase):
     def test_export_has_both_estimates_issue_period_peak_datum_and_credits(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
-            rows[10]['twl_p95_m']=2.
+            rows[10]['twl_p75_m']=2.
             digest=hashlib.sha256((root/mapping['grid_file']).read_bytes()).hexdigest()
             result,assets=build_map(dict(name='Spiaggia',hourly=rows),b,mapping,root,'venezia','whole')
             export=result['geojson_export'];self.assertEqual(export['status'],'available')
@@ -66,7 +66,7 @@ class GeoJSONTests(unittest.TestCase):
                 self.assertIn('20261111T064217Z',file['filename'])
                 data=json.loads(assets[file['url'].removeprefix('data/')])
                 self.assertEqual(len(data['features']),2)
-                self.assertEqual([f['properties']['percentile'] for f in data['features']],[75,95])
+                self.assertEqual([f['properties']['percentile'] for f in data['features']],[None,75])
                 for feature,layer in zip(data['features'],result['layers']):
                     props=feature['properties']
                     self.assertEqual(props['issued_at_utc'],'2026-11-11T06:42:17+00:00')

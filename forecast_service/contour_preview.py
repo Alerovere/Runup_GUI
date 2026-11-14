@@ -2,7 +2,8 @@
 
 The connected wet mask remains the scientific/geometric result. This optional
 setup preview omits internal island outlines and simplifies the external
-wet/dry interface. It is not applied to published forecasts or impact metrics.
+wet/dry interface. The same display-only limits can be exported with forecasts;
+it never changes the connected mask, model statistics or impact metrics.
 """
 import hashlib
 import math
