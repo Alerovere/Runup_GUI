@@ -401,6 +401,8 @@ def write_bulletin(bulletin, csvs, output, *, root=ROOT):
         (output / filename).write_text(contents, encoding='utf-8')
     from forecast_service.inundation import write_maps
     write_maps(bulletin, output, root)
+    from forecast_service.infographic import write_cards
+    write_cards(bulletin, output, root)
     temp = output / 'forecast.json.tmp'
     temp.write_text(json.dumps(bulletin, ensure_ascii=False, allow_nan=False, separators=(',', ':')) + '\n', encoding='utf-8')
     temp.replace(output / 'forecast.json')

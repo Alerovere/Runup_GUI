@@ -231,7 +231,7 @@ test('Una piccola coda sopra quota non rende il bianco un falso “nessun modell
   const nodes={};context.document.getElementById=id=>(nodes[id]??={});
   context.structureLocation={thresholds:[fixedThreshold],wave_exposure:exposure};context.structureRows=[makeRow({twl_p95_m:1})];
   call('renderThresholds(structureLocation,structureRows)');
-  assert.match(nodes.thresholds.innerHTML,/impact-white/);assert.match(nodes.thresholds.innerHTML,/fascia delle stime non supera/);
+  assert.match(nodes.thresholds.innerHTML,/impact-white/);assert.match(nodes.thresholds.innerHTML,/Risultati isolati/);
   assert.doesNotMatch(nodes.thresholds.innerHTML,/Orari del possibile|nessun risultato|quota non è superata dai modelli/i);
 });
 
@@ -242,7 +242,7 @@ test('Le finestre richiedono P95 sopra quota e onde frontali, con separazione ai
   call('renderThresholds(structureLocation,structureRows)');
   assert.equal((nodes.thresholds.innerHTML.match(/<li>/g)||[]).length,3);
   assert.match(nodes.thresholds.innerHTML,/2,6%/);assert.match(nodes.thresholds.innerHTML,/class="asset-icon"/);
-  assert.match(nodes.thresholds.innerHTML,/impact-yellow/);assert.doesNotMatch(nodes.thresholds.innerHTML,/scenar|<table|<details/);
+  assert.match(nodes.thresholds.innerHTML,/impact-yellow/);assert.doesNotMatch(nodes.thresholds.innerHTML,/scenar|<table/);assert.match(nodes.thresholds.innerHTML,/<details class="structure-windows">/);
   context.structureRows=[makeRow({direction_deg:85})];call('renderThresholds(structureLocation,structureRows)');
   assert.match(nodes.thresholds.innerHTML,/impact-gray/);assert.doesNotMatch(nodes.thresholds.innerHTML,/<li>/);
 });
@@ -491,4 +491,213 @@ test('Il grafico interpola, ma conserva righe orarie, marea e picchi usati dai r
   assert.equal(nodes['surge-original-download'].hidden,false);
   assert.match(nodes['surge-original-download'].innerHTML,/site-surge-native/);
   delete context.window.Plotly;delete context.Plotly;
+});
+
+test('Due riquadri: TWL invariato, periodo associato al massimo Hs e date dei rispettivi picchi',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.compactRows=[
+    makeRow({time:'2026-11-26T08:00Z',hs_m:1,tp_s:14,twl_p95_m:2.4,water_level_m:.3}),
+    makeRow({time:'2026-11-26T09:00Z',hs_m:3.2,tp_s:7.1,twl_p95_m:2.1}),
+    makeRow({time:'2026-11-26T10:00Z',hs_m:2,tp_s:8,twl_p95_m:99,statistics_method:null})
+  ];
+  const before=JSON.stringify(context.compactRows);
+  call('renderMetrics({},compactRows)');
+  assert.equal(JSON.stringify(context.compactRows),before);
+  const html=nodes.metrics.innerHTML;
+  assert.equal((html.match(/class="metric"/g)||[]).length,2);
+  assert.match(html,/Massima altezza di ingressione delle onde sulla spiaggia/);
+  assert.match(html,/2,40 <small>m/); // TWL, not TWL minus sea level
+  assert.match(html,/3,20 <small>m/);assert.match(html,/7,1 <small>s/);
+  assert.doesNotMatch(html,/14,0|Modelli a confronto|Livello alto stimato/);
+  assert.match(html,/26 nov, 09:00/);assert.match(html,/26 nov, 10:00/);
+  assert.equal((html.match(/role="tooltip"/g)||[]).length,2);
+  assert.equal((html.match(/class="metric-note">[^<]+<\/div>/g)||[]).length,2);
+});
+
+test('Riquadri senza dati non inventano zero, periodo o data e le informazioni sono accessibili',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={parentElement:{},focus(){},blur(){}});
+  call('renderMetrics({},[])');
+  assert.match(nodes.metrics.innerHTML,/—/);assert.doesNotMatch(nodes.metrics.innerHTML,/Invalid Date|0,00/);
+  const button=nodes['metric-ingression-toggle'];
+  button.parentElement.onmouseenter();assert.equal(button.ariaExpanded,'true');
+  button.parentElement.onmouseleave();assert.equal(button.ariaExpanded,'false');
+  button.onclick();assert.equal(button.ariaExpanded,'true');
+  button.onkeydown({key:'Escape'});assert.equal(button.ariaExpanded,'false');
+  button.onfocus();assert.equal(button.ariaExpanded,'true');
+  button.onblur();assert.equal(button.ariaExpanded,'false');
+});
+
+test('Il selettore conserva le opzioni dei settori e rimuove la spiegazione richiesta',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={addEventListener(){}});
+  call("renderSectorSelector({sectors:{nord:{name:'Nord'},sud:{name:'Sud'}}},'sud')");
+  const html=nodes['sector-selection'].innerHTML;
+  assert.equal(nodes['sector-selection'].hidden,false);
+  assert.match(html,/Settore costiero/);assert.match(html,/value="sud" selected/);
+  assert.doesNotMatch(html,/Direzioni di esposizione|riferimento storico|<p/);
+});
+
+test('La tendenza sintetica usa icone e percentuali per struttura e sposta il metodo nella i',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.briefThresholds=[fixedThreshold,{id:'passeggiata-mare-abc',short_label:'Passeggiata mare',season:'all_year',elevation_m:1.8}];
+  context.briefLocation={thresholds:context.briefThresholds,wave_exposure:exposure};
+  context.briefRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:true,fraction:.2},{id:'passeggiata-mare-abc',active:true,fraction:0}]}),
+    makeRow({time:'2026-11-06T06:00Z',twl_p75_m:1.3,twl_p95_m:2,thresholds:[{id:fixedThreshold.id,active:true,fraction:.5},{id:'passeggiata-mare-abc',active:true,fraction:.1}]})];
+  call('bulletin={display_hours:96};renderDaily(briefLocation,briefRows)');
+  assert.equal(nodes['outlook-panel'].className,'panel outlook-panel impact-orange');
+  assert.match(nodes.outlook.innerHTML,/Possibile arrivo dell’acqua alle quote/);
+  assert.match(nodes.outlook.innerHTML,/fino al 50%/);assert.match(nodes.outlook.innerHTML,/fino al 10%/);
+  assert.equal((nodes.outlook.innerHTML.match(/class="asset-icon"/g)||[]).length,2);
+  assert.match(nodes.outlook.innerHTML,/width:50%/);assert.match(nodes.outlook.innerHTML,/Quando:/);
+  assert.doesNotMatch(nodes.outlook.innerHTML,/Le stime più alte|deviazioni standard|probabilità di allagamento|impact-legend/);
+  assert.match(nodes['outlook-info'].textContent,/non sono probabilità di allagamento/);
+  assert.match(nodes['outlook-info'].textContent,/P95|P75/);
+  assert.notEqual(call("impactIcon('passeggiata-mare-abc')"),call("impactIcon('chioschi-abc')"));
+});
+
+test('Le percentuali non sono sommate nel tempo e le ore non frontali o mancanti non diventano zero',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.briefLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.briefRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:true,fraction:.2}]}),makeRow({time:'2026-11-06T06:00Z',thresholds:[{id:fixedThreshold.id,active:true,fraction:.3}]}),makeRow({time:'2026-11-06T07:00Z',direction_deg:85,thresholds:[{id:fixedThreshold.id,active:true,fraction:1}]})];
+  call('bulletin={display_hours:96};renderDaily(briefLocation,briefRows)');
+  assert.match(nodes.outlook.innerHTML,/fino al 30%/);assert.doesNotMatch(nodes.outlook.innerHTML,/width:50%|width:100%/);
+  context.briefRows=[makeRow({direction_deg:85})];call('renderDaily(briefLocation,briefRows)');
+  assert.equal(nodes['outlook-panel'].className,'panel outlook-panel impact-gray');
+  assert.match(nodes.outlook.innerHTML,/Non valutato/);assert.doesNotMatch(nodes.outlook.innerHTML,/outlook-colorbar|0%/);
+  context.briefRows=[makeRow({n_estimates:0})];call('renderDaily(briefLocation,briefRows)');
+  assert.match(nodes.outlook.innerHTML,/Non valutato/);assert.doesNotMatch(nodes.outlook.innerHTML,/outlook-colorbar|Quando:/);
+});
+
+test('Le code isolate bianche restano visibili, senza affermare assenza di superamenti',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.briefLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.briefRows=[makeRow({twl_p95_m:1,thresholds:[{id:fixedThreshold.id,active:true,fraction:.02}]})];
+  call('bulletin={display_hours:96};renderDaily(briefLocation,briefRows)');
+  assert.equal(nodes['outlook-panel'].className,'panel outlook-panel impact-white');
+  assert.match(nodes.outlook.innerHTML,/Risultati isolati/);assert.match(nodes.outlook.innerHTML,/fino al 2%/);
+  assert.doesNotMatch(nodes.outlook.innerHTML,/Nessun calcolo supera/);
+  call('renderDaily({thresholds:[],wave_exposure:briefLocation.wave_exposure},briefRows)');
+  assert.match(nodes.outlook.innerHTML,/Nessuna struttura configurata/);
+});
+
+
+test('Le percentuali massime hanno articoli italiani corretti e non arrotondano le code a zero',()=>{
+  assert.equal(call('maximumPercentage(.01)'),'fino all’1%');
+  assert.equal(call('maximumPercentage(.08)'),'fino all’8%');
+  assert.equal(call('maximumPercentage(.4)'),'fino al 40%');
+  assert.equal(call('maximumPercentage(.0001)'),'meno dello 0,1%');
+  assert.equal(call('maximumPercentage(.9999)'),'oltre il 99,9%');
+});
+
+test('Riepiloghi giornalieri compatti: quota comune, massimo giornaliero e orario associato',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.dayLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.dayRows=[makeRow({time:'2026-11-26T08:00Z',thresholds:[{id:fixedThreshold.id,active:true,fraction:.2}]}),makeRow({time:'2026-11-26T09:00Z',thresholds:[{id:fixedThreshold.id,active:true,fraction:.4}]}),makeRow({time:'2026-11-26T10:00Z',direction_deg:85,thresholds:[{id:fixedThreshold.id,active:true,fraction:.9}]})];
+  call('bulletin={display_hours:96};renderDaily(dayLocation,dayRows)');
+  assert.match(nodes.daily.innerHTML,/fino al 40%/);assert.match(nodes.daily.innerHTML,/Ore 10:00/);
+  assert.match(nodes.daily.innerHTML,/compact-day impact-yellow/);assert.match(nodes.daily.innerHTML,/Giornata parziale/);
+  assert.doesNotMatch(nodes.daily.innerHTML,/90%|Le stime più alte|Livello alto stimato|direction-day|Ogni calcolo/);
+  assert.match(nodes['daily-reference'].textContent,/Chioschi e strutture fisse · quota 1,10 m/);
+  assert.match(nodes['daily-info'].textContent,/Non è una probabilità di allagamento/);
+});
+
+test('Le 96 ore possono coprire cinque date e i giorni completi non sono marcati parziali',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.dayLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.dayRows=Array.from({length:96},(_,i)=>makeRow({time:new Date(Date.UTC(2026,10,26,9)+i*3600000).toISOString()}));
+  call('bulletin={display_hours:96};renderDaily(dayLocation,dayRows)');
+  assert.equal((nodes.daily.innerHTML.match(/class="day-card/g)||[]).length,5);
+  assert.equal((nodes.daily.innerHTML.match(/Giornata parziale/g)||[]).length,2);
+  // Full Italian spring DST day has 23 samples and must not look incomplete.
+  context.dayRows=Array.from({length:23},(_,i)=>makeRow({time:new Date(Date.UTC(2026,2,28,23)+i*3600000).toISOString()}));
+  call('renderDaily(dayLocation,dayRows)');
+  assert.equal((nodes.daily.innerHTML.match(/class="day-card/g)||[]).length,1);
+  assert.doesNotMatch(nodes.daily.innerHTML,/Giornata parziale/);
+});
+
+test('Un giorno non valutabile non mostra zero e un giorno senza superamenti non inventa un picco',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.dayLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.dayRows=[makeRow({direction_deg:85})];
+  call('bulletin={display_hours:96};renderDaily(dayLocation,dayRows)');
+  assert.match(nodes.daily.innerHTML,/impact-gray/);assert.match(nodes.daily.innerHTML,/Onde da altre direzioni/);
+  assert.doesNotMatch(nodes.daily.innerHTML,/0%|day-mini-bar|Ore /);
+  context.dayRows=[makeRow({thresholds:[{id:fixedThreshold.id,active:true,fraction:0}],twl_p95_m:1})];
+  call('renderDaily(dayLocation,dayRows)');
+  assert.match(nodes.daily.innerHTML,/0%/);assert.match(nodes.daily.innerHTML,/Nessun superamento/);assert.doesNotMatch(nodes.daily.innerHTML,/Ore /);
+  call('renderDaily(dayLocation,[])');assert.equal(nodes['daily-summary'].hidden,true);
+});
+
+test('Le fasce TWL usano i colori orari, con grigio distinto dai confronti mancanti',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={style:{}});
+  const plots={};context.Plotly={react:(id,traces)=>plots[id]=traces};context.window.Plotly=context.Plotly;
+  context.shadeLocation={thresholds:[fixedThreshold],wave_exposure:exposure,sea_level_source:{mode:'constant_msl',offset_m:0}};
+  context.shadeRows=[makeRow({twl_p95_m:1}),makeRow({twl_p95_m:1.3}),makeRow({twl_p75_m:1.3,twl_p95_m:1.5}),makeRow({direction_deg:85}),makeRow({direction_deg:null})].map((r,i)=>({...r,time:new Date(Date.UTC(2026,10,26,i)).toISOString()}));
+  const before=JSON.stringify(context.shadeRows);
+  call("bulletin={mode:'meteocean'};renderCharts(shadeLocation,shadeRows)");
+  const bands=plots['twl-chart'].filter(t=>t.fill==='toself');
+  assert.deepEqual(new Set(bands.filter(t=>t.showlegend).map(t=>t.name)),new Set(['Bianco','Giallo','Arancione','Grigio · onde da altre direzioni','Confronto non disponibile']));
+  assert.equal(JSON.stringify(context.shadeRows),before);
+  const white=bands.find(t=>t.name==='Bianco');assert.equal(white.fillcolor,'rgba(255,255,255,.50)');assert.ok(white.line.width>0);
+  const missing=bands.find(t=>t.name==='Confronto non disponibile');assert.equal(missing.line.dash,'dot');
+  const gray=bands.filter(t=>t.name.startsWith('Grigio'));
+  assert.equal(Math.min(...gray.flatMap(t=>Array.from(t.x))),Date.UTC(2026,10,26,2,30));
+  assert.equal(Math.max(...gray.flatMap(t=>Array.from(t.x))),Date.UTC(2026,10,26,3,30));
+  assert.match(nodes['twl-color-reference'].textContent,/Chioschi e strutture fisse/);
+  assert.match(nodes['twl-color-reference'].textContent,/non sono ricalcolati/);
+  delete context.window.Plotly;delete context.Plotly;
+});
+
+test('Le fasce colorate non attraversano campioni mancanti o modificano la media',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={style:{}});
+  const plots={};context.Plotly={react:(id,traces)=>plots[id]=traces};context.window.Plotly=context.Plotly;
+  context.shadeRows=[0,1,2,3,4].map(i=>makeRow({time:new Date(Date.UTC(2026,10,26,i)).toISOString(),statistics_method:i===2?null:'sigma_clip_3_population_v1'}));
+  call("bulletin={mode:'meteocean'};renderCharts(shadeLocation,shadeRows)");
+  const traces=plots['twl-chart'];
+  for(const t of traces.filter(t=>t.fill==='toself')) {
+    assert.ok(Math.max(...t.x)<=Date.UTC(2026,10,26,1) || Math.min(...t.x)>=Date.UTC(2026,10,26,3));
+  }
+  const mean=traces.find(t=>t.name==='Media dei calcoli');
+  assert.equal(mean.y[12],null);assert.equal(mean.y[0],.7);assert.equal(mean.y.at(-1),.7);
+  delete context.window.Plotly;delete context.Plotly;
+});
+
+test('I grafici richiudibili vengono ridimensionati quando si apre la sezione',()=>{
+  const nodes={};context.document.getElementById=id=>id==='extreme-chart'?null:(nodes[id]??={open:false});
+  const resized=[];context.Plotly={Plots:{resize:node=>resized.push(node)}};context.window.Plotly=context.Plotly;
+  call("bindChartDisclosure('waves-disclosure','wave-chart');bindChartDisclosure('extremes-disclosure','extreme-chart')");
+  nodes['waves-disclosure'].ontoggle();assert.equal(resized.length,0);
+  nodes['waves-disclosure'].open=true;nodes['waves-disclosure'].ontoggle();assert.equal(resized.length,1);assert.equal(resized[0],nodes['wave-chart']);
+  nodes['extremes-disclosure'].open=true;nodes['extremes-disclosure'].ontoggle();assert.equal(resized.length,1);
+  delete context.window.Plotly;delete context.Plotly;
+});
+
+test('La direzione a 16 settori usa la provenienza della stessa ora del massimo Hs',()=>{
+  for(const [deg,expected] of [[0,'N'],[359,'N'],[22.5,'NNE'],[180,'S'],[202.5,'SSW'],[225,'SW'],[292.5,'WNW'],[360,'N'],[-157.5,'SSW']]) assert.equal(call(`compass16(${deg})`),expected);
+  assert.equal(call('compass16(null)'),'—');
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.directionMetricRows=[makeRow({hs_m:1,tp_s:15,direction_deg:270}),makeRow({time:'2026-11-26T10:00Z',hs_m:3,tp_s:7,direction_deg:202.5})];
+  call('renderMetrics({},directionMetricRows)');
+  assert.match(nodes.metrics.innerHTML,/3,00 <small>m/);assert.match(nodes.metrics.innerHTML,/7,0 <small>s/);assert.match(nodes.metrics.innerHTML,/da SSW/);assert.doesNotMatch(nodes.metrics.innerHTML,/da W|15,0/);
+});
+
+test('Gli orari aggiuntivi restano apribili nella tendenza senza collegamenti alla sezione eliminata',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={});
+  context.intervalLocation={thresholds:[fixedThreshold],wave_exposure:exposure};
+  context.intervalRows=Array.from({length:5},(_,i)=>makeRow({time:new Date(Date.UTC(2026,10,26,i)).toISOString(),twl_p95_m:i%2?1:1.5,thresholds:[{id:fixedThreshold.id,active:true,fraction:i%2?0:.2}]}));
+  call('bulletin={display_hours:96};renderDaily(intervalLocation,intervalRows)');
+  assert.match(nodes.outlook.innerHTML,/<details class="outlook-windows">/);assert.match(nodes.outlook.innerHTML,/Tutti gli orari \(3\)/);
+  assert.equal((nodes.outlook.innerHTML.match(/<li>/g)||[]).length,3);
+  assert.doesNotMatch(nodes.outlook.innerHTML,/href="#thresholds"|<details class="outlook-windows" open/);
+});
+
+test('Il download social usa solo il settore e l’elaborazione correnti, con formato 4:5',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={removeAttribute(name){delete this[name];}});
+  call("bulletin={generated_at:'2026-11-26T06:40:00Z',display_from:'2026-11-26T06:00:00Z',display_to:'2026-11-30T06:00:00Z'}");
+  context.socialLocation={social_card:{status:'available',width:1080,height:1350,generated_at:'2026-11-26T06:40:00Z',period_from:'2026-11-26T06:00:00Z',period_to:'2026-11-30T06:00:00Z',url:'data/social/borghetto--2-20261126T064000Z.png',filename:'borghetto--2-20261126T064000Z.png'}};
+  call('renderSocialDownload(socialLocation)');
+  assert.equal(nodes['social-download'].hidden,false);assert.match(nodes['social-download'].href,/borghetto--2/);assert.equal(nodes['social-status'].hidden,true);
+  for(const extra of [{generated_at:'2026-11-25T06:40Z'},{url:'https://example.com/card.png'},{height:1080},{period_to:'2026-12-01T06:00Z'}]) {
+    context.invalidSocial={social_card:{...context.socialLocation.social_card,...extra}};call('renderSocialDownload(invalidSocial)');assert.equal(nodes['social-download'].hidden,true);assert.equal(nodes['social-download'].href,undefined);
+  }
+  call('renderSocialDownload({})');assert.equal(nodes['social-download'].hidden,true);assert.match(nodes['social-status'].textContent,/non disponibile/);
 });

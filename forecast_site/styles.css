@@ -10,6 +10,8 @@
 .experimental-disclaimer .warning-label{display:flex;align-items:center;gap:8px}
 .experimental-disclaimer .warning-icon{display:block;flex-shrink:0}
 .experimental-disclaimer h2{font-size:19px;line-height:1.4;letter-spacing:-.3px;margin-bottom:10px}
+.experimental-disclaimer .disclaimer-details summary{cursor:pointer;font-size:13px;font-weight:600;padding:4px 0}
+.experimental-disclaimer .disclaimer-details[open] summary{margin-bottom:8px}
 .experimental-disclaimer p:last-child{font-size:13px;line-height:1.8;margin:0;max-width:1100px}
 .funding{display:grid;grid-template-columns:minmax(250px,370px) minmax(0,1fr);align-items:center;gap:36px;margin:0 0 30px;padding:30px;border:1px solid var(--line);border-radius:14px;background:#fff}
 .funding-identity a{display:block}
@@ -93,3 +95,77 @@
 .map-reading[open] summary {margin-bottom:.75rem}
 .map-downloads {display:flex;flex-wrap:wrap;gap:.65rem;margin:1rem 0}
 .map-downloads a {display:inline-block;padding:.65rem .85rem;border:1px solid #bacfcf;border-radius:7px;text-decoration:none;font-size:.85rem;background:#f4f9f8;min-height:44px}
+
+/* Compact local metrics; help is available by hover, keyboard focus or tap. */
+.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+.metric-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.metric-info{position:relative;flex:none;display:inline-flex;z-index:2}
+.metric-info:has([aria-expanded="true"]){z-index:3}
+.metric-info-toggle{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:1px solid #9dafa6;border-radius:50%;background:transparent;color:var(--muted);font:600 13px Georgia,serif;cursor:pointer}
+.metric-tooltip{position:absolute;top:100%;right:0;width:min(310px,calc(100vw - 66px));padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);box-shadow:0 6px 22px #153e4124;font-size:12px;line-height:1.6;visibility:hidden;opacity:0;pointer-events:none}
+.metric-info-toggle[aria-expanded="true"]+.metric-tooltip{visibility:visible;opacity:1;pointer-events:auto}
+.metric-value small{font-size:.5em;font-weight:500;letter-spacing:0}
+.metric-period{white-space:nowrap}
+@media(max-width:600px){.metrics{grid-template-columns:1fr}.metric-header{grid-column:1/-1}.metric .metric-note{grid-column:1/-1}}
+
+/* Four-day outlook: concise asset comparisons; method details stay in the help. */
+.outlook-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+.outlook-tooltip{width:min(390px,calc(100vw - 70px));max-height:65vh;overflow:auto;white-space:normal}
+.outlook-panel .outlook-summary{font-size:18px;line-height:1.5;margin:16px 0 20px;max-width:900px}
+.outlook-assets{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:14px}
+.outlook-asset{background:#ffffffb8;border:1px solid var(--impact-border);border-radius:10px;padding:17px 18px}
+.outlook-asset-name{display:flex;gap:12px;align-items:center}
+.outlook-asset-name>div{flex:1;min-width:0}.outlook-asset-name strong{display:block;font-size:15px}.outlook-asset-name div>span{display:block;font-size:11px;color:var(--muted)}
+.outlook-asset-name>.impact-badge{font-size:9px;padding:3px 7px;white-space:nowrap}
+.outlook-panel .outlook-asset-status{font-size:12px;line-height:1.5;margin:13px 0}
+.outlook-percentage{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12px}
+.outlook-percentage strong{white-space:nowrap;font-size:22px;line-height:1.3;font-family:Manrope,Arial,sans-serif}
+.outlook-colorbar{height:12px;border:1px solid #b8c5bf;border-radius:5px;background:#e8eeeb;overflow:hidden;margin-top:5px}
+.outlook-colorbar>span{display:block;height:100%;background:var(--impact-solid);width:0}
+.outlook-bar-scale{display:flex;justify-content:space-between;font-size:9px;color:var(--muted);margin-top:3px}
+.outlook-panel .outlook-asset-time{font-size:11px;line-height:1.6;margin:12px 0 0}
+.outlook-panel .outlook-direction{margin:18px 0 0;font-size:12px}.outlook-direction .direction-badge{white-space:normal}
+.outlook-panel .outlook-coverage{font-size:11px;margin:9px 0 0;font-weight:600}
+@media(max-width:600px){.outlook-heading{gap:12px}.outlook-panel .outlook-summary{font-size:16px}.outlook-asset{padding:15px 13px}.outlook-asset-name{gap:9px}.outlook-asset-name>.impact-badge{font-size:8px}.outlook-tooltip{width:calc(100vw - 72px)}}
+
+/* Compact daily strip directly below the four-day outlook. */
+.daily-summary{margin:-4px 0 26px}
+.daily-summary-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:11px}
+.daily-summary-heading h3{font-size:15px;margin:0 0 3px}.daily-summary-heading p{font-size:11px;color:var(--muted);margin:0}
+#detail .daily-grid.daily-compact,.daily-grid.daily-compact{grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:10px;margin:0}
+.day-card.impact-day.compact-day{padding:13px 14px;border-top-width:3px;min-width:0}
+.compact-day .day-heading{gap:5px;margin-bottom:9px;align-items:center;flex-wrap:nowrap}
+.compact-day .day-heading h3{font-size:12px;margin:0;white-space:nowrap}.compact-day .day-heading .impact-badge{font-size:8px;padding:2px 6px}
+.compact-day .day-percentage{font-family:Manrope,Arial,sans-serif;font-size:21px;font-weight:650;line-height:1.3;white-space:nowrap}
+.compact-day .day-caption{font-size:10px;line-height:1.4;margin:2px 0 8px}
+.day-mini-bar{height:5px;border-radius:3px;background:#123f4112;overflow:hidden}.day-mini-bar span{height:100%;display:block;background:var(--impact-solid)}
+.compact-day .day-peak-time{font-size:11px;line-height:1.4;margin:8px 0 0}
+.compact-day .day-note{font-size:9px;color:var(--muted);line-height:1.4;margin:7px 0 0}
+@media(max-width:600px){#detail .daily-grid.daily-compact,.daily-grid.daily-compact{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.day-card.impact-day.compact-day{padding:11px 10px}.compact-day .day-heading h3{font-size:11px}.compact-day .day-heading .impact-badge{font-size:7px;padding:2px 4px}.compact-day .day-percentage{font-size:19px}}
+
+
+/* Technical explanations for the TWL graph, shared with the existing info controls. */
+.twl-tooltip{width:min(400px,calc(100vw - 72px));max-height:65vh;overflow:auto;white-space:normal}
+.twl-help-paragraph{display:block;margin-bottom:10px}.twl-help-paragraph:last-child{margin-bottom:0}
+
+
+/* Wave and historical diagnostics are collapsed until requested. */
+.forecast-disclosure>summary{display:flex;align-items:center;justify-content:space-between;gap:16px;cursor:pointer;list-style:none}
+.forecast-disclosure>summary::-webkit-details-marker{display:none}
+.forecast-disclosure>summary h2{font-size:25px;margin:0}
+.disclosure-indicator{flex:none;font-size:24px;line-height:1;color:var(--muted)}
+.disclosure-indicator::before{content:'+'}.forecast-disclosure[open]>summary .disclosure-indicator::before{content:'−'}
+.forecast-disclosure>.disclosure-content{padding-top:18px}
+@media(max-width:600px){.forecast-disclosure>summary h2{font-size:20px}}
+
+.metric-direction{display:inline-block;font-size:17px;font-weight:600;letter-spacing:0;white-space:nowrap}
+.outlook-windows{font-size:11px;margin-top:10px}.outlook-windows>summary{cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.outlook-windows ul{padding:0;list-style:none;margin:10px 0 0}.outlook-windows li{display:flex;justify-content:space-between;gap:12px;padding:5px 0;border-top:1px solid var(--impact-border)}
+@media(max-width:600px){.metric-direction{font-size:15px}.outlook-windows li{display:block}}
+
+
+/* The shareable card belongs to the selected coastal sector and forecast cycle. */
+.detail-actions{flex:none;display:grid;justify-items:end;gap:8px;max-width:310px}
+.detail-actions .button{margin-top:0}.detail-actions .social-download{background:#fff;color:var(--ink);border:1px solid #9dafa6}
+.detail-actions #social-status{font-size:10px;text-align:right;max-width:230px}
+@media(max-width:600px){.detail-actions{justify-items:start;margin-top:12px}.detail-actions #social-status{text-align:left}}
