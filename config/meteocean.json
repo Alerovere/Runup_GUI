@@ -9,6 +9,7 @@
   "peak_period_unit": "s",
   "direction_convention": "WW3 nautical, from north clockwise",
   "surge_unit": "m",
+  "surge_smoothing_hours": 6,
   "surge_components": "meteorological_only",
   "surge_reference": "anomaly_about_mean_sea_level",
   "locations": {

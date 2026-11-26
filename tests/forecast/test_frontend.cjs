@@ -277,8 +277,8 @@ test('Onde, provenienza e livello marino conservano date e valori originali',()=
   const wave=plots['wave-chart'],away=wave.traces.find(t=>t.name==='Onde da altre direzioni'),toward=wave.traces.find(t=>t.name==='Onde verso la costa');
   const sea=wave.traces.find(t=>t.name==='Marea + Storm surge'),tp=wave.traces.find(t=>t.name==='Tempo tra le onde (Tp)');
   assert.equal(away.y[0],85);assert.equal(away.y[1],null);assert.equal(toward.y[1],180);assert.equal(toward.y[2],null);
-  assert.deepEqual(Array.from(sea.y),[.15,.15,.15]);assert.equal(sea.x,wave.traces[0].x);assert.equal(wave.layout.xaxis.anchor,'y4');
-  assert.deepEqual(Array.from(tp.y),[5,8,null]);assert.equal(tp.line.shape,'spline');assert.equal(tp.connectgaps,false);
+  assert.deepEqual(Array.from(sea.y),[.15,.15,.15]);assert.deepEqual(Array.from(sea.x),Array.from(wave.traces[0].x));assert.equal(wave.layout.xaxis.anchor,'y4');
+  assert.deepEqual(Array.from(tp.y),[5,8,null]);assert.equal(tp.line.shape,'linear');assert.equal(tp.connectgaps,false);
   assert.match(nodes['wave-series-key'].innerHTML,/5 ore su 100/);assert.doesNotMatch(nodes['wave-series-key'].innerHTML,/percentile/);
   assert.equal(wave.traces.find(t=>t.name.startsWith('Onde alte')).y[0],2);assert.equal(wave.traces.find(t=>t.name.startsWith('Onde molto alte')).y[0],3);
   delete context.window.Plotly;delete context.Plotly;
@@ -326,7 +326,7 @@ test('Marea e surge sono separati con scala comune, somma e campioni mancanti co
   const surge=graph.traces.find(t=>t.name==='Storm surge MeteOcean');
   const sum=graph.traces.find(t=>t.name==='Marea + Storm surge');
   assert.equal(tide.yaxis,'y4');assert.equal(surge.yaxis,'y5');assert.equal(sum.yaxis,'y6');
-  assert.equal(tide.x,surge.x);assert.equal(surge.x,sum.x);assert.equal(graph.layout.xaxis.anchor,'y6');
+  assert.deepEqual(Array.from(tide.x),Array.from(surge.x));assert.deepEqual(Array.from(surge.x),Array.from(sum.x));assert.equal(graph.layout.xaxis.anchor,'y6');
   assert.deepEqual(Array.from(tide.y),[-.2,.3]);assert.deepEqual(Array.from(surge.y),[.1,null]);assert.deepEqual(Array.from(sum.y),[-.1,null]);
   assert.equal(surge.connectgaps,false);assert.equal(sum.connectgaps,false);
   assert.deepEqual(Array.from(graph.layout.yaxis4.range),Array.from(graph.layout.yaxis5.range));
@@ -446,4 +446,49 @@ test('Una struttura solo estiva fuori stagione non viene descritta come dato man
   context.inactiveRows=[{time:'2026-11-11T06:00Z',hs_m:1,direction_deg:90,n_estimates:10,statistics_method:'sigma_clip_3_population_v1',twl_p75_m:1,twl_p95_m:2,thresholds:[{id:'ombrelloni',active:false,fraction:1}]}];
   assert.match(call('assessTrend(seasonalArea,inactiveRows).title'),/fuori dal periodo/);
   assert.match(call('modelAgreement(assessTrend(seasonalArea,inactiveRows))'),/fuori stagione/);
+});
+
+test('PCHIP conserva campioni, limiti locali, vuoti e interruzioni fra ore mancanti',()=>{
+  context.pchipX=[0,3600000,7200000,10800000,14400000];
+  context.pchipY=[0,2,1,3,0];
+  const result=call('pchipSeries(pchipX,pchipY)');
+  for(let i=0;i<5;i++) assert.equal(result.y[i*6],context.pchipY[i]);
+  for(let i=0;i<4;i++) for(let j=i*6;j<=(i+1)*6;j++) {
+    assert.ok(result.y[j]>=Math.min(context.pchipY[i],context.pchipY[i+1]));
+    assert.ok(result.y[j]<=Math.max(context.pchipY[i],context.pchipY[i+1]));
+  }
+  const gap=call('pchipSeries([0,3600000,7200000,18000000,21600000],[1,null,3,4,5])');
+  assert.equal(gap.y[6],null);
+  assert.ok(Array.from(gap.y).slice(1,12).every(v=>v===null));
+  assert.equal(gap.y[13],null); // explicit separator so Plotly cannot bridge the missing hours
+  assert.equal(gap.x[14],18000000);
+  assert.equal(call('pchipSeries([],[]).x.length'),0);
+  assert.equal(call('pchipSeries([0],[.3]).y[0]'),.3);
+});
+
+test('Le fasce restano ordinate anche se PCHIP indipendenti si incrociano',()=>{
+  context.bandX=[0,3600000,7200000,10800000];
+  context.bandValues=[[0,0,1,1],[.01,1,1.01,1.01],[.02,1.001,1.02,1.02],[.03,1.002,1.03,1.03]];
+  const result=call('smoothBands(bandValues.map(y=>({x:bandX,y,line:{}})),bandX)');
+  for(let i=0;i<result[0].x.length;i++) for(let k=1;k<4;k++) assert.ok(result[k].y[i]>=result[k-1].y[i]);
+  for(let k=0;k<4;k++) for(let i=0;i<4;i++) assert.equal(result[k].y[i*6],context.bandValues[k][i]);
+});
+
+test('Il grafico interpola, ma conserva righe orarie, marea e picchi usati dai riepiloghi',()=>{
+  const nodes={};context.document.getElementById=id=>(nodes[id]??={style:{}});
+  const plots={};context.Plotly={react:(id,traces,layout)=>plots[id]={traces,layout}};context.window.Plotly=context.Plotly;
+  context.smoothLocation={thresholds:[],wave_exposure:exposure,source:{surge_native_csv:'data/site-surge-native.csv'},sea_level_source:{mode:'noaa_tide_meteocean_surge',surge_processing:{window_hours:6}}};
+  context.smoothRows=[0,1,2,3].map((i)=>makeRow({time:new Date(Date.UTC(2026,10,9,i)).toISOString(),tide_m:[0,.2,-.1,0][i],surge_m:.1,surge_raw_m:.3,water_level_m:[.1,.3,0,.1][i],twl_mean_m:[.5,.8,.3,.5][i]}));
+  const before=JSON.stringify(context.smoothRows);
+  call("bulletin={mode:'meteocean'};renderCharts(smoothLocation,smoothRows)");
+  assert.equal(JSON.stringify(context.smoothRows),before);
+  const mean=plots['twl-chart'].traces.find(t=>t.name==='Media dei calcoli');
+  const tide=plots['wave-chart'].traces.find(t=>t.name==='Marea astronomica NOAA');
+  assert.equal(mean.x.length,19);assert.equal(Math.max(...mean.y),.8);
+  for(let i=0;i<4;i++) assert.equal(tide.y[i*6],context.smoothRows[i].tide_m);
+  assert.match(mean.hovertemplate,/customdata/);
+  assert.match(plots['wave-chart'].layout.annotations.map(a=>a.text).join(' '),/Media mobile 6 ore/);
+  assert.equal(nodes['surge-original-download'].hidden,false);
+  assert.match(nodes['surge-original-download'].innerHTML,/site-surge-native/);
+  delete context.window.Plotly;delete context.Plotly;
 });

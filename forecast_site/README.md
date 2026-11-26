@@ -105,3 +105,12 @@ Configurazione corrente MeteOcean + sola marea NOAA e ripristino Copernicus: [ME
 ## Settori, DEM e ortofotomosaici (opzionali)
 
 Il notebook di setup permette di assegnare i transetti a settori di spiaggia e aggiungere cartografia con crediti del rilievo. Senza queste opzioni i siti esistenti restano rappresentati come prima. Vedi [SETTORI_E_MAPPE.md](SETTORI_E_MAPPE.md) per configurazione, raccordo verticale, importazione e significato delle mappe della media e del limite superiore della fascia centrale nelle 96 ore, orari rappresentati e download GeoJSON/KMZ.
+
+
+### Surge filtrato e curve (26 novembre 2026)
+
+Con MeteOcean il TWL usa una media mobile **centrata di 6 ore**, pesata sul tempo dei campioni nativi ogni 30 minuti. La marea NOAA resta invariata. Ai bordi si riduce la finestra ai dati disponibili e si rinormalizza; non si estrapola né si coprono lacune. `config/meteocean.json: surge_smoothing_hours` controlla la finestra (0 disattiva il filtro; massimo 24 ore). Il filtro modifica TWL, confronti, categorie e mappe, senza modificare i modelli empirici o il campionamento delle pendenze. Copernicus resta disponibile e non riceve questo filtro.
+
+I CSV dei calcoli mantengono `surge_raw_m`, `surge_m`, `surge_filter_support_hours` e `water_level_raw_m` (marea + surge originale). `data/<località>-surge-native.csv` conserva tutti i campioni nativi originali e filtrati ed è linkato sotto i grafici; `source.surge_processing` documenta metodo, finestra e bordi. I timestamp sono UTC. I file sorgenti sono identificati dai loro SHA-256 già presenti nei metadati.
+
+PCHIP serve soltanto a disegnare curve temporali fra i campioni orari (punti ogni 10 minuti, distinti nel tooltip). Conserva i valori orari, non estrapola, non aggiunge estremi fra due campioni e non copre dati mancanti. Le direzioni restano marcatori orari senza interpolazione angolare. I bordi delle fasce restano ordinati: se PCHIP li incrocia, nell’intervallo si usa l’interpolazione lineare. Statistiche, riepiloghi e mappe non usano i punti interpolati. Nessuna nuova dipendenza.

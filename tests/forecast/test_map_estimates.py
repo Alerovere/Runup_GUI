@@ -6,6 +6,7 @@ import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
+from unittest.mock import patch
 
 from forecast_service import pipeline as p
 from forecast_service.inundation import build_map
@@ -14,6 +15,26 @@ from test_inundation_geojson import bulletin
 
 
 class MapEstimateTests(unittest.TestCase):
+    def test_map_peaks_use_filtered_surge_not_raw_values_or_visual_interpolation(self):
+        from forecast_service.meteocean import filter_surge
+        native=[{'time':NOW+timedelta(minutes=30*i),'surge_m':2. if i==40 else .1} for i in range(205)]
+        filtered,_=filter_surge(native)
+        waves=[]
+        for i in range(96):
+            s=filtered[2*i]
+            waves.append(dict(s,time=p.iso(s['time']),hs_m=1,tp_s=8,direction_deg=90,
+                              tide_m=.2,water_level_m=.2+s['surge_m']))
+        with patch.object(p,'compute_runup',return_value={'Stockdon et al. (2006)':.4}):
+            rows,_=p.summarize_records(waves,{'slopes':[.05],'roughness_m':.001},[],{},0)
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);mapping,_=grid(root);b,_=bulletin()
+            data,_=build_map(dict(name='Spiaggia',hourly=rows),b,mapping,root,'venezia','whole')
+        expected=max(r['twl_mean_m'] for r in rows)
+        for layer in data['layers']:
+            self.assertAlmostEqual(layer['level_m'],expected)
+            self.assertLess(layer['level_m'],1.)
+            self.assertNotEqual(layer['level_m'],2.6) # raw spike + tide + runup
+
     def test_mean_is_mean_across_models_at_its_peak_not_time_average(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()

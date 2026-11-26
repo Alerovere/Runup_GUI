@@ -6,7 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from forecast_service import pipeline
-from forecast_service.meteocean import parse_waves,parse_surge,fetch_meteocean
+from forecast_service.meteocean import parse_waves,parse_surge,fetch_meteocean,filter_surge
 
 UTC=timezone.utc
 NOW=datetime(2026,11,9,0,tzinfo=UTC)
@@ -51,8 +51,9 @@ class MeteOceanTests(unittest.TestCase):
         calls=[]
         def fetch(settings,slug,start,hours,minimum_hours):
             calls.append((slug,start))
-            waves=[{'time':pipeline.iso(start+timedelta(hours=i)),'hs_m':1,'tp_s':8,'direction_deg':135,'surge_m':.1} for i in range(96)]
-            return waves,{'selected_point':None,'surge':{'url':'test'}}
+            waves=[{'time':pipeline.iso(start+timedelta(hours=i)),'hs_m':1,'tp_s':8,'direction_deg':135,'surge_m':.1,'surge_raw_m':.35,'surge_filter_support_hours':6} for i in range(96)]
+            native=[{'time':pipeline.iso(start+timedelta(minutes=30*i)),'surge_m':.1,'surge_raw_m':.35,'surge_filter_support_hours':6} for i in range(192)]
+            return waves,{'selected_point':None,'surge':{'url':'test'},'surge_processing':{'window_hours':6},'surge_native_rows':native}
         def tides(grid,start,hours,now):
             return {slug:[{'time':pipeline.iso(start+timedelta(hours=i)),'tide_m':.2} for i in range(hours)] for slug in grid['locations']},{'provider':'NOAA','cycle_utc':pipeline.iso(start-timedelta(hours=6))}
         with patch('forecast_service.meteocean.fetch_meteocean',side_effect=fetch),patch.object(pipeline,'compute_runup',return_value={'Stockdon et al. (2006)':.8}):
@@ -68,6 +69,14 @@ class MeteOceanTests(unittest.TestCase):
         for loc in bulletin['locations'].values():
             self.assertAlmostEqual(loc['hourly'][0]['water_level_m'],.3)
             self.assertAlmostEqual(loc['hourly'][0]['twl_mean_m'],1.1)
+            self.assertAlmostEqual(loc['hourly'][0]['water_level_raw_m'],.55)
+            self.assertEqual(loc['hourly'][0]['tide_m'],.2)
+            self.assertEqual(loc['sea_level_source']['surge_processing']['window_hours'],6)
+            self.assertNotIn('surge_native_rows',loc['source'])
+            self.assertIn('surge_native_csv',loc['source'])
+            for sector in loc.get('sectors',{}).values():
+                self.assertAlmostEqual(sector['hourly'][0]['twl_mean_m'],1.1)
+                self.assertAlmostEqual(sector['hourly'][0]['water_level_raw_m'],.55)
             self.assertEqual(loc['sea_level_source']['mode'],'noaa_tide_meteocean_surge')
             self.assertNotIn('historical_reference',loc['sea_level_source'])
         exported=list(csv.DictReader(io.StringIO(files['borghetto-santo-spirito.csv'])))
@@ -75,6 +84,13 @@ class MeteOceanTests(unittest.TestCase):
         self.assertEqual(exported[0]['vertical_reference'],'noaa_htp_plus_meteocean_surge_provisional_msl')
         self.assertAlmostEqual(float(exported[0]['tide_m']),.2)
         self.assertAlmostEqual(float(exported[0]['surge_m']),.1)
+        self.assertAlmostEqual(float(exported[0]['surge_raw_m']),.35)
+        self.assertAlmostEqual(float(exported[0]['water_level_raw_m']),.55)
+        self.assertAlmostEqual(float(exported[0]['surge_filter_support_hours']),6)
+        native=list(csv.DictReader(io.StringIO(files['borghetto-santo-spirito-surge-native.csv'])))
+        self.assertEqual(len(native),192)
+        self.assertEqual(native[1]['time'],'2026-11-09T14:30:00Z')
+        self.assertEqual(float(native[1]['surge_raw_m']),.35)
 
     def test_misaligned_tide_aborts_the_whole_bulletin(self):
         def fetch(settings,slug,start,hours,minimum_hours):
@@ -104,3 +120,50 @@ class PublicationCoverageTests(unittest.TestCase):
             return '\n'.join(out),{}
         with self.assertRaisesRegex(ValueError,'Copertura'):
             fetch_meteocean(settings,'site',NOW+timedelta(hours=6),120,downloader=old)
+
+
+class SurgeFilterTests(unittest.TestCase):
+    def series(self,values):
+        return [{'time':NOW+timedelta(minutes=30*i),'surge_m':value} for i,value in enumerate(values)]
+
+    def test_constant_and_centered_ramp_preserved_and_edges_not_zero_padded(self):
+        rows,meta=filter_surge(self.series([.2]*49))
+        self.assertTrue(all(abs(r['surge_m']-.2)<1e-12 for r in rows))
+        self.assertEqual(rows[0]['surge_filter_support_hours'],3)
+        self.assertEqual(rows[6]['surge_filter_support_hours'],6)
+        self.assertEqual(meta['truncated_native_samples'],12)
+        rows,_=filter_surge(self.series([i*.01 for i in range(49)]))
+        for r in rows[6:-6]:self.assertAlmostEqual(r['surge_m'],r['surge_raw_m'])
+        self.assertAlmostEqual(rows[0]['surge_m'],.03)
+        self.assertAlmostEqual(rows[-1]['surge_m'],.45)
+
+    def test_impulse_center_and_end_weights_have_no_half_sample_phase_shift(self):
+        values=[0.0]*49;values[24]=1
+        rows,_=filter_surge(self.series(values))
+        self.assertAlmostEqual(rows[24]['surge_m'],1/12)
+        self.assertAlmostEqual(rows[18]['surge_m'],1/24)
+        for i in range(7):self.assertAlmostEqual(rows[24-i]['surge_m'],rows[24+i]['surge_m'])
+        self.assertEqual(rows[17]['surge_m'],0)
+        self.assertEqual(rows[24]['surge_raw_m'],1)
+
+    def test_invalid_window_missing_samples_and_nonfinite_values_rejected(self):
+        rows=self.series([.1]*49)
+        for hours in [-1,25,float('nan'),True,'6']:
+            with self.assertRaises(ValueError):filter_surge(rows,hours)
+        with self.assertRaises(ValueError):filter_surge(rows[:10]+rows[11:])
+        with self.assertRaises(ValueError):filter_surge(self.series([.1,float('nan')]))
+        with self.assertRaises(ValueError):filter_surge(rows[:1])
+
+    def test_filter_runs_on_half_hour_samples_before_hourly_selection_and_can_be_disabled(self):
+        settings={'locations':{'site':{'waves_url':'waves','surge_url':'surge'}}}
+        # A signal entirely missed by old hourly selection must contribute.
+        text=''.join(f'{r["time"]:%Y-%m-%d %H:%M:%S},{r["surge_m"]}\n' for r in self.series([i%2*.2 for i in range(239)]))
+        def download(url):return (wave_csv() if url=='waves' else text),{}
+        rows,meta=fetch_meteocean(settings,'site',NOW,120,downloader=download)
+        self.assertAlmostEqual(rows[8]['surge_m'],.1)
+        self.assertEqual(rows[8]['surge_raw_m'],0)
+        self.assertEqual(len(meta['surge_native_rows']),239)
+        self.assertEqual(meta['surge_processing']['window_hours'],6)
+        rows,meta=fetch_meteocean(dict(settings,surge_smoothing_hours=0),'site',NOW,120,downloader=download)
+        self.assertEqual(rows[8]['surge_m'],0)
+        self.assertEqual(meta['surge_processing']['method'],'disabled')

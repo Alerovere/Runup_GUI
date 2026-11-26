@@ -332,7 +332,79 @@ function chartLayout(yTitle, x, height=350) {
 }
 const plotOptions = {responsive:true,displaylogo:false,modeBarButtonsToRemove:['select2d','lasso2d'],toImageButtonOptions:{format:'png',filename:'onde-a-riva'}};
 
+// Shape-preserving cubic Hermite interpolation. Display only: never feeds alerts,
+// maxima, model statistics, downloads or inundation maps. Gaps stay disconnected.
+function pchipSeries(x,y,subdivisions=6) {
+  const slopes=Array(x.length).fill(null);
+  const edge=(h0,h1,d0,d1)=>{
+    let m=((2*h0+h1)*d0-h0*d1)/(h0+h1);
+    if (Math.sign(m)!==Math.sign(d0)) m=0;
+    else if (Math.sign(d0)!==Math.sign(d1) && Math.abs(m)>3*Math.abs(d0)) m=3*d0;
+    return m;
+  };
+  const joined=i=>i+1<x.length && Number.isFinite(y[i]) && Number.isFinite(y[i+1]) && x[i+1]>x[i] && x[i+1]-x[i]<=hourMs*1.5;
+  for (let start=0;start<x.length;) {
+    let end=start;
+    while(joined(end)) end++;
+    if(end>start) {
+      const h=[],d=[];
+      for(let i=start;i<end;i++){h.push(x[i+1]-x[i]);d.push((y[i+1]-y[i])/h.at(-1));}
+      if(d.length===1) slopes[start]=slopes[end]=d[0];
+      else {
+        slopes[start]=edge(h[0],h[1],d[0],d[1]);
+        slopes[end]=edge(h.at(-1),h.at(-2),d.at(-1),d.at(-2));
+        for(let i=1;i<d.length;i++) {
+          const a=d[i-1],b=d[i],w1=2*h[i]+h[i-1],w2=h[i]+2*h[i-1];
+          slopes[start+i]=a*b<=0?0:(w1+w2)/(w1/a+w2/b);
+        }
+      }
+    }
+    start=end+1;
+  }
+  const xx=[],yy=[],samples=[];
+  for(let i=0;i<x.length;i++) {
+    xx.push(x[i]);yy.push(Number.isFinite(y[i])?y[i]:null);samples.push('Campione orario');
+    const h=x[i+1]-x[i];
+    if(h>hourMs*1.5) {xx.push(x[i]+h/2);yy.push(null);samples.push('Dati mancanti');}
+    if(!(h>0 && h<=hourMs*1.5)) continue;
+    for(let k=1;k<subdivisions;k++) {
+      const t=k/subdivisions,t2=t*t,t3=t2*t;
+      xx.push(x[i]+h*t);samples.push('Interpolazione grafica');
+      const value=joined(i)?(2*t3-3*t2+1)*y[i]+(t3-2*t2+t)*h*slopes[i]+(-2*t3+3*t2)*y[i+1]+(t3-t2)*h*slopes[i+1]:null;
+      yy.push(value===null?null:Math.max(Math.min(y[i],y[i+1]),Math.min(Math.max(y[i],y[i+1]),value)));
+    }
+  }
+  return {x:xx,y:yy,text:xx.map(t=>local(t)),customdata:samples};
+}
+
+function smoothTrace(trace) {
+  const series=pchipSeries(trace.x,trace.y);
+  return {...trace,...series,line:{...trace.line,shape:'linear'},
+    hovertemplate:trace.hovertemplate?.replace('<extra>','<br>%{customdata}<extra>')};
+}
+
+function smoothBands(traces,x) {
+  const result=traces.map(smoothTrace);
+  // Independent PCHIPs can cross. In such an interval use linear interpolation
+  // for all four quantile bounds, preserving their order and original samples.
+  for(let i=0;i<x.length-1;i++) {
+    const indices=result[0].x.map((t,j)=>t>x[i] && t<x[i+1]?j:-1).filter(j=>j>=0);
+    const crossing=indices.some(j=>result.some((t,k)=>k>0 && Number.isFinite(t.y[j]) && Number.isFinite(result[k-1].y[j]) && t.y[j]<result[k-1].y[j]));
+    if(crossing) for(let k=0;k<result.length;k++) for(const j of indices) {
+      const a=traces[k].y[i],b=traces[k].y[i+1],fraction=(result[k].x[j]-x[i])/(x[i+1]-x[i]);
+      result[k].y[j]=Number.isFinite(a)&&Number.isFinite(b)?a+(b-a)*fraction:null;
+    }
+  }
+  return result;
+}
+
 function renderCharts(location,rows) {
+  const nativeFile=location.source?.surge_native_csv,node=$('surge-original-download');
+  if(node) {
+    const available=typeof nativeFile==='string' && /^data\/[a-z0-9-]+-surge-native\.csv$/.test(nativeFile);
+    node.hidden=!available;
+    node.innerHTML=available?`<a href="${esc(nativeFile)}" download>Scarica il surge originale e filtrato (CSV, ogni 30 minuti) ↓</a>`:'';
+  }
   $('threshold-key').innerHTML=location.thresholds.map((t,i)=>`<div style="--threshold-color:${thresholdColors[i%thresholdColors.length]}"><span class="threshold-swatch"></span><strong>${num(t.elevation_m)} m</strong><span>${esc(assetName(t))}${t.season==='summer'?' · estiva':''}</span></div>`).join('');
   const historical=location.climatology?.status==='available',unit=location.climatology?.time_step_hours===1?'ore':'campioni';
   $('wave-series-key').innerHTML='<span><i style="--series-color:#194e4c"></i>Altezza delle onde (Hs)</span><span><i style="--series-color:#c49b54"></i>Tempo tra le onde (Tp)</span>'+(historical?`<span><i class="dashed" style="--series-color:#a6a15c"></i>Onde alte · superate in 5 ${unit} su 100</span><span><i class="dashed" style="--series-color:#bd784f"></i>Onde molto alte · superate in 1 ${unit==='ore'?'ora':'campione'} su 100</span>`:'');
@@ -350,6 +422,9 @@ function renderCharts(location,rows) {
     line('twl_p75_m','Fascia centrale delle stime','#99b690',0,{fill:'tonexty',fillcolor:'#b9cfad',hoverinfo:'skip'}),
     line('twl_mean_m','Media dei calcoli','#194e4c',2.5)
   ];
+  const bandOrder=[0,2,3,1],bands=smoothBands(bandOrder.map(i=>traces[i]),x);
+  bandOrder.forEach((index,i)=>{traces[index]=bands[i];});
+  traces[4]=smoothTrace(traces[4]);
   location.thresholds.forEach((t,i)=>traces.push({x,y:rows.map(()=>t.elevation_m),name:assetName(t),showlegend:false,mode:'lines',line:{color:thresholdColors[i%thresholdColors.length],width:1,dash:'dash'},hovertemplate:`${esc(assetName(t))}: ${num(t.elevation_m)} m<extra></extra>`}));
   const twlLayout=chartLayout(`Livello totale [m; ${seaLevelReference(location).axis}]`,x);
   twlLayout.legend.font.size=9;
@@ -382,14 +457,14 @@ function renderCharts(location,rows) {
       label(.645,'<b>Marea astronomica</b>','#287f85',16),
       label(.603,'Oscillazioni dovute a Luna e Sole.<br>Fonte: NOAA.','#637775',10),
       label(.415,'<b>Storm surge · effetto del meteo</b>','#b7703c',16),
-      label(.373,'Variazioni del livello causate da vento e pressione.<br>Fonte: MeteOcean – UniGE.','#637775',10),
+      label(.373,'Variazioni del livello causate da vento e pressione.<br>Fonte: MeteOcean – UniGE.'+(location.sea_level_source?.surge_processing?.window_hours?' Media mobile '+location.sea_level_source.surge_processing.window_hours+' ore.':''),'#637775',10),
       label(.185,'<b>Livello del mare · marea + surge</b>','#426b96',16),
       label(.143,'Somma dei due contributi.<br>La risalita delle onde si aggiunge nel grafico del livello totale.','#637775',10)
     ];
   }
   const waveTraces=[
-    {x,text,y:rows.map(r=>r.hs_m),name:'Altezza delle onde (Hs)',mode:'lines',connectgaps:false,line:{color:'#194e4c',width:2},fill:'tozeroy',fillcolor:'#e6eddf',customdata:rows.map(r=>directionLabel(r.direction_deg)),hovertemplate:'%{text}<br>Hs: %{y:.2f} m<br>Da %{customdata}<extra></extra>'},
-    {x,text,y:rows.map(r=>r.tp_s),name:'Tempo tra le onde (Tp)',mode:'lines',yaxis:'y2',connectgaps:false,line:{color:'#c49b54',width:2,shape:'spline',smoothing:.8},hovertemplate:'%{text}<br>Tempo tra le onde: %{y:.1f} s<extra></extra>'}
+    smoothTrace({x,text,y:rows.map(r=>r.hs_m),name:'Altezza delle onde (Hs)',mode:'lines',connectgaps:false,line:{color:'#194e4c',width:2},fill:'tozeroy',fillcolor:'#e6eddf',hovertemplate:'%{text}<br>Hs: %{y:.2f} m<extra></extra>'}),
+    smoothTrace({x,text,y:rows.map(r=>r.tp_s),name:'Tempo tra le onde (Tp)',mode:'lines',yaxis:'y2',connectgaps:false,line:{color:'#c49b54',width:2},hovertemplate:'%{text}<br>Tempo tra le onde: %{y:.1f} s<extra></extra>'})
   ];
   for (const [status,name,color] of [[false,'Onde da altre direzioni','#347e4b'],[true,'Onde verso la costa','#b45b2b'],[null,'Direzione non valutabile','#7b8984']]) {
     const state=r=>r.hs_m>0?isExposed(r.direction_deg,location.wave_exposure):null;
@@ -405,6 +480,7 @@ function renderCharts(location,rows) {
     waveTraces.push({x,text,y:rows.map(r=>r.surge_m),yaxis:'y5',name:'Storm surge MeteOcean',mode:'lines',connectgaps:false,line:{color:'#b7703c',width:2},fill:'tozeroy',fillcolor:'rgba(183,112,60,.10)',hovertemplate:'%{text}<br>Surge MeteOcean: %{y:.2f} m<extra></extra>'});
   }
   waveTraces.push({x,text,y:rows.map(r=>r.water_level_m),yaxis:separateSea?'y6':'y4',name:'Marea + Storm surge',mode:'lines',connectgaps:false,line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra>Marea + Storm surge</extra>'});
+  for(let i=0;i<waveTraces.length;i++) if(waveTraces[i].mode==='lines' && ['y4','y5','y6'].includes(waveTraces[i].yaxis)) waveTraces[i]=smoothTrace(waveTraces[i]);
   Plotly.react('wave-chart',waveTraces,layout,plotOptions);
 }
 
@@ -622,7 +698,7 @@ function renderDetail(slug) {
   $('area').textContent=location===parent?location.area:`${parent.name} · ${location.area}`;
   const reference=seaLevelReference(location);
   $('twl-reference-label').textContent=`metri · zero: ${reference.label}`;
-  $('sealevel-caption').innerHTML=`${location.sea_level_source?.mode==='noaa_tide_meteocean_surge'?'Marea, storm surge e loro somma sono separati e usano la stessa scala verticale. I valori negativi indicano un livello sotto il riferimento. ':''}Zero del livello marino: ${esc(reference.label)}. <a href="metodo.html?localita=${encodeURIComponent(slug)}#zero">Riferimento delle quote ↗</a>`;
+  $('sealevel-caption').innerHTML=`${location.sea_level_source?.mode==='noaa_tide_meteocean_surge'?'Marea, storm surge e loro somma sono separati e usano la stessa scala verticale. I valori negativi indicano un livello sotto il riferimento. ':''}Zero del livello marino: ${esc(reference.label)}. ${location.sea_level_source?.surge_processing?.window_hours ? `Il surge usato nel TWL è filtrato con una media mobile centrata di ${num(location.sea_level_source.surge_processing.window_hours,0)} ore; la marea non è filtrata. ` : ''}<a href="metodo.html?localita=${encodeURIComponent(slug)}#zero">Riferimento delle quote ↗</a>`;
   $('technical-link').href=`metodo.html?localita=${encodeURIComponent(slug)}`;
   $('download').href=location.csv;
   const valid=rows.filter(r=>hasFilteredStatistics(r) && Number.isFinite(r.twl_p95_m));

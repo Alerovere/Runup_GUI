@@ -133,7 +133,10 @@ def summarize_records(waves, location, thresholds, season, eta):
                                    'hs_m': wave['hs_m'], 'tp_s': wave['tp_s'], 'direction_deg': wave['direction_deg'],
                                    'water_level_m': eta_value, 'runup_m': float(runup), 'twl_m': twl,
                                    'ssh_m': wave.get('ssh_m'), 'mean_reference_m': wave.get('mean_reference_m'),
-                                   'tide_m': wave.get('tide_m'), 'surge_m': wave.get('surge_m')})
+                                   'tide_m': wave.get('tide_m'), 'surge_m': wave.get('surge_m'),
+                                   'surge_raw_m': wave.get('surge_raw_m'),
+                                   'surge_filter_support_hours': wave.get('surge_filter_support_hours'),
+                                   'water_level_raw_m': wave.get('water_level_raw_m')})
         included, filter_mean, filter_sigma = sigma_clip(values)
         for record, keep in zip(detail[detail_start:], included):
             record['included_in_summary'] = keep
@@ -302,15 +305,27 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
     for slug, location in locations['locations'].items():
         if provider == 'meteocean' and not demo:
             native, metadata = prepared[slug]
+            metadata=dict(metadata)
+            native_surge=metadata.pop('surge_native_rows',None)
+            if native_surge:
+                surge_output=io.StringIO(newline='')
+                surge_writer=csv.DictWriter(surge_output,fieldnames=list(native_surge[0]))
+                surge_writer.writeheader()
+                surge_writer.writerows(native_surge)
+                surge_csv=f'{slug}-surge-native.csv'
+                csvs[surge_csv]=surge_output.getvalue()
+                metadata['surge_native_csv']=f'data/{surge_csv}'
             wave_rows = native[:common_hours]
             tidal_rows = tides[slug]
             if len(tidal_rows) != len(wave_rows) or any(w['time']!=t['time'] for w,t in zip(wave_rows,tidal_rows)):
                 raise ValueError('Marea NOAA non allineata alle onde MeteOcean.')
-            waves = [dict(w, tide_m=t['tide_m'], water_level_m=t['tide_m']+w['surge_m'])
+            waves = [dict(w, tide_m=t['tide_m'], water_level_m=t['tide_m']+w['surge_m'],
+                          water_level_raw_m=t['tide_m']+w.get('surge_raw_m',w['surge_m']))
                      for w,t in zip(wave_rows,tidal_rows)]
             level_meta = dict(tide_meta, mode='noaa_tide_meteocean_surge', reference_source='model_mean_sea_level_provisional',
                               selected_point=grid['locations'][slug], surge_source=metadata['surge'],
                               formula='NOAA HTP tide + MeteOcean meteorological surge',
+                              surge_processing=metadata.get('surge_processing'),
                               tide_included=True, reference_status='local_datum_not_validated')
         elif demo:
             waves, metadata = demonstration_waves(location, start, locations['download_hours'])
