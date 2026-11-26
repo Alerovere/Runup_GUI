@@ -71,6 +71,16 @@ jobs:
             _site/data/maps/**/*.kmz
           if-no-files-found: ignore
           retention-days: 90
+      - name: Prepara le infografiche per Telegram
+        if: github.event_name != 'workflow_dispatch' || inputs.mode != 'demo'
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-borghetto-bulletin
+          path: |
+            _site/data/forecast.json
+            _site/data/social/borghetto-santo-spirito--*.png
+          if-no-files-found: error
+          retention-days: 3
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
@@ -89,3 +99,60 @@ jobs:
       - name: Pubblica il portale
         id: deployment
         uses: actions/deploy-pages@v4
+
+
+  telegram:
+    name: Bollettino Telegram Borghetto
+    needs: deploy
+    if: >-
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      vars.TELEGRAM_ENABLED != 'false' &&
+      (github.event_name != 'workflow_dispatch' || inputs.mode != 'demo')
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Verifica la configurazione Telegram
+        id: credentials
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            echo 'enabled=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'enabled=false' >> "$GITHUB_OUTPUT"
+            echo 'Telegram non configurato: il portale è pubblicato, nessun messaggio inviato.'
+          fi
+      - uses: actions/checkout@v4
+        if: steps.credentials.outputs.enabled == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.credentials.outputs.enabled == 'true'
+        with:
+          python-version: '3.11'
+      - name: Recupera il bollettino appena pubblicato
+        if: steps.credentials.outputs.enabled == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: telegram-borghetto-bulletin
+          path: telegram-bulletin
+      - name: Invia il bollettino giornaliero di Borghetto
+        id: send
+        if: steps.credentials.outputs.enabled == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: python -B scripts/send_telegram_bulletin.py --data telegram-bulletin --state telegram-state/receipt.json --send
+      - name: Conserva il registro degli invii Telegram
+        if: always() && steps.credentials.outputs.enabled == 'true' && hashFiles('telegram-state/receipt.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: telegram-borghetto-state-v1
+          path: telegram-state/receipt.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90

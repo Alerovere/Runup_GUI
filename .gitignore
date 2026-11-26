@@ -5,3 +5,7 @@ __pycache__/
 
 # Raster originali locali: pubblicare soltanto i derivati del preprocessing.
 /notebooks/dati originali/
+
+# Registro locale degli invii Telegram (solo artifact Actions in produzione).
+/telegram-state/
+/telegram-bulletin/
