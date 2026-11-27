@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from forecast_service.ensemble import sigma_clip, STATISTICS_METHOD, STATISTICS_METADATA
+from forecast_service.research_notice import csv_notice
 
 from src.runup_models import MODEL_CITATIONS, MODEL_ORDER, RunupInputs, compute_runup, models
 
@@ -309,12 +310,8 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
             metadata=dict(metadata)
             native_surge=metadata.pop('surge_native_rows',None)
             if native_surge:
-                surge_output=io.StringIO(newline='')
-                surge_writer=csv.DictWriter(surge_output,fieldnames=list(native_surge[0]))
-                surge_writer.writeheader()
-                surge_writer.writerows(native_surge)
                 surge_csv=f'{slug}-surge-native.csv'
-                csvs[surge_csv]=surge_output.getvalue()
+                csvs[surge_csv]=public_csv(native_surge)
                 metadata['surge_native_csv']=f'data/{surge_csv}'
             wave_rows = native[:common_hours]
             tidal_rows = tides[slug]
@@ -375,23 +372,30 @@ def build_bulletin(*, root=ROOT, demo=False, now=None, fetcher=None, sealevel_fe
                 sea_level_source=level_meta, climatology=climate_summary, summer_season=sector_season,
                 valid_from=waves[0]['time'], valid_to=iso(parse_time(waves[-1]['time'])+timedelta(hours=1)),
                 valid_models=sector_models, missing_models=[m for m in MODEL_ORDER if m not in sector_models], csv=f'data/{sector_csv}')
-            sector_output = io.StringIO(newline='')
-            sector_writer = csv.DictWriter(sector_output, fieldnames=['data_mode', 'vertical_reference', 'sector_id', *sector_detail[0].keys()])
-            sector_writer.writeheader()
-            for record in sector_detail:
-                sector_writer.writerow(dict(record, data_mode=bulletin['mode'], vertical_reference=reference_code, sector_id=sector_id))
-            csvs[sector_csv] = sector_output.getvalue()
-        output = io.StringIO(newline='')
-        writer = csv.DictWriter(output, fieldnames=['data_mode', 'vertical_reference', *detail[0].keys()])
-        writer.writeheader()
-        for row in detail:
-            writer.writerow(dict(row, data_mode=bulletin['mode'], vertical_reference=reference_code))
-        csvs[f'{slug}.csv'] = output.getvalue()
+            csvs[sector_csv] = public_csv(sector_detail, labels=dict(
+                data_mode=bulletin['mode'], vertical_reference=reference_code, sector_id=sector_id))
+        csvs[f'{slug}.csv'] = public_csv(detail, labels=dict(
+            data_mode=bulletin['mode'], vertical_reference=reference_code))
     if not controlled_time:
         bulletin['generated_at'] = iso(datetime.now(UTC))
     # Fail before writing any published data if serialization finds NaN or Infinity.
     json.dumps(bulletin, allow_nan=False)
     return bulletin, csvs
+
+
+def public_csv(rows, *, labels=None):
+    """Keep numerical fields/order intact and append standalone research context."""
+    rows = list(rows)
+    if not rows:
+        raise ValueError('Nessun dato da esportare nel CSV.')
+    labels = labels or {}
+    notice = csv_notice()
+    output = io.StringIO(newline='')
+    writer = csv.DictWriter(output, fieldnames=[*labels, *rows[0], *notice])
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(dict(row, **labels, **notice))
+    return output.getvalue()
 
 
 def write_bulletin(bulletin, csvs, output, *, root=ROOT):

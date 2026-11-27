@@ -74,6 +74,7 @@ def export_geojson(masks,*,valid,display,bounds,metadata,unit,slug,unit_id,toler
         vertical_reference=metadata['vertical_reference'],dem_offset_m=metadata['dem_offset_m'],
         survey_credit=metadata['survey_credit'],survey_date=metadata['survey_date'],license=metadata['license'],
         hours_non_frontal=metadata['hours_non_frontal'],hours_direction_unknown=metadata['hours_direction_unknown'],
+        exposure_policy=metadata.get('exposure_policy'),hours_frontal=metadata.get('hours_frontal'),hours_total=metadata.get('hours_total'),
         interpretation=metadata['interpretation'])
     area_features=[];line_features=[]
     for layer,reached in masks:

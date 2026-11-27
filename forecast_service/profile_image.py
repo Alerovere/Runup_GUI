@@ -9,8 +9,12 @@ def draw_profile(c,profile,structure_icon,dashed_line):
     d=c.draw;ink='#153e41';muted='#536c69';left,right=575,1007
     c.text('PROFILO DELLA SPIAGGIA',570,772,21,True,width=442)
     if profile['status']!='available':
-        c.text('Risultati non disponibili',575,855,19,width=422,color=muted)
-        c.text('Nessun profilo ricostruito',575,884,16,width=422,color=muted);return
+        away=profile.get('reason_code')=='nonfrontal'
+        c.text('Onde da altre direzioni' if away else 'Direzione non valutabile' if profile.get('reason_code')=='unknown_direction' else 'Risultati non disponibili',575,850,22,True,width=422,lines=2,color=ink)
+        c.text('Risalita non rappresentata',575,914,20,width=422,color=muted)
+        c.text('Le onde al largo possono comunque essere alte. Marea e surge restano presenti.',575,960,17,width=422,lines=3,color=muted)
+        c.text('Non indica condizioni di mare calmo.',575,1075,16,width=422,lines=2,color=muted)
+        return
     number=lambda value:f'{value:.2f}'.replace('.',',')
     stamp=parse_time(profile['time']).astimezone(ZoneInfo('Europe/Rome')).strftime('%d/%m %H:%M')
     c.text('Ora rappresentata: '+stamp,575,805,16,width=422,color=ink)

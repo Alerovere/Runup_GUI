@@ -17,7 +17,7 @@ import numpy as np
 
 MAX_CELLS = 1024 * 1024
 MAX_ORTHOPHOTO_CELLS = 4096 * 4096
-METHOD = 'connected_static_twl_filtered_mean_p75_v2'
+METHOD = 'connected_static_twl_filtered_mean_p75_frontal_v3'
 
 
 def png_bytes(rgba, *, max_cells=MAX_CELLS):
@@ -83,7 +83,7 @@ def connected_mask(z, seeds, level):
 
 def build_map(unit, bulletin, mapping, root, slug, unit_id):
     from forecast_service.ensemble import STATISTICS_METHOD
-    from forecast_service.exposure import is_exposed
+    from forecast_service.exposure import wave_is_exposed, exposure_summary, no_frontal_reason
     from forecast_service.time_utils import parse_time
     start = parse_time(bulletin.get('display_from', bulletin['processing_started_at'])).replace(minute=0, second=0, microsecond=0)
     from datetime import timedelta
@@ -94,6 +94,7 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
     expected = [start+timedelta(hours=i) for i in range(bulletin['display_hours'])]
     if [parse_time(r['time']) for r in rows] != expected or any(r.get('statistics_method') != STATISTICS_METHOD or not all(isinstance(r.get(key), (int, float)) and math.isfinite(r[key]) for key in ('twl_mean_m','twl_p75_m')) for r in rows):
         raise ValueError('La mappa richiede tutte le 96 ore, media e 75° percentile filtrati validi.')
+    coverage=exposure_summary(rows,unit.get('wave_exposure'))
     grid_path = Path(root)/mapping['grid_file']
     z, seeds, display, bounds = load_grid(grid_path)
     prefix = f'maps/{slug}/{unit_id}'
@@ -104,7 +105,9 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
                ('central_upper','twl_p75_m',75,'Inondazione massima (fascia centrale)',(35,129,188,115))]
     mask_cache={}
     def make_layers(samples,suffix=''):
+        samples=[r for r in samples if wave_is_exposed(r,unit.get('wave_exposure')) is True]
         result=[];result_masks=[]
+        if not samples:return result,result_masks
         for kind,field,q,label,color in estimates:
             peak=max(samples,key=lambda r:r[field]);level=peak[field]
             if level not in mask_cache:mask_cache[level]=connected_mask(z,seeds,level)
@@ -122,7 +125,7 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
                 seed_condition='available' if seed_available else 'below_seed_level',
                 quality_note='' if seed_available else 'Quota sotto tutti gli avvii disponibili nel DEM: non si può tracciare un’area connessa. Non indica assenza di interessamento della costa.',
                 peak_time=peak['time'],peak_to=(parse_time(peak['time'])+timedelta(hours=1)).isoformat(),peak_windows=windows,
-                direction_deg=peak.get('direction_deg'),exposed_at_peak=is_exposed(peak.get('direction_deg'),unit.get('wave_exposure')) if peak.get('hs_m',0)>0 else None,
+                direction_deg=peak.get('direction_deg'),exposed_at_peak=True,exposure_policy=coverage['exposure_policy'],eligible_hours=len(samples),
                 image='data/'+filename,cells=int(mask.sum()))
             result.append(layer);result_masks.append((layer,reached))
         return result,result_masks
@@ -133,7 +136,11 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
     daily=[];daily_masks=[]
     for date,samples in groups.items():
         day_layers,day_masks=make_layers(samples,'-'+date);daily_masks.append(day_masks)
-        daily.append(dict(date=date,period_from=samples[0]['time'],period_to=(parse_time(samples[-1]['time'])+timedelta(hours=1)).isoformat(),hours=len(samples),layers=day_layers,hours_non_frontal=sum((is_exposed(r.get('direction_deg'),unit.get('wave_exposure')) if r.get('hs_m',0)>0 else None) is False for r in samples),hours_direction_unknown=sum((is_exposed(r.get('direction_deg'),unit.get('wave_exposure')) if r.get('hs_m',0)>0 else None) is None for r in samples)))
+        day_coverage=exposure_summary(samples,unit.get('wave_exposure'))
+        day_status='available' if day_layers else 'unavailable' if day_coverage['hours_direction_unknown'] else 'not_applicable'
+        daily.append(dict(date=date,period_from=samples[0]['time'],period_to=(parse_time(samples[-1]['time'])+timedelta(hours=1)).isoformat(),
+                          hours=len(samples),layers=day_layers,status=day_status,
+                          reason='' if day_layers else no_frontal_reason(day_coverage),**day_coverage))
     ortho = None
     if mapping.get('orthophoto_file'):
         image = orthophoto_bytes(Path(root)/mapping['orthophoto_file'], z.shape, mapping)
@@ -143,24 +150,29 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
         from forecast_service.terrain_background import terrain_background
         image, terrain_scale = terrain_background(z, display)
         filename = prefix+'-terrain.png'; assets[filename] = image; terrain = 'data/'+filename
-    exposure = [is_exposed(r.get('direction_deg'), unit.get('wave_exposure')) if r.get('hs_m', 0) > 0 else None for r in rows]
     issued = parse_time(bulletin['processing_started_at'])
-    metadata = {'status': 'available', 'method': METHOD, 'data_mode': bulletin['mode'], 'period_from': start.isoformat(), 'period_to': end.isoformat(),
+    metadata = {'status': 'available' if layers else 'unavailable' if coverage['hours_direction_unknown'] else 'not_applicable',
+            'reason':'' if layers else no_frontal_reason(coverage), 'method': METHOD, 'data_mode': bulletin['mode'], 'period_from': start.isoformat(), 'period_to': end.isoformat(),
             'issued_at_utc':issued.isoformat(), 'generated_at_utc':parse_time(bulletin.get('generated_at',bulletin['processing_started_at'])).isoformat(),
             'bounds': bounds, 'layers': layers, 'default_layer':'mean', 'orthophoto': ortho, 'terrain': terrain, 'terrain_scale': terrain_scale,
             'survey_credit': mapping['survey_credit'], 'survey_date': mapping['survey_date'], 'license': mapping['license'],
             'vertical_reference': mapping['vertical_reference'], 'dem_offset_m': mapping['dem_offset_m'],
             'grid_sha256': hashlib.sha256(grid_path.read_bytes()).hexdigest(),
-            'hours_non_frontal': exposure.count(False), 'hours_direction_unknown': exposure.count(None),
-            'interpretation': 'Estensione statica potenziale, non profondità né probabilità di allagamento. Il runup è intermittente; nessuna trasformazione direzionale o simulazione di sormonto, portate e durata.'}
+            **coverage,
+            'interpretation': 'Solo ore con onde nei settori di esposizione configurati; le altre ore sono escluse. Estensione statica potenziale, non profondità né probabilità di allagamento. Il runup è intermittente; nessuna trasformazione direzionale o simulazione di sormonto, portate e durata.'}
     from forecast_service.map_context import context_geometry,surveyed_points
     metadata.update(context_geometry(display,np.isfinite(z),bounds))
     metadata['structure_points']=surveyed_points(unit,root,slug,unit_id)
     metadata['daily']=daily
     def gis_exports(target,group_masks,suffix=''):
+        if not group_masks:
+            reason=target.get('reason') or 'Nessuna ora con onde dirette verso la spiaggia.'
+            target['geojson_export']=dict(status='not_applicable',reason=reason,files=[])
+            target['mobile_export']=dict(status='not_applicable',reason=reason)
+            return
         try:
             from forecast_service.inundation_geojson import export_geojson
-            group_metadata=dict(metadata,**{k:target.get(k,metadata[k]) for k in ('period_from','period_to','hours_non_frontal','hours_direction_unknown')})
+            group_metadata=dict(metadata,**{k:target.get(k,metadata[k]) for k in ('period_from','period_to','hours_total','hours_frontal','hours_non_frontal','hours_direction_unknown')})
             vectors=export_geojson(group_masks,valid=np.isfinite(z),display=display,bounds=bounds,metadata=group_metadata,
                 unit=unit,slug=slug,unit_id=unit_id,tolerance_m=mapping.get('line_tolerance_m',3.))
             fronts=__import__('json').loads(vectors['limiti'])['features']

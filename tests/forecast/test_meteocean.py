@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 from forecast_service import pipeline
+from forecast_service.research_notice import csv_notice
 from forecast_service.meteocean import parse_waves,parse_surge,fetch_meteocean,filter_surge
 
 UTC=timezone.utc
@@ -91,6 +92,9 @@ class MeteOceanTests(unittest.TestCase):
         self.assertEqual(len(native),192)
         self.assertEqual(native[1]['time'],'2026-11-09T14:30:00Z')
         self.assertEqual(float(native[1]['surge_raw_m']),.35)
+        for text in files.values():
+            for row in csv.DictReader(io.StringIO(text)):
+                self.assertEqual({key:row[key] for key in csv_notice()},csv_notice())
 
     def test_misaligned_tide_aborts_the_whole_bulletin(self):
         def fetch(settings,slug,start,hours,minimum_hours):

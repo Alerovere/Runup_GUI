@@ -38,3 +38,25 @@ def parse_exposure(text, note=''):
     exposure = {'sectors_deg': sectors, 'note': note}
     validate_exposure(exposure)
     return exposure
+
+
+EXPOSURE_POLICY = 'frontal_hours_only_v1'
+
+
+def wave_is_exposed(row, exposure):
+    """Eligibility for coastal graphics; offshore height is never set to zero."""
+    hs=row.get('hs_m')
+    if not isinstance(hs,(int,float)) or not math.isfinite(hs) or hs<=0:return None
+    return is_exposed(row.get('direction_deg'),exposure)
+
+
+def exposure_summary(rows, exposure):
+    states=[wave_is_exposed(r,exposure) for r in rows]
+    return dict(exposure_policy=EXPOSURE_POLICY,hours_total=len(rows),hours_frontal=states.count(True),
+                hours_non_frontal=states.count(False),hours_direction_unknown=states.count(None))
+
+
+def no_frontal_reason(summary):
+    if summary['hours_direction_unknown']:
+        return 'Nessuna ora con onde dirette verso la spiaggia e direzione verificata. Risalita e mappa non rappresentate; esposizione o direzione mancanti in alcune ore.'
+    return 'Le onde provengono da direzioni esterne ai settori di esposizione della spiaggia. Risalita e mappa non rappresentate. Questo non indica mare calmo o assenza di effetti del livello marino.'

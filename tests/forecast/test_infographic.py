@@ -78,8 +78,8 @@ class SocialCardTests(unittest.TestCase):
         self.assertEqual(meta['charts']['profile_statistic'],'twl_mean_m');self.assertGreater(len(raw),1000)
         self.assertEqual(meta['charts']['layout'],'side_by_side')
         self.assertEqual(meta['schema_version'],4);self.assertEqual(meta['charts']['profile_tail'],'twl_p995_m')
-        self.assertEqual(meta['profile']['selection'],'peak_of_filtered_mean')
-        self.assertEqual(meta['profile']['time'],max((r for r in unit['hourly'] if r['statistics_method']==STATISTICS_METHOD and r['n_estimates']>0),key=lambda r:r['twl_mean_m'])['time'])
+        self.assertEqual(meta['profile']['selection'],'peak_of_filtered_mean_frontal')
+        self.assertEqual(meta['profile']['time'],max((r for r in unit['hourly'] if r['statistics_method']==STATISTICS_METHOD and r['n_estimates']>0 and g.wave_is_exposed(r,unit.get('wave_exposure')) is True),key=lambda r:r['twl_mean_m'])['time'])
         self.assertNotIn('runup_statistic',meta['charts'])
 
     def test_direction_keeps_nautical_samples_and_does_not_invent_calm_or_missing_directions(self):

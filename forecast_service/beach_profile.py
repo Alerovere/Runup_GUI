@@ -5,7 +5,7 @@ hourly mean in the supplied period. P99.5 illustrates the screened upper tail;
 it never controls impact categories or replaces direct exceedance counts.
 """
 from forecast_service.ensemble import STATISTICS_METHOD
-from forecast_service.exposure import is_exposed
+from forecast_service.exposure import wave_is_exposed, exposure_summary, no_frontal_reason
 from forecast_service.reader_summary import finite, reference_threshold, row_state
 
 
@@ -15,7 +15,13 @@ def profile_snapshot(unit, rows, thresholds=None):
            and finite(r.get('twl_mean_m')) and finite(r.get('twl_p95_m'))]
     if not valid:
         return dict(status='unavailable',reason='Nessun risultato filtrato valido nelle ore selezionate.',structures=[])
-    peak=max(valid,key=lambda r:r['twl_mean_m'])
+    coverage=exposure_summary(valid,unit.get('wave_exposure'))
+    eligible=[r for r in valid if wave_is_exposed(r,unit.get('wave_exposure')) is True]
+    if not eligible:
+        return dict(status='not_applicable' if not coverage['hours_direction_unknown'] else 'unavailable',
+                    reason=no_frontal_reason(coverage),reason_code='nonfrontal' if not coverage['hours_direction_unknown'] else 'unknown_direction',
+                    key='gray' if not coverage['hours_direction_unknown'] else 'unavailable',structures=[],**coverage)
+    peak=max(eligible,key=lambda r:r['twl_mean_m'])
     tail=peak.get('twl_p995_m')
     if not finite(tail) or tail<peak['twl_p95_m']:tail=None
     state,rank,_=row_state(unit,peak,reference_threshold(unit))
@@ -29,9 +35,9 @@ def profile_snapshot(unit, rows, thresholds=None):
             elevation_m=threshold['elevation_m'],state=condition,fraction=fraction,
             count=round(fraction*peak['n_estimates']) if fraction is not None else None,
             season_unconfirmed=sample.get('active') is None))
-    return dict(status='available',selection='peak_of_filtered_mean',time=peak['time'],
+    return dict(status='available',selection='peak_of_filtered_mean_frontal',time=peak['time'],
         mean_m=peak['twl_mean_m'],p95_m=peak['twl_p95_m'],p995_m=tail,
         n_estimates=peak['n_estimates'],direction_deg=peak.get('direction_deg'),
-        exposed=is_exposed(peak.get('direction_deg'),unit.get('wave_exposure')) if finite(peak.get('hs_m')) and peak['hs_m']>0 else None,
+        exposed=True,**coverage,
         state=state,key=key,
         structures=assets,schematic=True,horizontal_distances_to_scale=False)

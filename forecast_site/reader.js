@@ -99,20 +99,32 @@ function readerRenderDaily(unit,rows){
   if($('reader-scope'))$('reader-scope').textContent=selected?`${readerDayLabel(selected)} · include eventuali ore trascorse.`:`${rows.length} ore ancora disponibili nel bollettino. Le schede giornaliere includono l’intera data.`;
 }
 function readerRenderMetrics(unit,rows){
-  const valid=rows.filter(r=>hasFilteredStatistics(r)&&Number.isFinite(r.twl_p95_m)),peak=valid.reduce((b,r)=>!b||r.twl_p95_m>b.twl_p95_m?r:b,null),wave=wavePeak(rows);
-  const cards=[{id:'ingression',label:'Quota alta stimata dell’acqua (TWL)',value:`${num(peak?.twl_p95_m)} <small>m</small>`,time:peak?.time,info:'È la quota più alta del 95° percentile filtrato nelle ore mostrate. Comprende onde e livello del mare, rispetto allo zero del modello: non è una profondità d’acqua.',anchor:'zero'},
+  const valid=rows.filter(r=>hasFilteredStatistics(r)&&Number.isFinite(r.twl_p95_m)&&forecastExposure(unit,r)===true),peak=valid.reduce((b,r)=>!b||r.twl_p95_m>b.twl_p95_m?r:b,null),wave=wavePeak(rows);
+  const cards=[{id:'ingression',label:'Quota alta stimata dell’acqua (TWL)',value:`${num(peak?.twl_p95_m)} <small>m</small>`,time:peak?.time,missing:'Nessuna ora con onde dirette a costa e risultati validi',info:'È la quota più alta del 95° percentile filtrato nelle ore mostrate con onde nei settori di esposizione. Comprende onde e livello del mare, rispetto allo zero del modello: non è una profondità d’acqua.',anchor:'zero'},
   {id:'wave',label:'Onde al largo · altezza, periodo e provenienza',value:`${num(wave?.hs_m)} <small>m</small><span class="metric-period"> · ${num(wave?.tp_s,1)} <small>s</small></span><span class="metric-direction"> · da ${compass16(wave?.direction_deg)}</span>`,time:wave?.time,info:'Altezza significativa massima con periodo e provenienza alla stessa ora. Singole onde possono essere più alte. Onde e TWL possono avere picchi in orari diversi.',anchor:'modelli'}];
-  $('metrics').innerHTML=cards.map(c=>`<div class="metric"><div class="metric-header"><div class="metric-label">${c.label}</div><span class="metric-info"><button type="button" id="metric-${c.id}-toggle" class="metric-info-toggle" aria-label="Informazioni: ${esc(c.label)}" aria-controls="metric-${c.id}-info" aria-expanded="false">i</button><span id="metric-${c.id}-info" class="metric-tooltip" role="tooltip"></span></span></div><div class="metric-value">${c.value}</div><div class="metric-note">${c.time?esc(local(c.time)):'Dati non disponibili'}</div></div>`).join('');
+  $('metrics').innerHTML=cards.map(c=>`<div class="metric"><div class="metric-header"><div class="metric-label">${c.label}</div><span class="metric-info"><button type="button" id="metric-${c.id}-toggle" class="metric-info-toggle" aria-label="Informazioni: ${esc(c.label)}" aria-controls="metric-${c.id}-info" aria-expanded="false">i</button><span id="metric-${c.id}-info" class="metric-tooltip" role="tooltip"></span></span></div><div class="metric-value">${c.value}</div><div class="metric-note">${c.time?esc(local(c.time)):esc(c.missing||'Dati non disponibili')}</div></div>`).join('');
   for(const c of cards){readerHelp(`metric-${c.id}-info`,c.info,c.anchor);bindInfoButton(`metric-${c.id}-toggle`);}
 }
 function readerMapPeriod(data){const day=readerDay();if(day&&data?.daily){const selected=data.daily.find(d=>d.date===day);if(selected)return {...data,...selected};return {...data,status:'unavailable',reason:'Nessuna mappa disponibile per la data selezionata.'};}return data;}
+function readerCoastalMapData(data,unit=null){
+  if(data?.status!=='available')return data;
+  if(Array.isArray(unit?.hourly)){
+    const rows=readerViewRows(unit);
+    if(!rows.some(r=>forecastExposure(unit,r)===true))return {...data,status:'not_applicable',reason:rows.length?'Nessuna ora con onde nei settori di esposizione e direzione verificata nel periodo mostrato. Mappa non rappresentata: questo non indica mare calmo.':'Nessuna ora disponibile nel periodo mostrato. Mappa non rappresentata.'};
+  }
+  if(data.exposure_policy!=='frontal_hours_only_v1')return {...data,status:'unavailable',reason:'Mappa da rigenerare con il filtro di esposizione. Attendere una nuova elaborazione.'};
+  if(!data.layers?.length||data.layers.some(l=>l.exposed_at_peak!==true||l.exposure_policy!=='frontal_hours_only_v1'))return {...data,status:'unavailable',reason:'Direzione delle ore rappresentate non verificata: mappa non mostrata.'};
+  return data;
+}
 function readerRenderInundation(unit,requested){
-  const panel=$('inundation-panel');if(!panel)return;const original=unit.inundation_map,data=readerMapPeriod(original);
+  const panel=$('inundation-panel');if(!panel)return;const original=unit.inundation_map,data=readerCoastalMapData(readerMapPeriod(original),unit);
   panel.hidden=!unit.mapping&&!data;if(panel.hidden){if(inundationMap){inundationMap.remove();inundationMap=null;}coastMapSignature='';return;}
   const canvas=$('inundation-map'),available=data?.status==='available';canvas.hidden=!available;
+  if($('inundation-output'))$('inundation-output').hidden=!available;
+  if($('inundation-status')){$('inundation-status').hidden=available;$('inundation-status').textContent=available?'':data?.reason||'Cartografia non disponibile per questo tratto.';}
   $('inundation-description').textContent=inundationMapText(data);$('inundation-credit').textContent=available?`Rilievo: ${data.survey_credit} · ${data.survey_date}. ${data.license}. Quote: ${data.vertical_reference}.`:'';
   if($('inundation-downloads'))$('inundation-downloads').innerHTML=inundationDownloads(data);
-  if(!available){coastMapSignature='';if(inundationMap){inundationMap.remove();inundationMap=null;}return;}
+  if(!available){coastMapSignature='';for(const id of ['inundation-when','inundation-legend','inundation-quality','inundation-estimate'])if($(id))$(id).innerHTML='';if(inundationMap){inundationMap.remove();inundationMap=null;}return;}
   requested=requested||readerUrl().searchParams.get('stima');const layer=selectedMapLayer(data,requested);if(!layer)return;
   const selector=$('inundation-estimate');selector.innerHTML=data.layers.map(l=>`<option value="${esc(mapLayerId(l))}">${l.kind==='mean'?'Stima media':'Stima più elevata · fascia centrale'}</option>`).join('');selector.value=mapLayerId(layer);
   selector.onchange=()=>{const url=readerUrl();url.searchParams.set('stima',selector.value);history.replaceState({},'',url);readerRenderInundation(unit,selector.value);};

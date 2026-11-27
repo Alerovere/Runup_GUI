@@ -85,3 +85,10 @@ Stesso reticolo, connettività a otto vicini e ritaglio dopo propagazione delle 
 Il contorno del settore nel selettore è indicativo e deriva dal ritaglio del rilievo (semplificazione cartografica di 3 m), non da un confine amministrativo. Il comando “Inquadra il settore” usa l’estensione effettiva del ritaglio, senza il margine del reticolo. Ortofoto oppure DEM e OpenStreetMap rimangono gli sfondi. I punti delle strutture sono attivabili nel controllo dei livelli; i popup distinguono la quota del singolo punto dalla media usata nel confronto.
 
 I nuovi pacchetti Colab conservano le coordinate WGS84 dei soli punti con quote valide nella metainformazione delle strutture. Per i pacchetti già importati si possono riusare i diagnostici `strutture.geojson` e `quote_strutture_punti.csv`, associati per indice del punto e settore. Gli originali esclusi da Git non sono necessari nel sito. Il notebook è stato rigenerato con gli stessi controlli e i nuovi moduli di supporto.
+
+
+### Ore fuori dai settori di esposizione
+
+Le estensioni del periodo e giornaliere vengono ora costruite soltanto sulle ore con onde nei settori configurati. Picchi e finestre si riferiscono a questa selezione; le ore escluse non diventano livelli nulli né vengono interpolate. Non si aggiunge una correzione angolare o un modello di rifrazione/diffrazione.
+
+Quando un giorno ha zero ore idonee, `layers` è vuoto, `status` è `not_applicable` per direzione esterna o `unavailable` per direzione/esposizione sconosciuta, e gli export GeoJSON/KMZ non vengono prodotti. La cartografia di contesto del settore rimane nei metadati. Non si tratta di un’area di allagamento vuota o di condizioni sicure. Gli export prodotti nelle ore idonee dichiarano policy direzionale e numero di ore considerate.

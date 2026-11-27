@@ -28,7 +28,7 @@ class MapEstimateTests(unittest.TestCase):
             rows,_=p.summarize_records(waves,{'slopes':[.05],'roughness_m':.001},[],{},0)
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,_=bulletin()
-            data,_=build_map(dict(name='Spiaggia',hourly=rows),b,mapping,root,'venezia','whole')
+            data,_=build_map(dict(name='Spiaggia',hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
         expected=max(r['twl_mean_m'] for r in rows)
         for layer in data['layers']:
             self.assertAlmostEqual(layer['level_m'],expected)
@@ -41,7 +41,7 @@ class MapEstimateTests(unittest.TestCase):
             rows[10]['twl_mean_m']=.8
             rows[25]['twl_p75_m']=2.
             rows[30]['twl_p95_m']=100.;rows[30]['twl_max_m']=1000.
-            result,_=build_map(dict(name='Spiaggia',hourly=rows),b,mapping,root,'venezia','whole')
+            result,_=build_map(dict(name='Spiaggia',hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             mean,upper=result['layers']
             self.assertEqual(result['default_layer'],'mean')
             self.assertEqual([x['kind'] for x in result['layers']],['mean','central_upper'])
@@ -55,7 +55,7 @@ class MapEstimateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
             for i in [2,3,8]:rows[i]['twl_mean_m']=.8
-            result,_=build_map(dict(hourly=rows),b,mapping,root,'venezia','whole')
+            result,_=build_map(dict(hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             windows=result['layers'][0]['peak_windows']
             self.assertEqual(windows,[{'from':(NOW+timedelta(hours=2)).isoformat(),'to':(NOW+timedelta(hours=4)).isoformat()},
                                       {'from':(NOW+timedelta(hours=8)).isoformat(),'to':(NOW+timedelta(hours=9)).isoformat()}])
@@ -64,7 +64,7 @@ class MapEstimateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
             for r in rows:r['twl_mean_m']=-2.
-            result,assets=build_map(dict(hourly=rows),b,mapping,root,'venezia','whole')
+            result,assets=build_map(dict(hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             self.assertEqual(result['status'],'available')
             self.assertEqual(result['layers'][0]['seed_condition'],'below_seed_level')
             self.assertEqual(result['layers'][0]['cells'],0)
@@ -77,7 +77,7 @@ class MapEstimateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
             rows[2]['twl_mean_m']=.8;rows[8]['twl_p75_m']=2.
-            result,assets=build_map(dict(name='Spiaggia & test',hourly=rows),b,mapping,root,'venezia','whole')
+            result,assets=build_map(dict(name='Spiaggia & test',hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             self.assertEqual(result['mobile_export']['status'],'available')
             raw=assets[result['mobile_export']['url'].removeprefix('data/')]
             with ZipFile(BytesIO(raw)) as a:

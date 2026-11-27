@@ -59,7 +59,7 @@ class GeoJSONTests(unittest.TestCase):
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
             rows[10]['twl_p75_m']=2.
             digest=hashlib.sha256((root/mapping['grid_file']).read_bytes()).hexdigest()
-            result,assets=build_map(dict(name='Spiaggia',hourly=rows),b,mapping,root,'venezia','whole')
+            result,assets=build_map(dict(name='Spiaggia',hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             export=result['geojson_export'];self.assertEqual(export['status'],'available')
             self.assertEqual({f['kind'] for f in export['files']},{'aree','limiti'})
             for file in export['files']:
@@ -85,7 +85,7 @@ class GeoJSONTests(unittest.TestCase):
     def test_two_runs_have_different_filenames_and_retain_both_local_exports(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
-            b['locations']={'venezia':dict(hourly=rows,mapping=mapping)}
+            b['locations']={'venezia':dict(hourly=rows,mapping=mapping,wave_exposure={'sectors_deg':[[0,360]]})}
             write_maps(b,root/'out',root)
             first=set((root/'out/maps/venezia').glob('*.geojson'))
             b['processing_started_at']='2026-11-11T06:42:18Z'
@@ -100,7 +100,7 @@ class GeoJSONTests(unittest.TestCase):
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin()
             with patch('forecast_service.inundation_geojson.export_geojson',side_effect=GEOSException('Prova errore GIS')):
                 with self.assertLogs('forecast_service.inundation',level='WARNING'):
-                    result,assets=build_map(dict(hourly=rows),b,mapping,root,'venezia','whole')
+                    result,assets=build_map(dict(hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             self.assertEqual(result['status'],'available')
             self.assertEqual(result['geojson_export']['status'],'unavailable')
             self.assertEqual(len(result['layers']),2)

@@ -502,6 +502,13 @@ function bindChartDisclosure(id,chartId) {
 }
 
 function renderCharts(location,rows) {
+  const sourceRows=rows;
+  if(typeof coastalChartRows==='function'){
+    const eligible=rows.filter(r=>forecastExposure(location,r)===true).length;
+    if($('twl-direction-message')){$('twl-direction-message').hidden=eligible===rows.length;$('twl-direction-message').textContent=eligible?'Le ore con onde fuori settore o direzione non verificata non mostrano risalita: il grafico è interrotto in quelle ore.':'Risalita non rappresentata: nessuna ora con onde nei settori di esposizione e direzione verificata. Questo non indica mare calmo. Onde al largo, marea e surge restano consultabili sotto.';}
+    if($('twl-chart'))$('twl-chart').hidden=!eligible;
+    rows=coastalChartRows(location,rows);
+  }
   bindInfoButton('twl-info-toggle');
   bindChartDisclosure('waves-disclosure','wave-chart');
   bindChartDisclosure('extremes-disclosure','extreme-chart');
@@ -591,7 +598,7 @@ function renderCharts(location,rows) {
   waveTraces.push({x,text,y:rows.map(r=>r.water_level_m),yaxis:separateSea?'y6':'y4',name:'Marea + Storm surge',mode:'lines',connectgaps:false,line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra>Marea + Storm surge</extra>'});
   for(let i=0;i<waveTraces.length;i++) if(waveTraces[i].mode==='lines' && ['y4','y5','y6'].includes(waveTraces[i].yaxis)) waveTraces[i]=smoothTrace(waveTraces[i]);
   Plotly.react('wave-chart',waveTraces,layout,plotOptions);
-  if(typeof readerPolishCharts==='function')readerPolishCharts(location,rows);
+  if(typeof readerPolishCharts==='function')readerPolishCharts(location,sourceRows);
 }
 
 
@@ -724,6 +731,7 @@ function mapLayerTiming(layer,now=Date.now()) {
 function inundationMapText(data,now=Date.now()) {
   if (!data) return 'DEM e cartografia non configurati per questo tratto.';
   if (data.status!=='available') return `Mappa non disponibile: ${data.reason||'dati da verificare'}`;
+  if(data.exposure_policy==='frontal_hours_only_v1')return `Periodo selezionato: ${local(data.period_from)} — ${local(data.period_to)}, ora italiana. Le estensioni usano soltanto le ${data.hours_frontal} ore con onde nei settori di esposizione configurati, su ${data.hours_total} disponibili. Ore fuori settore o con direzione non verificata sono escluse. Ogni stima rappresenta la propria ora più intensa: media dei modelli oppure limite superiore della fascia centrale. Non sono probabilità di inondazione né profondità d’acqua; il riparo della costa non è simulato.`;
   const expired=now>=Date.parse(data.period_to);
   const direction=data.hours_non_frontal?` In ${data.hours_non_frontal} ore le onde provengono da altre direzioni: l’estensione non tiene conto del riparo della costa e richiede particolare cautela.`:'';
   const unknown=data.hours_direction_unknown?` In ${data.hours_direction_unknown} ore il confronto con l’esposizione non è disponibile.`:'';

@@ -16,8 +16,9 @@ from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 from forecast_service.ensemble import STATISTICS_METHOD
 from forecast_service.beach_profile import profile_snapshot
 from forecast_service.profile_image import draw_profile
-from forecast_service.exposure import is_exposed
+from forecast_service.exposure import is_exposed, wave_is_exposed
 from forecast_service.time_utils import parse_time, iso
+from forecast_service.research_notice import RESEARCH_STATUS, RESEARCH_NOTICE, DISCLAIMER_URL, PNG_NOTICE
 
 WIDTH, HEIGHT = 1080, 1350
 ASSETS = Path(__file__).resolve().parent / 'assets'
@@ -77,7 +78,7 @@ def card_data(bulletin,unit):
     if not rows:raise ValueError('Nessun campione nel periodo dell’elaborazione.')
     valid=[r for r in rows if r.get('statistics_method')==STATISTICS_METHOD and r.get('n_estimates',0)>0 and finite(r.get('twl_p95_m'))]
     wave=max((r for r in rows if finite(r.get('hs_m'))),key=lambda r:r['hs_m'],default=None)
-    twl=max(valid,key=lambda r:r['twl_p95_m'],default=None)
+    twl=max((r for r in valid if wave_is_exposed(r,unit.get('wave_exposure')) is True),key=lambda r:r['twl_p95_m'],default=None)
     groups={}
     for row in rows:groups.setdefault(parse_time(row['time']).astimezone(TZ).date(),[]).append(row)
     structures=display_thresholds(unit)
@@ -275,8 +276,8 @@ def render_card(bulletin,parent,unit,output,*,slug,unit_id):
     c.text('ondeariva',48,28,32,True)
     c.box((764,24,1032,124),'#fff0d9','#dfbf96',12)
     d.polygon([(780,54),(792,30),(804,54)],fill='#b16d24');c.text('!',789,35,15,True,width=10,color='white')
-    c.text('Attenzione',817,33,17,True,width=198,color='#75451f')
-    c.text('Non usare per previsioni, allerte o decisioni gestionali.',781,65,16,width=234,lines=3,color='#75451f')
+    c.text('Prototipo di ricerca',817,33,16,True,width=198,color='#75451f')
+    c.text(PNG_NOTICE,781,65,14,width=234,lines=3,color='#75451f')
     c.text(parent['name'],48,82,34,True,width=672,lines=2)
     if unit is not parent:c.text(unit['name'],48,162,23,width=672,lines=2)
     c.text('Elaborazione '+local(bulletin['generated_at'],True)+' · ora italiana',48,222,18,color=MUTED)
@@ -287,12 +288,12 @@ def render_card(bulletin,parent,unit,output,*,slug,unit_id):
     c.text(number(wave.get('hs_m') if wave else None)+' m',68,328,48,True,width=440)
     c.text(('Tp '+number(wave.get('tp_s'),1)+' s · da '+compass(wave.get('direction_deg'))) if wave else 'Dati non disponibili',68,390,24,width=440)
     c.text(local(wave['time']) if wave else '—',68,423,16,color=MUTED)
-    c.text('ACQUA SULLA SPIAGGIA · TWL ALTO',570,300,19,True,width=440)
+    c.text('QUOTA STIMATA DELL’ACQUA · TWL',570,300,19,True,width=440)
     c.text(number(twl.get('twl_p95_m') if twl else None)+' m',570,328,48,True,width=440)
-    c.text('Onde + livello del mare',570,390,23,width=440)
-    c.text(local(twl['time']) if twl else 'Dati non disponibili',570,423,16,color=MUTED)
+    c.text('Onde + livello del mare' if twl else 'Risalita non rappresentata',570,390,23,width=440)
+    c.text(local(twl['time']) if twl else 'Direzione o risultati non valutabili',570,423,16,color=MUTED)
     c.text('GIORNO PER GIORNO',48,472,23,True,width=984)
-    c.text('Risultati dei modelli sopra la quota delle strutture indicate',48,507,20,width=984,lines=1,color=MUTED)
+    c.text('Percentuale di stime sopra la quota delle strutture indicate',48,507,20,width=984,lines=1,color=MUTED)
     c.text('Confronto tra quote, non probabilità di allagamento',48,534,17,width=984,color=MUTED)
     structures=data['structures']
     for j,t in enumerate(structures):
@@ -320,7 +321,7 @@ def render_card(bulletin,parent,unit,output,*,slug,unit_id):
             art=raw.convert('RGBA');art.thumbnail((244,105),Image.Resampling.LANCZOS)
             c.image.paste(art,(48,1224),art)
     c.text('MARINA · ERC · Grant 101334860',318,1225,19,True,width=714)
-    c.text('alerovere.github.io/Runup_GUI/',318,1255,21,True,width=714)
+    c.text(DISCLAIMER_URL.removeprefix('https://'),318,1255,17,True,width=714)
     c.text(EU_DISCLAIMER,318,1288,11,width=714,lines=3,color=MUTED)
     if bulletin['mode']=='demo':c.text('DATI DIMOSTRATIVI',330,39,17,True,color='#9c5024')
     info=dict(schema_version=4,slug=slug,unit_id=unit_id,generated_at=bulletin['generated_at'],
@@ -334,7 +335,7 @@ def render_card(bulletin,parent,unit,output,*,slug,unit_id):
               daily=data['days'],structures=[dict(id=t['id'],label=t.get('short_label'),elevation_m=t['elevation_m']) for t in data['structures']],
               vertical_reference=level_reference(bulletin,unit),twl_statistic='twl_p95_m',funding_disclaimer=EU_DISCLAIMER,
               url=PUBLIC_URL+'?localita='+slug+('&settore='+unit_id if unit_id!='whole' else ''),
-              disclaimer='Elaborazione sperimentale. Non usare per previsioni, allerte o decisioni gestionali.')
+              research_status=RESEARCH_STATUS,disclaimer=RESEARCH_NOTICE,disclaimer_url=DISCLAIMER_URL)
     png_info=PngImagePlugin.PngInfo();png_info.add_text('Onde-a-riva',json.dumps(info,ensure_ascii=False))
     stream=BytesIO();c.image.save(stream,format='PNG',pnginfo=png_info,optimize=True)
     return stream.getvalue(),info

@@ -51,7 +51,7 @@ class TelegramDailyTests(unittest.TestCase):
             b,_=fixture(folder);before=deepcopy(b);deliveries=t.prepare_deliveries(b,folder,now=NOW)
             self.assertEqual([d['sector'] for d in deliveries],['1','2','3']);self.assertEqual(b,before)
             for d in deliveries:
-                self.assertIn('07:05 CET',d['caption']);self.assertIn(t.WARNING,d['caption']);self.assertLessEqual(len(d['caption']),1024)
+                self.assertIn('07:05 CET',d['caption']);self.assertIn(t.WARNING,d['caption']);self.assertIn('elaborazione di ricerca giornaliera',d['caption']);self.assertLessEqual(len(d['caption']),1024)
                 self.assertIn('settore='+d['sector'],d['buttons']['inline_keyboard'][0][0]['url'])
                 self.assertTrue(d['buttons']['inline_keyboard'][1][0]['url'].endswith('disclaimer.html'))
             b,_=fixture(folder,sectors=False);self.assertEqual(t.prepare_deliveries(b,folder,now=NOW)[0]['sector'],'whole')

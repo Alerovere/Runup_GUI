@@ -120,7 +120,7 @@ PCHIP serve soltanto a disegnare curve temporali fra i campioni orari (punti ogn
 
 Ogni nuova elaborazione genera una PNG **1080 × 1350** per settore, oppure per l’intera località se non ci sono settori. Il pulsante è accanto al CSV e usa `social_card` della selezione corrente. A sinistra mostra altezza significativa, periodo e provenienza delle onde; a destra un profilo schematico della spiaggia con strutture, quota media TWL, P95 e linea punteggiata al P99,5. Restano invariati i due valori principali, il riepilogo giornaliero, avvertenze e riconoscimenti UE/ERC. La mappa interattiva del sito rimane disponibile nella pagina locale.
 
-L’immagine fotografa le **96 ore fisse dell’elaborazione**, non la finestra futura scorrevole del browser. Il profilo rappresenta l’ora con il TWL medio filtrato più alto nelle 96 ore: media, P95, P99,5 e strutture si riferiscono tutti a quell’ora. Il valore TWL alto nel riquadro superiore resta il massimo temporale del P95, con il suo orario. I picchi possono quindi avere orari diversi. Il profilo generalizzato non è un transetto misurato e non rappresenta distanze orizzontali di inondazione. La provenienza delle onde mantiene i campioni orari, senza interpolazione angolare; le curve di Hs e Tp usano PCHIP solo per il disegno.
+L’immagine fotografa le **96 ore fisse dell’elaborazione**, non la finestra futura scorrevole del browser. Il profilo rappresenta l’ora con il TWL medio filtrato più alto fra le ore frontali nelle 96 ore: media, P95, P99,5 e strutture si riferiscono tutti a quell’ora. Il valore TWL alto nel riquadro superiore resta il massimo temporale del P95, con il suo orario. I picchi possono quindi avere orari diversi. Il profilo generalizzato non è un transetto misurato e non rappresenta distanze orizzontali di inondazione. La provenienza delle onde mantiene i campioni orari, senza interpolazione angolare; le curve di Hs e Tp usano PCHIP solo per il disegno.
 
 I giorni mostrano separatamente le percentuali per chioschi e passeggiata (quote effettive del settore), con gli stessi colori ed esclusioni per esposizione, stagione e dati mancanti. Sono massimi orari delle frazioni di risultati, non frequenze temporali né probabilità. Le altre strutture configurate restano nel bollettino e nel CSV.
 
@@ -157,8 +157,23 @@ Dopo un aggiornamento del codice fare commit e push, poi avviare **Previsioni lo
 
 ### Primo riquadro: profilo generalizzato della spiaggia
 
-Nel sito il profilo usa l’ora di maggiore media TWL fra le ore visualizzate (finestra futura oppure intera data selezionata). Le percentuali delle strutture accanto al profilo sono quelle della **stessa ora**, e possono quindi differire dai massimi nelle schede giornaliere. I colori del profilo si riferiscono a quell’ora e mantengono il confronto P75/P95; il P99,5 non determina categorie, soglie o mappe.
+Nel sito il profilo usa l’ora di maggiore media TWL fra le ore frontali visualizzate (finestra futura oppure intera data selezionata). Le percentuali delle strutture accanto al profilo sono quelle della **stessa ora**, e possono quindi differire dai massimi nelle schede giornaliere. I colori del profilo si riferiscono a quell’ora e mantengono il confronto P75/P95; il P99,5 non determina categorie, soglie o mappe.
 
 Il nuovo campo orario `twl_p995_m` viene calcolato direttamente dagli stessi risultati modello × pendenza conservati dopo il filtro μ±3σ; la percentuale sopra quota resta un conteggio diretto su tutti i risultati conservati, anche quelli oltre P99,5. I vecchi bollettini senza il nuovo campo mostrano esplicitamente che P99,5 non è disponibile, senza estrapolarlo da altri percentili. Serve una nuova elaborazione dopo commit e push per pubblicare il nuovo campo.
 
 Il profilo e le posizioni orizzontali delle strutture sono schematici; solo le quote e i risultati provengono dai dati del settore. La scala verticale si adatta ai valori, mentre non viene stimata una distanza di risalita. Per le onde non frontali la grafica è grigia e il confronto percentuale non è valutabile; le strutture fuori stagione e i dati mancanti mantengono indicazioni distinte.
+
+
+### Filtro direzionale per la rappresentazione costiera
+
+Profilo, quota TWL di sintesi, infografica e mappe usano soltanto ore con onde nei settori di esposizione configurati (`wave_is_exposed is True`). Le onde offshore, i contributi di marea e surge e tutti i risultati originali restano invariati; non viene imposto un mare calmo o un runup nullo. Senza ore frontali valide il profilo e il TWL di sintesi non riportano quote, e le mappe non generano aree, linee o download. La ragione è esplicita, distinguendo direzione esterna da esposizione/direzione non verificata.
+
+Il grafico TWL interrompe curve e fasce nelle ore fuori settore o con direzione non verificata. Non si interpola attraverso queste ore e non si modifica il calcolo originale nel CSV; non è una correzione fisica della propagazione verso riva. Nei periodi misti un massimo teorico più alto fuori settore non può determinare la quota rappresentata. Le statistiche per colore restano basate su P75/P95 filtrati e sulle ore frontali, come prima.
+
+Le nuove mappe dichiarano `exposure_policy=frontal_hours_only_v1`, conteggi delle ore e metodo `connected_static_twl_filtered_mean_p75_frontal_v3`. Ogni giorno senza ore idonee ha uno stato esplicito e download vuoti, senza ereditare quelli dell’intero bollettino. Il sito nasconde le vecchie mappe prive della nuova verifica fino alla rigenerazione dopo commit, push e nuova esecuzione della Action.
+
+## Identità di ricerca e file condivisi
+
+Tutte le pagine pubbliche indicano «Prototipo di ricerca — non validato per uso operativo» e rimandano alle avvertenze. Il gestore indicato resta il Prof. Alessio Rovere (alessio.rovere@unive.it). Le percentuali confrontano stime modello × pendenza con le quote rilevate: non attestano l’allagamento delle strutture.
+
+Le nuove elaborazioni includono l’avvertenza nelle PNG (anche nei metadati) e nelle didascalie Telegram. Ogni riga dei CSV pubblici — località, settori e surge nativo — conserva tutti i campi originali e aggiunge `research_status`, `use_warning` e `disclaimer_url`. Nessun commento precede l’intestazione CSV, per mantenere la lettura con pandas e GIS. I valori numerici e il filtro dei calcoli restano invariati. I file e i messaggi già scaricati o inviati non vengono aggiornati retroattivamente; occorre una nuova elaborazione per generare i nuovi file.

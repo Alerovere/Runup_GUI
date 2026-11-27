@@ -24,7 +24,7 @@ class SiteAssetsTests(unittest.TestCase):
             page=(ROOT/'forecast_site'/name).read_text()
             self.assertIn('101334860',page)
             self.assertIn('assets/eu-erc-horizon-europe.png',page)
-            self.assertIn('non devono essere utilizzati per alcun tipo di previsione',page)
+            self.assertIn('non devono essere utilizzati per previsioni operative, allerte, valutazioni di sicurezza, progettazione o decisioni gestionali',page)
 
     def test_page_anchors_and_shared_method_links_resolve(self):
         pages={name:Page((ROOT/'forecast_site'/name).read_text()) for name in ('index.html','metodo.html','disclaimer.html')}

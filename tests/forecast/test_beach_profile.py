@@ -37,10 +37,10 @@ class BeachProfileTests(unittest.TestCase):
         row['twl_p995_m']=1.;self.assertIsNone(profile_snapshot(unit,[row])['p995_m'])
     def test_nonfrontal_inactive_unknown_and_unfiltered_are_not_flooding_percentages(self):
         unit,row=fixture();row['direction_deg']=0
-        snapshot=profile_snapshot(unit,[row]);self.assertEqual(snapshot['key'],'gray');self.assertFalse(snapshot['exposed']);self.assertTrue(all(a['fraction'] is None for a in snapshot['structures']))
+        snapshot=profile_snapshot(unit,[row]);self.assertEqual(snapshot['key'],'gray');self.assertEqual(snapshot['status'],'not_applicable');self.assertNotIn('mean_m',snapshot)
         row['direction_deg']=180;row['thresholds'][0]['active']=False
         self.assertEqual(profile_snapshot(unit,[row])['structures'][0]['state'],'inactive')
-        row['direction_deg']=None;self.assertIsNone(profile_snapshot(unit,[row])['structures'][1]['fraction'])
+        row['direction_deg']=None;self.assertEqual(profile_snapshot(unit,[row])['reason_code'],'unknown_direction')
         row['statistics_method']='legacy';self.assertEqual(profile_snapshot(unit,[row])['status'],'unavailable')
     def test_p995_does_not_promote_impact_category(self):
         unit,row=fixture();row.update(twl_p75_m=1.0,twl_p95_m=1.3,twl_p995_m=10.)

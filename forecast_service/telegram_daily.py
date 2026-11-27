@@ -22,12 +22,13 @@ from zoneinfo import ZoneInfo
 from forecast_service.ensemble import STATISTICS_METHOD
 from forecast_service.reader_summary import bulletin_summary, summary_lines, change_text
 from forecast_service.time_utils import parse_time, iso
+from forecast_service.research_notice import RESEARCH_NOTICE, DISCLAIMER_URL
 
 LOCATION='borghetto-santo-spirito'
 PUBLIC_URL='https://alerovere.github.io/Runup_GUI/'
 STATE_ARTIFACT='telegram-borghetto-state-v1'
 STATE_LIMIT=64*1024
-WARNING='Elaborazione sperimentale: non utilizzare per previsioni, allerte o decisioni gestionali.'
+WARNING=RESEARCH_NOTICE
 
 
 class DeliveryError(Exception):
@@ -73,13 +74,13 @@ def prepare_deliveries(bulletin,data_dir,*,now):
         def local(value):return parse_time(value).astimezone(ZoneInfo('Europe/Rome')).strftime('%d/%m/%Y %H:%M %Z')
         name=str(unit.get('name',sector))[:160]
         summary=bulletin_summary(unit,rows)
-        caption=(f'🌊 Borghetto Santo Spirito — bollettino giornaliero\n📍 {name}\n\n'
-                 +'\n'.join(summary_lines(summary))+ '\nRisultati dei modelli, non probabilità di allagamento.\n\n'
+        caption=(f'🌊 Borghetto Santo Spirito — elaborazione di ricerca giornaliera\n📍 {name}\n\n'
+                 +'\n'.join(summary_lines(summary))+ '\nStime dei modelli × pendenze, non probabilità di allagamento.\n\n'
                  +f'Elaborazione: {local(generated)}\nPeriodo: {local(start)} → {local(end)}\n\n⚠️ {WARNING}')
         if len(caption)>1024:raise ValueError('Didascalia troppo lunga.')
         url=PUBLIC_URL+'?localita='+LOCATION+('&settore='+sector if sector!='whole' else '')
         buttons={'inline_keyboard':[[{'text':'Apri l’ultima elaborazione','url':url}],
-                                    [{'text':'Avvertenze e condizioni d’uso','url':PUBLIC_URL+'disclaimer.html'}]]}
+                                    [{'text':'Avvertenze e condizioni d’uso','url':DISCLAIMER_URL}]]}
         deliveries.append(dict(sector=sector,name=name,image=image,caption=caption,buttons=buttons,day=generated.date().isoformat(),generated_at=iso(generated),summary=summary))
     if not deliveries:raise ValueError('Nessun settore da inviare.')
     return deliveries

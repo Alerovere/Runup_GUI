@@ -14,7 +14,7 @@ from forecast_service import telegram_daily as t
 class DailyReaderTests(unittest.TestCase):
     def test_daily_peaks_exports_and_context_preserve_full_period_and_input(self):
         with tempfile.TemporaryDirectory() as folder:
-            root=Path(folder);mapping,_=grid(root);b,rows=bulletin();unit=dict(hourly=rows,mapping=mapping);before=deepcopy(rows)
+            root=Path(folder);mapping,_=grid(root);b,rows=bulletin();unit=dict(hourly=rows,mapping=mapping,wave_exposure={'sectors_deg':[[0,360]]});before=deepcopy(rows)
             meta,assets=build_map(unit,b,mapping,root,'venezia','whole')
             self.assertEqual(rows,before);self.assertEqual(sum(d['hours'] for d in meta['daily']),96)
             self.assertIn('sector_geometry',meta);self.assertIn('display_bounds',meta)
@@ -53,7 +53,7 @@ class DailyReaderTests(unittest.TestCase):
             root=Path(folder);mapping,_=grid(root);b,rows=bulletin();start=datetime(2026,10,24,22,tzinfo=timezone.utc)
             b.update(display_from=iso(start),display_to=iso(start+timedelta(hours=96)))
             for i,row in enumerate(rows):row['time']=iso(start+timedelta(hours=i))
-            meta,_=build_map(dict(hourly=rows),b,mapping,root,'venezia','whole')
+            meta,_=build_map(dict(hourly=rows,wave_exposure={'sectors_deg':[[0,360]]}),b,mapping,root,'venezia','whole')
             self.assertEqual([d['hours'] for d in meta['daily']],[25,24,24,23])
     def test_change_is_appended_on_next_day_for_same_channel_and_sector(self):
         class Capture(FakeClient):

@@ -43,7 +43,7 @@ class TerrainTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder);mapping,_=grid(root)
             rows=[dict(time=p.iso(NOW+timedelta(hours=i)),twl_mean_m=.4,twl_p75_m=.5,twl_p95_m=1.,statistics_method=p.STATISTICS_METHOD) for i in range(96)]
-            data,assets=build_map({'hourly':rows},{'mode':'demo','processing_started_at':p.iso(NOW),'display_hours':96},mapping,root,'venezia','whole')
+            data,assets=build_map({'hourly':rows,'wave_exposure':{'sectors_deg':[[0,360]]}},{'mode':'demo','processing_started_at':p.iso(NOW),'display_hours':96},mapping,root,'venezia','whole')
             self.assertIsNone(data['orthophoto'])
             self.assertTrue(data['terrain'].endswith('-terrain.png'))
             self.assertEqual(len(data['terrain_scale']['colors']),5)
