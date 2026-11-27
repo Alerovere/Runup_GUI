@@ -14,6 +14,8 @@ from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw, ImageFont, PngImagePlugin
 
 from forecast_service.ensemble import STATISTICS_METHOD
+from forecast_service.beach_profile import profile_snapshot
+from forecast_service.profile_image import draw_profile
 from forecast_service.exposure import is_exposed
 from forecast_service.time_utils import parse_time, iso
 
@@ -65,51 +67,7 @@ def level_reference(bulletin,unit):
     return 'riferimento provvisorio del modello, da validare'
 
 
-def reference_threshold(unit):
-    thresholds=unit.get('thresholds',[])
-    return next((t for t in thresholds if t['id']=='strutture_turistiche_fisse'),
-                next((t for t in thresholds if t.get('season')=='all_year'),thresholds[0] if thresholds else None))
-
-
-def display_thresholds(unit):
-    """Prefer kiosks and promenade; retain actual per-sector IDs and elevations."""
-    thresholds=unit.get('thresholds',[])
-    def text(t):return ' '.join(str(t.get(k,'')) for k in ('id','short_label','description')).lower()
-    kiosks=next((t for t in thresholds if 'chiosc' in text(t) or t['id']=='strutture_turistiche_fisse'),None)
-    promenade=next((t for t in thresholds if 'passeggiat' in text(t) or t['id']=='infrastrutture_fisse'),None)
-    chosen=[t for t in (kiosks,promenade) if t]
-    return chosen or thresholds[:2]
-
-
-def row_state(unit, row, threshold):
-    sample=next((t for t in row.get('thresholds',[]) if threshold and t['id']==threshold['id']),None)
-    if not threshold or sample is None or not row.get('n_estimates',0)>0 or not finite(sample.get('fraction')) or not all(finite(row.get(k)) for k in ('twl_p75_m','twl_p95_m')):
-        return 'missing',None,None
-    if row.get('statistics_method')!=STATISTICS_METHOD: return 'unfiltered',None,None
-    if sample.get('active') is False: return 'inactive',None,None
-    exposure=is_exposed(row.get('direction_deg'),unit.get('wave_exposure')) if finite(row.get('hs_m')) and row['hs_m']>0 else None
-    if exposure is False: return 'nonfrontal',None,None
-    if exposure is None: return 'unknown-direction',None,None
-    rank=2 if row['twl_p75_m']>threshold['elevation_m'] else 1 if row['twl_p95_m']>threshold['elevation_m'] else 0
-    return 'numeric',rank,sample['fraction']
-
-
-def day_summary(unit, rows, threshold=None):
-    threshold=threshold or reference_threshold(unit)
-    states=[row_state(unit,r,threshold) for r in rows]
-    numeric=[(state,row) for state,row in zip(states,rows) if state[0]=='numeric']
-    if numeric:
-        key=['white','yellow','orange'][max(s[1] for s,_ in numeric)]
-        state,peak=max(numeric,key=lambda item:item[0][2])
-        fraction=state[2]
-    else:
-        key='gray' if any(s[0]=='nonfrontal' for s in states) and not any(s[0] in ('unknown-direction','unfiltered') for s in states) else 'unavailable'
-        peak=None;fraction=None
-    inactive=bool(states) and all(s[0]=='inactive' for s in states)
-    partial=(parse_time(rows[0]['time']).astimezone(TZ).strftime('%H:%M')!='00:00' or
-             parse_time(rows[-1]['time']).astimezone(TZ).strftime('%H:%M')!='23:00' or
-             any(parse_time(b['time'])-parse_time(a['time'])!=timedelta(hours=1) for a,b in zip(rows,rows[1:]))) if rows else True
-    return dict(key=key,fraction=fraction,peak_time=peak['time'] if peak else None,inactive=inactive,partial=partial)
+from forecast_service.reader_summary import reference_threshold, display_thresholds, row_state, day_summary
 
 
 def card_data(bulletin,unit):
@@ -126,7 +84,8 @@ def card_data(bulletin,unit):
     days=[dict(date=date.isoformat(),**day_summary(unit,group),structures=[dict(id=t['id'],**day_summary(unit,group,t)) for t in structures]) for date,group in groups.items()]
     if len(days)>5:raise ValueError('La scheda 4:5 supporta al massimo cinque date nel periodo di 96 ore.')
     return dict(period_from=iso(start),period_to=iso(end),hours=len(rows),wave=wave,twl=twl,
-                days=days,threshold=reference_threshold(unit),structures=structures,rows=rows)
+                days=days,threshold=reference_threshold(unit),structures=structures,rows=rows,
+                profile=profile_snapshot(unit,rows,structures))
 
 
 class Canvas:
@@ -295,32 +254,8 @@ def draw_forecast_charts(c,data,unit):
     if not available_direction:c.text('Direzione non disponibile',146,1075,18,width=340,color=MUTED)
     for x,label,color in ((78,'Altre direzioni','#498b66'),(237,'Verso costa','#ba6b37'),(382,'Non definita','#9ba9a4')):
         d.ellipse((x,1168,x+7,1175),fill=color);c.text(label,x+14,1161,13,width=137,color=MUTED)
-    c.text('LIVELLO TOTALE (TWL)',570,772,22,True,width=442)
-    legend(582,811,'TWL medio','#156a6e')
-    c.box((582,842,602,858),'#e5e9e8','#9ba9a4',3);c.text('Fascia centrale dei modelli',611,838,16,width=398)
-    level_y=axis([p[k] for p in points for k in ('twl','low','high')],610,891,1125)
-    threshold=data['threshold']
-    states=[(p['x'],row_state(unit,row,threshold)) for p,row in zip(points,data['rows'])]
-    from bisect import bisect_left
-    times=[x for x,_ in states]
-    def key_at(x):
-        i=bisect_left(times,x)
-        if i==len(times) or (i and x-times[i-1]<times[i]-x):i-=1
-        state=states[i][1]
-        return ['white','yellow','orange'][state[1]] if state[0]=='numeric' else 'gray' if state[0]=='nonfrontal' else 'unavailable'
-    for band in central_bands(points):
-        for a,b in zip(band,band[1:]):
-            fill=COLORS[key_at((a[0]+b[0])/2)][0]
-            d.polygon([(x_position(a[0],610),level_y(a[1])),(x_position(b[0],610),level_y(b[1])),
-                       (x_position(b[0],610),level_y(b[2])),(x_position(a[0],610),level_y(a[2]))],fill=fill)
-        if len(band)>1:
-            for edge in (1,2):d.line([(x_position(p[0],610),level_y(p[edge])) for p in band],fill='#a5b6af',width=1)
-    line('twl',610,level_y,'#156a6e',4)
-    if not any(p['twl'] is not None for p in points):c.text('Risultati non disponibili',639,1005,19,width=360,color=MUTED)
-    c.text('m',582,870,14,color=MUTED)
-    for left in (110,610):
-        for x,dt in ticks:c.text(dt.strftime('%d/%m'),x_position(x,left)-22,1138,14,width=55,color=MUTED)
-    c.text('TWL = onde + livello del mare',582,1161,15,width=426,color=MUTED)
+    for x,dt in ticks:c.text(dt.strftime('%d/%m'),x_position(x,110)-22,1138,14,width=55,color=MUTED)
+    draw_profile(c,data['profile'],structure_icon,dashed_line)
 
 
 
@@ -357,7 +292,8 @@ def render_card(bulletin,parent,unit,output,*,slug,unit_id):
     c.text('Onde + livello del mare',570,390,23,width=440)
     c.text(local(twl['time']) if twl else 'Dati non disponibili',570,423,16,color=MUTED)
     c.text('GIORNO PER GIORNO',48,472,23,True,width=984)
-    c.text('Percentuale di modelli che prevede inondazione delle strutture indicate',48,507,20,width=984,lines=2,color=MUTED)
+    c.text('Risultati dei modelli sopra la quota delle strutture indicate',48,507,20,width=984,lines=1,color=MUTED)
+    c.text('Confronto tra quote, non probabilità di allagamento',48,534,17,width=984,color=MUTED)
     structures=data['structures']
     for j,t in enumerate(structures):
         x=48+j*490;kind='promenade' if 'passeggiat' in str(t).lower() or t['id']=='infrastrutture_fisse' else 'kiosk'
@@ -387,12 +323,13 @@ def render_card(bulletin,parent,unit,output,*,slug,unit_id):
     c.text('alerovere.github.io/Runup_GUI/',318,1255,21,True,width=714)
     c.text(EU_DISCLAIMER,318,1288,11,width=714,lines=3,color=MUTED)
     if bulletin['mode']=='demo':c.text('DATI DIMOSTRATIVI',330,39,17,True,color='#9c5024')
-    info=dict(schema_version=3,slug=slug,unit_id=unit_id,generated_at=bulletin['generated_at'],
+    info=dict(schema_version=4,slug=slug,unit_id=unit_id,generated_at=bulletin['generated_at'],
               period_from=data['period_from'],period_to=data['period_to'],hours=data['hours'],
-              content='wave_twl_forecast',map_statistic=None,
+              content='wave_beach_profile_forecast',map_statistic=None,
               charts=dict(layout='side_by_side',interpolation='pchip_display_only',wave_fields=['hs_m','tp_s','direction_deg'],
                   direction_interpolation='none',direction_convention='nautical_from_north_clockwise',
-                  twl_statistic='twl_mean_m',band=['twl_p25_m','twl_p75_m']),
+                  profile_statistic='twl_mean_m',profile_upper='twl_p95_m',profile_tail='twl_p995_m'),
+              profile=data['profile'],
               wave_peak_time=wave['time'] if wave else None,twl_peak_time=twl['time'] if twl else None,
               daily=data['days'],structures=[dict(id=t['id'],label=t.get('short_label'),elevation_m=t['elevation_m']) for t in data['structures']],
               vertical_reference=level_reference(bulletin,unit),twl_statistic='twl_p95_m',funding_disclaimer=EU_DISCLAIMER,

@@ -20,6 +20,7 @@ import zipfile
 from zoneinfo import ZoneInfo
 
 from forecast_service.ensemble import STATISTICS_METHOD
+from forecast_service.reader_summary import bulletin_summary, summary_lines, change_text
 from forecast_service.time_utils import parse_time, iso
 
 LOCATION='borghetto-santo-spirito'
@@ -71,13 +72,15 @@ def prepare_deliveries(bulletin,data_dir,*,now):
             raise ValueError('Formato o dimensioni dell’infografica non validi.')
         def local(value):return parse_time(value).astimezone(ZoneInfo('Europe/Rome')).strftime('%d/%m/%Y %H:%M %Z')
         name=str(unit.get('name',sector))[:160]
+        summary=bulletin_summary(unit,rows)
         caption=(f'🌊 Borghetto Santo Spirito — bollettino giornaliero\n📍 {name}\n\n'
-                 f'Elaborazione: {local(generated)}\nPeriodo: {local(start)} → {local(end)}\n\n⚠️ {WARNING}')
+                 +'\n'.join(summary_lines(summary))+ '\nRisultati dei modelli, non probabilità di allagamento.\n\n'
+                 +f'Elaborazione: {local(generated)}\nPeriodo: {local(start)} → {local(end)}\n\n⚠️ {WARNING}')
         if len(caption)>1024:raise ValueError('Didascalia troppo lunga.')
         url=PUBLIC_URL+'?localita='+LOCATION+('&settore='+sector if sector!='whole' else '')
-        buttons={'inline_keyboard':[[{'text':'Apri il settore' if sector!='whole' else 'Apri la località','url':url}],
+        buttons={'inline_keyboard':[[{'text':'Apri l’ultima elaborazione','url':url}],
                                     [{'text':'Avvertenze e condizioni d’uso','url':PUBLIC_URL+'disclaimer.html'}]]}
-        deliveries.append(dict(sector=sector,name=name,image=image,caption=caption,buttons=buttons,day=generated.date().isoformat(),generated_at=iso(generated)))
+        deliveries.append(dict(sector=sector,name=name,image=image,caption=caption,buttons=buttons,day=generated.date().isoformat(),generated_at=iso(generated),summary=summary))
     if not deliveries:raise ValueError('Nessun settore da inviare.')
     return deliveries
 
@@ -188,7 +191,12 @@ def deliver_daily(deliveries,client,state,state_path,*,now,sleep=time.sleep):
         if old.get('status')=='sent':skipped+=1;continue
         if old.get('status')=='pending':uncertain+=1;continue
         if sent:sleep(1.1)
-        entry=dict(status='pending',generated_at=delivery['generated_at'],updated_at=iso(now))
+        previous=[(k,v) for k,v in state['entries'].items() if k<key and k.split('/')[1:]==key.split('/')[1:] and v.get('status')=='sent' and isinstance(v.get('summary'),dict)]
+        change=change_text(delivery.get('summary',{}),max(previous,key=lambda item:item[0])[1]['summary']) if previous else ''
+        if change:
+            candidate=delivery['caption'].replace('\n\n⚠️','\n'+change+'\n\n⚠️')
+            if len(candidate)<=1024:delivery=dict(delivery,caption=candidate)
+        entry=dict(status='pending',generated_at=delivery['generated_at'],updated_at=iso(now),summary={'key':delivery.get('summary',{}).get('key','unavailable')})
         state['entries'][key]=entry;write_state(state_path,state)
         try:message=client.send_photo(delivery)
         except DeliveryError as error:

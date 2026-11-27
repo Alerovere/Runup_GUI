@@ -147,9 +147,10 @@ def summarize_records(waves, location, thresholds, season, eta):
                    statistics_method=STATISTICS_METHOD,
                    filter_mean_m=filter_mean, filter_sigma_m=filter_sigma,
                    twl_min_m=None, twl_mean_m=None, twl_max_m=None,
-                   twl_p05_m=None, twl_p25_m=None, twl_p75_m=None, twl_p95_m=None)
+                   twl_p05_m=None, twl_p25_m=None, twl_p75_m=None, twl_p95_m=None, twl_p995_m=None)
         if values:
             row.update(twl_min_m=min(values), twl_mean_m=sum(values)/len(values), twl_max_m=max(values),
+                       twl_p995_m=quantile(values, .995),
                        **{f'twl_p{int(q*100):02d}_m': quantile(values, q) for q in [.05, .25, .75, .95]})
         row['thresholds'] = [{
             'id': threshold['id'],

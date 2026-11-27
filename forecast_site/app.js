@@ -111,6 +111,7 @@ function noticeWaveSource(location=null) {
 }
 
 function setNotice(extra='',location=null,now=Date.now()) {
+  if(typeof readerSetNotice==='function')return readerSetNotice(extra,location,now);
   const demo = bulletin.mode === 'demo';
   const age = (now-new Date(bulletin.generated_at))/hourMs;
   $('notice').className = `notice${demo ? ' demo' : ''}`;
@@ -130,6 +131,7 @@ function setNotice(extra='',location=null,now=Date.now()) {
 }
 
 function locationCards() {
+  if(typeof readerRenderLocations==='function')return readerRenderLocations();
   $('location-cards').innerHTML = Object.entries(bulletin.locations).map(([slug, location], index) => {
     const units=Object.values(location.sectors||{});
     const rows = units.length?units.flatMap(unit=>windowRows(unit)):windowRows(location);
@@ -353,6 +355,7 @@ function renderOutlook(location,rows,trend,days) {
 }
 
 function renderDaily(location,rows) {
+  if(typeof readerRenderDaily==='function')return readerRenderDaily(location,rows);
   const threshold=referenceThreshold(location),trend=assessTrend(location,rows,threshold),days=Math.ceil(bulletin.display_hours/24);
   renderOutlook(location,rows,trend,days);
   if($('daily-summary')) $('daily-summary').hidden=!rows.length;
@@ -588,6 +591,7 @@ function renderCharts(location,rows) {
   waveTraces.push({x,text,y:rows.map(r=>r.water_level_m),yaxis:separateSea?'y6':'y4',name:'Marea + Storm surge',mode:'lines',connectgaps:false,line:{color:'#426b96',width:2},fill:'tozeroy',fillcolor:'#e2eaf2',hovertemplate:'%{text}<br>Livello del mare: %{y:.2f} m<extra>Marea + Storm surge</extra>'});
   for(let i=0;i<waveTraces.length;i++) if(waveTraces[i].mode==='lines' && ['y4','y5','y6'].includes(waveTraces[i].yaxis)) waveTraces[i]=smoothTrace(waveTraces[i]);
   Plotly.react('wave-chart',waveTraces,layout,plotOptions);
+  if(typeof readerPolishCharts==='function')readerPolishCharts(location,rows);
 }
 
 
@@ -651,6 +655,7 @@ function locationParameters(location) {
 }
 
 async function bootMethod() {
+  if(typeof readerSetup==='function')readerSetup();
   try {
     const response=await fetch(`data/forecast.json?t=${Math.floor(Date.now()/300000)}`,{cache:'no-cache'});
     if (!response.ok) throw new Error('Metadati non disponibili');
@@ -661,7 +666,7 @@ async function bootMethod() {
     if ($('hero-provider')) $('hero-provider').textContent=bulletin.mode==='meteocean'?'MeteOcean + NOAA':bulletin.mode==='demo'?'Dati dimostrativi':'Copernicus Marine';
     $('updated').textContent=`Metadati del bollettino: ${local(bulletin.generated_at)} · Italia`;
     const slug=new URL(window.location.href).searchParams.get('localita');
-    if (slug && Object.hasOwn(bulletin.locations,slug)) {$('method-return').href=`./?localita=${encodeURIComponent(slug)}`;$('method-return').textContent=`← Torna a ${bulletin.locations[slug].name}`;}
+    if (slug && Object.hasOwn(bulletin.locations,slug)) {const back=new URL('./',window.location.href);back.searchParams.set('localita',slug);const sector=new URL(window.location.href).searchParams.get('settore');if(sector)back.searchParams.set('settore',sector);$('method-return').href=back.toString();$('method-return').textContent=`← Torna a ${bulletin.locations[slug].name}`;}
   } catch(error) {$('method-locations').innerHTML='<p>Parametri momentaneamente non disponibili. Le spiegazioni del metodo restano consultabili.</p>';}
 }
 
@@ -672,6 +677,7 @@ function selectedBeachUnit(location,sectorId) {
 }
 
 function renderSectorSelector(location,sectorId) {
+  if(typeof readerRenderSectorSelector==='function')return readerRenderSectorSelector(location,sectorId);
   const node=$('sector-selection'), sectors=Object.entries(location.sectors||{});
   if (!node) return;
   node.hidden=!sectors.length;
@@ -736,6 +742,7 @@ function inundationDownloads(data) {
   return links.join(' ');
 }
 function renderInundation(location,requested) {
+  if(typeof readerRenderInundation==='function')return readerRenderInundation(location,requested);
   const panel=$('inundation-panel');
   if (!panel) return;
   if (inundationMap) {inundationMap.remove();inundationMap=null;}
@@ -792,6 +799,7 @@ function renderInundation(location,requested) {
 }
 
 function bindInfoButton(id) {
+  if(typeof readerBindInfo==='function')return readerBindInfo(id);
   const button=$(id);
   if(!button) return;
   button.onclick=()=>{button.ariaExpanded='true';button.focus();};
@@ -805,6 +813,7 @@ function bindInfoButton(id) {
 }
 
 function renderMetrics(location,rows) {
+  if(typeof readerRenderMetrics==='function')return readerRenderMetrics(location,rows);
   const valid=rows.filter(r=>hasFilteredStatistics(r) && Number.isFinite(r.twl_p95_m));
   const peak=valid.reduce((best,row)=>!best || row.twl_p95_m>best.twl_p95_m?row:best,null);
   const wave=wavePeak(rows);
@@ -829,12 +838,13 @@ function renderSocialDownload(location) {
     (!bulletin.display_from || Date.parse(card.period_from)===Date.parse(bulletin.display_from)) &&
     (!bulletin.display_to || Date.parse(card.period_to)===Date.parse(bulletin.display_to));
   link.hidden=!valid;
-  if(valid) {link.href=card.url;link.download=card.filename;link.title='Sintesi delle 96 ore dell’elaborazione, con grafici affiancati di onde, direzione e livello totale (TWL). PNG 1080 × 1350.';}
+  if(valid) {link.href=card.url;link.download=card.filename;link.title='Sintesi delle 96 ore dell’elaborazione, con onde, direzione e profilo schematico della spiaggia (TWL). PNG 1080 × 1350.';}
   else {link.removeAttribute?.('href');link.removeAttribute?.('download');}
   if(status) {status.hidden=valid;status.textContent=valid?'':'Infografica non disponibile per questa elaborazione.';}
 }
 
 function renderDetail(slug) {
+  if(typeof readerRenderDetail==='function')return readerRenderDetail(slug);
   const parent=bulletin.locations[slug];
   const requestedSector=new URL(window.location.href).searchParams.get('settore');
   const sectorId=parent.sectors && Object.hasOwn(parent.sectors,requestedSector)?requestedSector:Object.keys(parent.sectors||{})[0]||null;
@@ -879,6 +889,7 @@ function renderRoute() {
 }
 
 async function boot() {
+  if(typeof readerSetup==='function')readerSetup();
   try {
     const response=await fetch(`data/forecast.json?t=${Math.floor(Date.now()/300000)}`,{cache:'no-cache'});
     if (!response.ok) throw new Error('Bollettino non disponibile');

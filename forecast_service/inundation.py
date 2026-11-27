@@ -102,28 +102,38 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
     masks = []
     estimates=[('mean','twl_mean_m',None,'Inondazione media prevista dai modelli',(107,197,232,100)),
                ('central_upper','twl_p75_m',75,'Inondazione massima (fascia centrale)',(35,129,188,115))]
-    for kind,field,q,label,color in estimates:
-        peak = max(rows, key=lambda r: r[field])
-        level = peak[field]
-        seed_available=bool((z[seeds] < level).any())
-        reached = connected_mask(z, seeds, level)
-        mask = reached & display
-        rgba = np.zeros((*z.shape, 4), dtype=np.uint8)
-        rgba[mask] = color
-        filename = f'{prefix}-{"mean" if kind=="mean" else "p75"}.png'
-        assets[filename] = png_bytes(rgba)
-        windows=[]
-        for row in rows:
-            if not math.isclose(row[field],level,rel_tol=1e-9,abs_tol=1e-9):continue
-            instant=parse_time(row['time']);finish=instant+timedelta(hours=1)
-            if windows and parse_time(windows[-1]['to'])==instant:windows[-1]['to']=finish.isoformat()
-            else:windows.append({'from':instant.isoformat(),'to':finish.isoformat()})
-        layers.append({'kind':kind,'label':label,'statistic':field,'percentile': q, 'level_m': level,
-            'seed_condition':'available' if seed_available else 'below_seed_level',
-            'quality_note':'' if seed_available else 'Quota sotto tutti gli avvii disponibili nel DEM: non si può tracciare un’area connessa. Non indica assenza di interessamento della costa.',
-            'peak_time': peak['time'], 'peak_to':(parse_time(peak['time'])+timedelta(hours=1)).isoformat(),
-            'peak_windows':windows,'image': 'data/'+filename, 'cells': int(mask.sum())})
-        masks.append((layers[-1],reached))
+    mask_cache={}
+    def make_layers(samples,suffix=''):
+        result=[];result_masks=[]
+        for kind,field,q,label,color in estimates:
+            peak=max(samples,key=lambda r:r[field]);level=peak[field]
+            if level not in mask_cache:mask_cache[level]=connected_mask(z,seeds,level)
+            reached=mask_cache[level];mask=reached & display
+            rgba=np.zeros((*z.shape,4),dtype=np.uint8);rgba[mask]=color
+            filename=f'{prefix}{suffix}-{"mean" if kind=="mean" else "p75"}.png';assets[filename]=png_bytes(rgba)
+            windows=[]
+            for row in samples:
+                if not math.isclose(row[field],level,rel_tol=1e-9,abs_tol=1e-9):continue
+                instant=parse_time(row['time']);finish=instant+timedelta(hours=1)
+                if windows and parse_time(windows[-1]['to'])==instant:windows[-1]['to']=finish.isoformat()
+                else:windows.append({'from':instant.isoformat(),'to':finish.isoformat()})
+            seed_available=bool((z[seeds]<level).any())
+            layer=dict(kind=kind,label=label,statistic=field,percentile=q,level_m=level,
+                seed_condition='available' if seed_available else 'below_seed_level',
+                quality_note='' if seed_available else 'Quota sotto tutti gli avvii disponibili nel DEM: non si può tracciare un’area connessa. Non indica assenza di interessamento della costa.',
+                peak_time=peak['time'],peak_to=(parse_time(peak['time'])+timedelta(hours=1)).isoformat(),peak_windows=windows,
+                direction_deg=peak.get('direction_deg'),exposed_at_peak=is_exposed(peak.get('direction_deg'),unit.get('wave_exposure')) if peak.get('hs_m',0)>0 else None,
+                image='data/'+filename,cells=int(mask.sum()))
+            result.append(layer);result_masks.append((layer,reached))
+        return result,result_masks
+    layers,masks=make_layers(rows)
+    from zoneinfo import ZoneInfo
+    groups={}
+    for row in rows:groups.setdefault(parse_time(row['time']).astimezone(ZoneInfo('Europe/Rome')).date().isoformat(),[]).append(row)
+    daily=[];daily_masks=[]
+    for date,samples in groups.items():
+        day_layers,day_masks=make_layers(samples,'-'+date);daily_masks.append(day_masks)
+        daily.append(dict(date=date,period_from=samples[0]['time'],period_to=(parse_time(samples[-1]['time'])+timedelta(hours=1)).isoformat(),hours=len(samples),layers=day_layers,hours_non_frontal=sum((is_exposed(r.get('direction_deg'),unit.get('wave_exposure')) if r.get('hs_m',0)>0 else None) is False for r in samples),hours_direction_unknown=sum((is_exposed(r.get('direction_deg'),unit.get('wave_exposure')) if r.get('hs_m',0)>0 else None) is None for r in samples)))
     ortho = None
     if mapping.get('orthophoto_file'):
         image = orthophoto_bytes(Path(root)/mapping['orthophoto_file'], z.shape, mapping)
@@ -143,29 +153,36 @@ def build_map(unit, bulletin, mapping, root, slug, unit_id):
             'grid_sha256': hashlib.sha256(grid_path.read_bytes()).hexdigest(),
             'hours_non_frontal': exposure.count(False), 'hours_direction_unknown': exposure.count(None),
             'interpretation': 'Estensione statica potenziale, non profondità né probabilità di allagamento. Il runup è intermittente; nessuna trasformazione direzionale o simulazione di sormonto, portate e durata.'}
-    try:
-        from forecast_service.inundation_geojson import export_geojson
-        vectors=export_geojson(masks,valid=np.isfinite(z),display=display,bounds=bounds,metadata=metadata,
-            unit=unit,slug=slug,unit_id=unit_id,tolerance_m=mapping.get('line_tolerance_m',3.))
-        files=[]
-        for kind,raw in vectors.items():
-            filename=f'{prefix}-{issued.strftime("%Y%m%dT%H%M%SZ")}-{kind}.geojson'
-            assets[filename]=raw
-            files.append(dict(kind=kind,url='data/'+filename,filename=Path(filename).name))
-        metadata['geojson_export']=dict(status='available',files=files,line_tolerance_m=mapping.get('line_tolerance_m',3.))
+    from forecast_service.map_context import context_geometry,surveyed_points
+    metadata.update(context_geometry(display,np.isfinite(z),bounds))
+    metadata['structure_points']=surveyed_points(unit,root,slug,unit_id)
+    metadata['daily']=daily
+    def gis_exports(target,group_masks,suffix=''):
         try:
-            from forecast_service.inundation_kmz import export_kmz
-            kmz=export_kmz(vectors['aree'],vectors['limiti'])
-            filename=f'{prefix}-{issued.strftime("%Y%m%dT%H%M%SZ")}-mappa.kmz'
-            assets[filename]=kmz
-            metadata['mobile_export']=dict(status='available',url='data/'+filename,filename=Path(filename).name)
+            from forecast_service.inundation_geojson import export_geojson
+            group_metadata=dict(metadata,**{k:target.get(k,metadata[k]) for k in ('period_from','period_to','hours_non_frontal','hours_direction_unknown')})
+            vectors=export_geojson(group_masks,valid=np.isfinite(z),display=display,bounds=bounds,metadata=group_metadata,
+                unit=unit,slug=slug,unit_id=unit_id,tolerance_m=mapping.get('line_tolerance_m',3.))
+            fronts=__import__('json').loads(vectors['limiti'])['features']
+            for layer,front in zip(target['layers'],fronts):layer['line_geometry']=front['geometry']
+            files=[]
+            for kind,raw in vectors.items():
+                filename=f'{prefix}{suffix}-{issued.strftime("%Y%m%dT%H%M%SZ")}-{kind}.geojson'
+                assets[filename]=raw;files.append(dict(kind=kind,url='data/'+filename,filename=Path(filename).name))
+            target['geojson_export']=dict(status='available',files=files,line_tolerance_m=mapping.get('line_tolerance_m',3.))
+            try:
+                from forecast_service.inundation_kmz import export_kmz
+                filename=f'{prefix}{suffix}-{issued.strftime("%Y%m%dT%H%M%SZ")}-mappa.kmz'
+                assets[filename]=export_kmz(vectors['aree'],vectors['limiti'])
+                target['mobile_export']=dict(status='available',url='data/'+filename,filename=Path(filename).name)
+            except Exception as error:
+                target['mobile_export']=dict(status='unavailable',reason=str(error))
+                logging.getLogger(__name__).warning('KMZ %s/%s non disponibile: %s',slug,unit_id,error)
         except Exception as error:
-            metadata['mobile_export']=dict(status='unavailable',reason=str(error))
-            logging.getLogger(__name__).warning('KMZ %s/%s non disponibile: %s',slug,unit_id,error,exc_info=True)
-    except Exception as error:
-        # GIS export must not suppress otherwise valid forecast images.
-        metadata['geojson_export']=dict(status='unavailable',reason=str(error))
-        logging.getLogger(__name__).warning('GeoJSON %s/%s non disponibile: %s',slug,unit_id,error,exc_info=True)
+            target['geojson_export']=dict(status='unavailable',reason=str(error))
+            logging.getLogger(__name__).warning('GeoJSON %s/%s non disponibile: %s',slug,unit_id,error)
+    gis_exports(metadata,masks)
+    for day,group_masks in zip(daily,daily_masks):gis_exports(day,group_masks,'-'+day['date'])
     return metadata, assets
 
 

@@ -78,6 +78,7 @@ def thresholds_from_structure_points(dem_path, points_path, coastal_polygons, *,
                     observations.append(row); continue
             except (ValueError, TypeError, KeyError, ShapelyError):
                 observations.append(row); continue
+            row.update(longitude=float(point.x),latitude=float(point.y))
             candidates = [key for key, poly in polygons.items() if poly.covers(point)]
             explicit = properties.get(sector_field)
             if explicit is not None and str(explicit).strip():
@@ -132,7 +133,8 @@ def thresholds_from_structure_points(dem_path, points_path, coastal_polygons, *,
                      max_elevation_m=float(valid.elevation_m.max()) if len(valid) else None,
                      n_valid=int(len(valid)), n_excluded=int(len(group)-len(valid)),
                      n_dem_cells=int(len(valid[['dem_row', 'dem_col']].drop_duplicates())),
-                     season_assumed=bool(valid.season_assumed.any()), elevation_correction_m=float(elevation_correction_m))
+                     season_assumed=bool(valid.season_assumed.any()), elevation_correction_m=float(elevation_correction_m),
+                     points=[dict(longitude=float(r.longitude),latitude=float(r.latitude),elevation_m=float(r.elevation_m)) for r in valid.itertuples()])
         summaries.append(dict(sector_id=unit, structure=label, **stats))
         if mean is not None:
             slug = re.sub('[^a-z0-9]+', '-', unicodedata.normalize('NFKD', key).encode('ascii', 'ignore').decode()).strip('-')[:35] or 'struttura'

@@ -38,10 +38,12 @@ jobs:
         run: python -m pip install -r forecast_service/requirements.txt
       - name: Verifica calcoli e configurazione
         run: python -B -m unittest discover -s tests/forecast -v
+      - name: Verifica l’interfaccia
+        run: node --test tests/forecast/*.cjs
       - name: Prepara il sito
         run: |
           mkdir -p _site
-          cp forecast_site/index.html forecast_site/metodo.html forecast_site/disclaimer.html forecast_site/styles.css forecast_site/app.js forecast_site/icon.svg _site/
+          cp forecast_site/index.html forecast_site/metodo.html forecast_site/disclaimer.html forecast_site/styles.css forecast_site/app.js forecast_site/reader.js forecast_site/beach-profile.js forecast_site/icon.svg _site/
           cp -R forecast_site/assets _site/
           touch _site/.nojekyll
       - name: Genera il bollettino dimostrativo

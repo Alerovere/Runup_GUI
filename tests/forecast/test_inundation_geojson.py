@@ -91,7 +91,7 @@ class GeoJSONTests(unittest.TestCase):
             b['processing_started_at']='2026-11-11T06:42:18Z'
             write_maps(b,root/'out',root)
             all_files=set((root/'out/maps/venezia').glob('*.geojson'))
-            self.assertEqual(len(first),2);self.assertEqual(len(all_files),4)
+            self.assertEqual(len(first),2*(1+len(b['locations']['venezia']['inundation_map']['daily'])));self.assertEqual(len(all_files),2*len(first))
             self.assertTrue(first.issubset(all_files))
 
     def test_export_error_does_not_hide_valid_forecast_images(self):

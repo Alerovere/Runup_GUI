@@ -74,3 +74,14 @@ Un errore della sola esportazione GIS viene segnalato accanto alla mappa e nei l
 Il notebook accetta un GeoJSON facoltativo di punti con campo `struttura`. Per ogni settore costiero e tipo di struttura campiona il DEM originale e propone la media delle quote valide. Senza suddivisione, il raggruppamento riguarda la spiaggia intera. Minimo, massimo, numero di punti e osservazioni escluse restano nella diagnostica. Il modulo permette di modificare la proposta, conservando l’origine della quota e la media iniziale nel pacchetto.
 
 I punti devono identificare la quota da confrontare con l’acqua (per esempio terreno o accesso): quote di tetti lette da un DSM non equivalgono alle quote del terreno. La media non è la quota del punto più basso, né una probabilità di interessamento. Vedi `notebooks/README.md` per formato, attività stagionale, casi ambigui e controllo delle correzioni verticali.
+
+
+### Mappe giornaliere e contesto del rilievo
+
+Restano disponibili le due estensioni sull’intero periodo. In aggiunta, `inundation_map.daily` contiene una coppia di mappe per ciascuna data italiana presente nelle 96 ore, inclusi i giorni parziali. La media è il massimo **orario della media fra i risultati** del giorno; la stima più elevata è il massimo orario del P75. Ogni stima conserva il proprio istante e le eventuali finestre con uguale massimo. Non è una media nel tempo; le due statistiche possono avere un ordine diverso per distribuzioni asimmetriche.
+
+Stesso reticolo, connettività a otto vicini e ritaglio dopo propagazione delle mappe del periodo: nessuna modifica al calcolo del runup o alle quote. Il limite disegnato è la linea esterna semplificata con la tolleranza già configurata; la maschera e i GeoJSON delle aree conservano le celle originali. Ogni giorno ha GeoJSON e KMZ con periodo e orari propri. Gli archivi della Action includono anche questi file.
+
+Il contorno del settore nel selettore è indicativo e deriva dal ritaglio del rilievo (semplificazione cartografica di 3 m), non da un confine amministrativo. Il comando “Inquadra il settore” usa l’estensione effettiva del ritaglio, senza il margine del reticolo. Ortofoto oppure DEM e OpenStreetMap rimangono gli sfondi. I punti delle strutture sono attivabili nel controllo dei livelli; i popup distinguono la quota del singolo punto dalla media usata nel confronto.
+
+I nuovi pacchetti Colab conservano le coordinate WGS84 dei soli punti con quote valide nella metainformazione delle strutture. Per i pacchetti già importati si possono riusare i diagnostici `strutture.geojson` e `quote_strutture_punti.csv`, associati per indice del punto e settore. Gli originali esclusi da Git non sono necessari nel sito. Il notebook è stato rigenerato con gli stessi controlli e i nuovi moduli di supporto.

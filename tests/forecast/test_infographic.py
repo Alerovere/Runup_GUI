@@ -74,9 +74,12 @@ class SocialCardTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder,patch.object(g.Image,'open',wraps=Image.open) as opened:
             raw,meta=g.render_card(b,b['locations']['borghetto'],unit,folder,slug='borghetto',unit_id='uno')
             self.assertTrue(all(Path(call.args[0]).name=='eu-erc-horizon-europe.png' for call in opened.call_args_list))
-        self.assertIsNone(meta['map_statistic']);self.assertEqual(meta['content'],'wave_twl_forecast')
-        self.assertEqual(meta['charts']['twl_statistic'],'twl_mean_m');self.assertGreater(len(raw),1000)
+        self.assertIsNone(meta['map_statistic']);self.assertEqual(meta['content'],'wave_beach_profile_forecast')
+        self.assertEqual(meta['charts']['profile_statistic'],'twl_mean_m');self.assertGreater(len(raw),1000)
         self.assertEqual(meta['charts']['layout'],'side_by_side')
+        self.assertEqual(meta['schema_version'],4);self.assertEqual(meta['charts']['profile_tail'],'twl_p995_m')
+        self.assertEqual(meta['profile']['selection'],'peak_of_filtered_mean')
+        self.assertEqual(meta['profile']['time'],max((r for r in unit['hourly'] if r['statistics_method']==STATISTICS_METHOD and r['n_estimates']>0),key=lambda r:r['twl_mean_m'])['time'])
         self.assertNotIn('runup_statistic',meta['charts'])
 
     def test_direction_keeps_nautical_samples_and_does_not_invent_calm_or_missing_directions(self):

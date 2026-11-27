@@ -22,4 +22,6 @@ jobs:
       - run: python -m pip install -r forecast_service/requirements.txt
       - run: python -B -m unittest discover -s tests/forecast -v
       - run: node --check forecast_site/app.js
-      - run: node --test tests/forecast/test_frontend.cjs
+      - run: node --check forecast_site/reader.js
+      - run: node --check forecast_site/beach-profile.js
+      - run: node --test tests/forecast/*.cjs
